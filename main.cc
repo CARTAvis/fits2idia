@@ -12,7 +12,7 @@ using namespace std;
 
 #define SCHEMA_VERSION "0.1"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.3"
+#define HDF5_CONVERTER_VERSION "0.1.4"
 
 // Stolen from From https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 // trim from start (in place)
@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (N >= 3) {
+    if (depth > 1) {
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         string swizzledName = N == 3 ? "ZYX" : "ZYXW";
         auto swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatDataType, swizzledDataSpace);
@@ -180,26 +180,47 @@ int main(int argc, char** argv) {
     auto tStartAlloc = chrono::high_resolution_clock::now();
 
     float* standardCube = new float[cubeSize];
-    float* rotatedCube = new float[cubeSize];
+    
     vector<float> minValsXY(depth * stokes);
     vector<float> maxValsXY(depth * stokes);
     vector<float> meanValsXY(depth * stokes);
     vector<int64_t> nanValsXY(depth * stokes);
-
-    vector<float> minValsXYZ(stokes);
-    vector<float> maxValsXYZ(stokes);
-    vector<float> meanValsXYZ(stokes);
-    vector<int64_t> nanValsXYZ(stokes);
-
-    vector<float> minValsZ(width * height * stokes, numeric_limits<float>::max());
-    vector<float> maxValsZ(width * height * stokes, -numeric_limits<float>::max());
-    vector<float> meanValsZ(width * height * stokes, 0);
-    vector<int64_t> nanValsZ(width * height * stokes, 0);
-
+    
     vector<int64_t> histogramsXY(depth * stokes * numBinsHistXY);
+    
+    float* rotatedCube;
+    
+    vector<float> minValsZ;
+    vector<float> maxValsZ;
+    vector<float> meanValsZ;
+    vector<int64_t> nanValsZ;
+
+    vector<float> minValsXYZ;
+    vector<float> maxValsXYZ;
+    vector<float> meanValsXYZ;
+    vector<int64_t> nanValsXYZ;
+    
     // XYZ histograms calculated using OpenMP and summed later
-    vector<int64_t> partialHistogramsXYZ(depth * stokes * numBinsHistXYZ);
-    vector<int64_t> histogramsXYZ(stokes * numBinsHistXYZ);
+    vector<int64_t> partialHistogramsXYZ;
+    vector<int64_t> histogramsXYZ;
+    
+    if (depth > 1) {
+        rotatedCube = new float[cubeSize];
+        
+        minValsZ.resize(width * height * stokes, numeric_limits<float>::max());
+        maxValsZ.resize(width * height * stokes, -numeric_limits<float>::max());
+        meanValsZ.resize(width * height * stokes);
+        nanValsZ.resize(width * height * stokes);
+
+        minValsXYZ.resize(stokes);
+        maxValsXYZ.resize(stokes);
+        meanValsXYZ.resize(stokes);
+        nanValsXYZ.resize(stokes);
+        
+        // XYZ histograms calculated using OpenMP and summed later
+        partialHistogramsXYZ.resize(depth * stokes * numBinsHistXYZ);
+        histogramsXYZ.resize(stokes * numBinsHistXYZ);
+    }
 
     auto tEndAlloc = chrono::high_resolution_clock::now();
     auto dtAlloc = chrono::duration_cast<chrono::milliseconds>(tEndAlloc - tStartAlloc).count();
@@ -235,8 +256,11 @@ int main(int argc, char** argv) {
                     auto sourceIndex = k + width * j + (height * width) * i;
                     auto destIndex = i + depth * j + (height * depth) * k;
                     auto val = standardCube[sourceIndex];
-                    rotatedCube[destIndex] = val;
-
+                    
+                    if (depth > 1) {
+                        rotatedCube[destIndex] = val;
+                    }
+                    
                     // Stats
                     if (!isnan(val)) {
                         minVal = min(minVal, val);
@@ -260,73 +284,88 @@ int main(int argc, char** argv) {
                 meanValsXY[currentStokes * depth + i] = NAN;
             }
         }
+        
+        double xyzMin;
+        double xyzMax;
 
-        // Consolidate XY stats into XYZ stats
-        double xyzSum = 0;
-        int64_t xyzNanCount = 0;
-        double xyzMin = minValsXY[currentStokes * depth];
-        double xyzMax = maxValsXY[currentStokes * depth];
+        if (depth > 1) {
+            // Consolidate XY stats into XYZ stats
+            double xyzSum = 0;
+            int64_t xyzNanCount = 0;
+            xyzMin = minValsXY[currentStokes * depth];
+            xyzMax = maxValsXY[currentStokes * depth];
 
-        for (auto i = 0; i < depth; i++) {
-            auto meanVal = meanValsXY[currentStokes * depth + i];
-            auto nanCount = nanValsXY[currentStokes * depth + i];
-            if (!isnan(meanVal)) {
-                xyzSum += meanVal * (height * width - nanCount);
-                xyzMin = fmin(xyzMin, minValsXY[currentStokes * depth + i]);
-                xyzMax = fmax(xyzMax, maxValsXY[currentStokes * depth + i]);
+            for (auto i = 0; i < depth; i++) {
+                auto meanVal = meanValsXY[currentStokes * depth + i];
+                auto nanCount = nanValsXY[currentStokes * depth + i];
+                if (!isnan(meanVal)) {
+                    xyzSum += meanVal * (height * width - nanCount);
+                    xyzMin = fmin(xyzMin, minValsXY[currentStokes * depth + i]);
+                    xyzMax = fmax(xyzMax, maxValsXY[currentStokes * depth + i]);
+                }
+                xyzNanCount += nanCount;
             }
-            xyzNanCount += nanCount;
-        }
 
-        minValsXYZ[currentStokes] = xyzMin;
-        maxValsXYZ[currentStokes] = xyzMax;
-        nanValsXYZ[currentStokes] = xyzNanCount;
-        if (xyzNanCount != cubeSize) {
-            meanValsXYZ[currentStokes] = xyzSum / (cubeSize - xyzNanCount);
+            minValsXYZ[currentStokes] = xyzMin;
+            maxValsXYZ[currentStokes] = xyzMax;
+            nanValsXYZ[currentStokes] = xyzNanCount;
+            if (xyzNanCount != cubeSize) {
+                meanValsXYZ[currentStokes] = xyzSum / (cubeSize - xyzNanCount);
+            }
         }
 
         cout << "1..." << flush;
 
-        // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
+        if (depth > 1) {
+            // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
 #pragma omp parallel for
-        for (auto j = 0; j < height; j++) {
-            for (auto k = 0; k < width; k++) {
-                float minVal = numeric_limits<float>::max();
-                float maxVal = -numeric_limits<float>::max();
-                float sum = 0;
-                int64_t nanCount = 0;
-                for (auto i = 0; i < depth; i++) {
-                    auto sourceIndex = k + width * j + (height * width) * i;
-                    auto val = standardCube[sourceIndex];
+            for (auto j = 0; j < height; j++) {
+                for (auto k = 0; k < width; k++) {
+                    float minVal = numeric_limits<float>::max();
+                    float maxVal = -numeric_limits<float>::max();
+                    float sum = 0;
+                    int64_t nanCount = 0;
+                    for (auto i = 0; i < depth; i++) {
+                        auto sourceIndex = k + width * j + (height * width) * i;
+                        auto val = standardCube[sourceIndex];
 
-                    if (!isnan(val)) {
-                        minVal = min(minVal, val);
-                        maxVal = max(maxVal, val);
-                        sum += val;
+                        if (!isnan(val)) {
+                            minVal = min(minVal, val);
+                            maxVal = max(maxVal, val);
+                            sum += val;
 
-                    } else {
-                        nanCount += 1;
+                        } else {
+                            nanCount += 1;
+                        }
                     }
-                }
-                if (nanCount != (height * width)) {
-                    minValsZ[currentStokes * width * height + k + j * width] = minVal;
-                    maxValsZ[currentStokes * width * height + k + j * width] = maxVal;
-                    nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
-                    meanValsZ[currentStokes * width * height + k + j * width] = sum / (depth - nanCount);
-                } else {
-                    minValsZ[currentStokes * width * height + k + j * width] = NAN;
-                    maxValsZ[currentStokes * width * height + k + j * width] = NAN;
-                    nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
-                    meanValsZ[currentStokes * width * height + k + j * width] = NAN;
+                    if (nanCount != (height * width)) {
+                        minValsZ[currentStokes * width * height + k + j * width] = minVal;
+                        maxValsZ[currentStokes * width * height + k + j * width] = maxVal;
+                        nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
+                        meanValsZ[currentStokes * width * height + k + j * width] = sum / (depth - nanCount);
+                    } else {
+                        minValsZ[currentStokes * width * height + k + j * width] = NAN;
+                        maxValsZ[currentStokes * width * height + k + j * width] = NAN;
+                        nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
+                        meanValsZ[currentStokes * width * height + k + j * width] = NAN;
+                    }
                 }
             }
         }
+        
         cout << "2..." << flush;
 
         // Third loop handles histograms
-        double cubeMin = xyzMin;
-        double cubeMax = xyzMax;
-        double cubeRange = cubeMax - cubeMin;
+        
+        double cubeMin;
+        double cubeMax;
+        double cubeRange;
+        
+        if (depth > 1) {
+            cubeMin = xyzMin;
+            cubeMax = xyzMax;
+            cubeRange = cubeMax - cubeMin;
+        }
 
 #pragma omp parallel for
         for (auto i = 0; i < depth; i++) {
@@ -345,18 +384,23 @@ int main(int argc, char** argv) {
                     // XY Histogram
                     int binIndex = min(numBinsHistXY - 1, (int)(numBinsHistXY * (val - sliceMin) / range));
                     histogramsXY[currentStokes * depth * numBinsHistXY + i * numBinsHistXY + binIndex]++;
-                    // XYZ Partial histogram
-                    int binIndexXYZ = min(numBinsHistXYZ - 1, (int)(numBinsHistXYZ * (val - cubeMin) / cubeRange));
-                    partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + binIndexXYZ]++;
+                    
+                    if (depth > 1) {
+                        // XYZ Partial histogram
+                        int binIndexXYZ = min(numBinsHistXYZ - 1, (int)(numBinsHistXYZ * (val - cubeMin) / cubeRange));
+                        partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + binIndexXYZ]++;
+                    }
                 }
             }
         }
-
-        // Consolidate partial XYZ histograms into final histogram
-        for (auto i = 0; i < depth; i++) {
-            for (auto j = 0; j < numBinsHistXYZ; j++) {
-                histogramsXYZ[currentStokes * numBinsHistXYZ + j] +=
-                    partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + j];
+        
+        if (depth > 1) {
+            // Consolidate partial XYZ histograms into final histogram
+            for (auto i = 0; i < depth; i++) {
+                for (auto j = 0; j < numBinsHistXYZ; j++) {
+                    histogramsXYZ[currentStokes * numBinsHistXYZ + j] +=
+                        partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + j];
+                }
             }
         }
 
@@ -384,7 +428,7 @@ int main(int argc, char** argv) {
         sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
 
         standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
-        if (N >= 3) {
+        if (depth > 1) {
             auto swizzledGroup = outputGroup.openGroup("SwizzledData");
             string swizzledName = N == 3 ? "ZYX" : "ZYXW";
             auto swizzledDataSet = swizzledGroup.openDataSet(swizzledName);
@@ -414,7 +458,7 @@ int main(int argc, char** argv) {
     xyNanCountDataSet.write(nanValsXY.data(), PredType::NATIVE_INT64);
     xyHistogramDataSet.write(histogramsXY.data(), PredType::NATIVE_INT64);
 
-    if (N >= 3) {
+    if (depth > 1) {
         auto statsXYZGroup = statsGroup.createGroup("XYZ");
         DataSpace xyzStatsDataSpace(N - 3, xyStatsDims.data());
         DataSpace xyzHistogramDataSpace(N - 2, xyzHistogramDims.data());
@@ -449,6 +493,9 @@ int main(int argc, char** argv) {
     auto dtTotal = chrono::duration_cast<chrono::milliseconds>(tEnd - tStart).count();
     cout << "FITS file converted in " << dtTotal * 1e-3 << " seconds" << endl;
     delete[] standardCube;
-    delete[] rotatedCube;
+    
+    if (depth > 1) {
+        delete[] rotatedCube;
+    }
     return 0;
 }
