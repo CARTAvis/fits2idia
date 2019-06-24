@@ -10,7 +10,7 @@
 using namespace H5;
 using namespace std;
 
-#define SCHEMA_VERSION "0.1"
+#define SCHEMA_VERSION "0.2"
 #define HDF5_CONVERTER "hdf_convert"
 #define HDF5_CONVERTER_VERSION "0.1.4"
 
@@ -183,8 +183,9 @@ int main(int argc, char** argv) {
     
     vector<float> minValsXY(depth * stokes);
     vector<float> maxValsXY(depth * stokes);
-    vector<float> meanValsXY(depth * stokes);
-    vector<int64_t> nanValsXY(depth * stokes);
+    vector<float> sumsXY(depth * stokes);
+    vector<float> sumsSqXY(depth * stokes);
+    vector<int64_t> nanCountsXY(depth * stokes);
     
     vector<int64_t> histogramsXY(depth * stokes * numBinsHistXY);
     
@@ -192,13 +193,15 @@ int main(int argc, char** argv) {
     
     vector<float> minValsZ;
     vector<float> maxValsZ;
-    vector<float> meanValsZ;
-    vector<int64_t> nanValsZ;
+    vector<float> sumsZ;
+    vector<float> sumsSqZ;
+    vector<int64_t> nanCountsZ;
 
     vector<float> minValsXYZ;
     vector<float> maxValsXYZ;
-    vector<float> meanValsXYZ;
-    vector<int64_t> nanValsXYZ;
+    vector<float> sumsXYZ;
+    vector<float> sumsSqXYZ;
+    vector<int64_t> nanCountsXYZ;
     
     // XYZ histograms calculated using OpenMP and summed later
     vector<int64_t> partialHistogramsXYZ;
@@ -209,13 +212,15 @@ int main(int argc, char** argv) {
         
         minValsZ.resize(width * height * stokes, numeric_limits<float>::max());
         maxValsZ.resize(width * height * stokes, -numeric_limits<float>::max());
-        meanValsZ.resize(width * height * stokes);
-        nanValsZ.resize(width * height * stokes);
+        sumsZ.resize(width * height * stokes);
+        sumsSqZ.resize(width * height * stokes);
+        nanCountsZ.resize(width * height * stokes);
 
         minValsXYZ.resize(stokes);
         maxValsXYZ.resize(stokes);
-        meanValsXYZ.resize(stokes);
-        nanValsXYZ.resize(stokes);
+        sumsXYZ.resize(stokes);
+        sumsSqXYZ.resize(stokes);
+        nanCountsXYZ.resize(stokes);
         
         // XYZ histograms calculated using OpenMP and summed later
         partialHistogramsXYZ.resize(depth * stokes * numBinsHistXYZ);
@@ -249,6 +254,7 @@ int main(int argc, char** argv) {
             float minVal = numeric_limits<float>::max();
             float maxVal = -numeric_limits<float>::max();
             float sum = 0;
+            float sumSq = 0;
             int64_t nanCount = 0;
 
             for (auto j = 0; j < height; j++) {
@@ -266,22 +272,27 @@ int main(int argc, char** argv) {
                         minVal = min(minVal, val);
                         maxVal = max(maxVal, val);
                         sum += val;
+                        sumSq += val * val;
                     } else {
                         nanCount += 1;
                     }
                 }
             }
-
+            
+            auto indexXY = currentStokes * depth + i;
+            
+            nanCountsXY[indexXY] = nanCount;
+            
             if (nanCount != (height * width)) {
-                minValsXY[currentStokes * depth + i] = minVal;
-                maxValsXY[currentStokes * depth + i] = maxVal;
-                nanValsXY[currentStokes * depth + i] = nanCount;
-                meanValsXY[currentStokes * depth + i] = sum / (height * width - nanCount);
+                minValsXY[indexXY] = minVal;
+                maxValsXY[indexXY] = maxVal;
+                sumsXY[indexXY] = sum;
+                sumsSqXY[indexXY] = sumSq;
             } else {
-                minValsXY[currentStokes * depth + i] = NAN;
-                maxValsXY[currentStokes * depth + i] = NAN;
-                nanValsXY[currentStokes * depth + i] = nanCount;
-                meanValsXY[currentStokes * depth + i] = NAN;
+                minValsXY[indexXY] = NAN;
+                maxValsXY[indexXY] = NAN;
+                sumsXY[indexXY] = NAN;
+                sumsSqXY[indexXY] = NAN;
             }
         }
         
@@ -291,27 +302,28 @@ int main(int argc, char** argv) {
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             double xyzSum = 0;
+            double xyzSumSq = 0;
             int64_t xyzNanCount = 0;
             xyzMin = minValsXY[currentStokes * depth];
             xyzMax = maxValsXY[currentStokes * depth];
 
             for (auto i = 0; i < depth; i++) {
-                auto meanVal = meanValsXY[currentStokes * depth + i];
-                auto nanCount = nanValsXY[currentStokes * depth + i];
-                if (!isnan(meanVal)) {
-                    xyzSum += meanVal * (height * width - nanCount);
-                    xyzMin = fmin(xyzMin, minValsXY[currentStokes * depth + i]);
-                    xyzMax = fmax(xyzMax, maxValsXY[currentStokes * depth + i]);
+                auto indexXY = currentStokes * depth + i;
+                auto sum = sumsXY[indexXY];
+                if (!isnan(sum)) {
+                    xyzSum += sum;
+                    xyzSumSq += sumsSqXY[indexXY];
+                    xyzMin = fmin(xyzMin, minValsXY[indexXY]);
+                    xyzMax = fmax(xyzMax, maxValsXY[indexXY]);
                 }
-                xyzNanCount += nanCount;
+                xyzNanCount += nanCountsXY[indexXY];
             }
 
+            sumsXYZ[currentStokes] = xyzSum;
+            sumsSqXYZ[currentStokes] = xyzSumSq;
             minValsXYZ[currentStokes] = xyzMin;
             maxValsXYZ[currentStokes] = xyzMax;
-            nanValsXYZ[currentStokes] = xyzNanCount;
-            if (xyzNanCount != cubeSize) {
-                meanValsXYZ[currentStokes] = xyzSum / (cubeSize - xyzNanCount);
-            }
+            nanCountsXYZ[currentStokes] = xyzNanCount;
         }
 
         cout << "1..." << flush;
@@ -324,7 +336,9 @@ int main(int argc, char** argv) {
                     float minVal = numeric_limits<float>::max();
                     float maxVal = -numeric_limits<float>::max();
                     float sum = 0;
+                    float sumSq = 0;
                     int64_t nanCount = 0;
+                    
                     for (auto i = 0; i < depth; i++) {
                         auto sourceIndex = k + width * j + (height * width) * i;
                         auto val = standardCube[sourceIndex];
@@ -333,21 +347,26 @@ int main(int argc, char** argv) {
                             minVal = min(minVal, val);
                             maxVal = max(maxVal, val);
                             sum += val;
-
+                            sumSq += val * val;
                         } else {
                             nanCount += 1;
                         }
                     }
+                    
+                    auto indexZ = currentStokes * width * height + k + j * width;
+                    
+                    nanCountsZ[indexZ] = nanCount;
+                    
                     if (nanCount != (height * width)) {
-                        minValsZ[currentStokes * width * height + k + j * width] = minVal;
-                        maxValsZ[currentStokes * width * height + k + j * width] = maxVal;
-                        nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
-                        meanValsZ[currentStokes * width * height + k + j * width] = sum / (depth - nanCount);
+                        minValsZ[indexZ] = minVal;
+                        maxValsZ[indexZ] = maxVal;
+                        sumsZ[indexZ] = sum;
+                        sumsSqZ[indexZ] = sumSq;
                     } else {
-                        minValsZ[currentStokes * width * height + k + j * width] = NAN;
-                        maxValsZ[currentStokes * width * height + k + j * width] = NAN;
-                        nanValsZ[currentStokes * width * height + k + j * width] = nanCount;
-                        meanValsZ[currentStokes * width * height + k + j * width] = NAN;
+                        minValsZ[indexZ] = NAN;
+                        maxValsZ[indexZ] = NAN;
+                        sumsZ[indexZ] = NAN;
+                        sumsSqZ[indexZ] = NAN;
                     }
                 }
             }
@@ -369,8 +388,9 @@ int main(int argc, char** argv) {
 
 #pragma omp parallel for
         for (auto i = 0; i < depth; i++) {
-            double sliceMin = minValsXY[currentStokes * depth + i];
-            double sliceMax = maxValsXY[currentStokes * depth + i];
+            auto indexXY = currentStokes * depth + i;
+            double sliceMin = minValsXY[indexXY];
+            double sliceMax = maxValsXY[indexXY];
             double range = sliceMax - sliceMin;
 
             if (isnan(sliceMin) || isnan(sliceMax) || range == 0) {
@@ -442,48 +462,60 @@ int main(int argc, char** argv) {
     }
 
     auto statsGroup = outputGroup.createGroup("Statistics");
-
     auto statsXYGroup = statsGroup.createGroup("XY");
+    
     DataSpace xyStatsDataSpace(N - 2, xyStatsDims.data());
     DataSpace xyHistogramDataSpace(N - 1, xyHistogramDims.data());
+    
     auto xyMinDataSet = statsXYGroup.createDataSet("MIN", floatDataType, xyStatsDataSpace);
     auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", floatDataType, xyStatsDataSpace);
-    auto xyMeanDataSet = statsXYGroup.createDataSet("MEAN", floatDataType, xyStatsDataSpace);
+    auto xySumDataSet = statsXYGroup.createDataSet("SUM", floatDataType, xyStatsDataSpace);
+    auto xySumSqDataSet = statsXYGroup.createDataSet("SUM_SQ", floatDataType, xyStatsDataSpace);
     auto xyNanCountDataSet = statsXYGroup.createDataSet("NAN_COUNT", int64Type, xyStatsDataSpace);
     auto xyHistogramDataSet = statsXYGroup.createDataSet("HISTOGRAM", int64Type, xyHistogramDataSpace);
 
     xyMinDataSet.write(minValsXY.data(), PredType::NATIVE_FLOAT);
     xyMaxDataSet.write(maxValsXY.data(), PredType::NATIVE_FLOAT);
-    xyMeanDataSet.write(meanValsXY.data(), PredType::NATIVE_FLOAT);
-    xyNanCountDataSet.write(nanValsXY.data(), PredType::NATIVE_INT64);
+    xySumDataSet.write(sumsXY.data(), PredType::NATIVE_FLOAT);
+    xySumSqDataSet.write(sumsSqXY.data(), PredType::NATIVE_FLOAT);
+    xyNanCountDataSet.write(nanCountsXY.data(), PredType::NATIVE_INT64);
     xyHistogramDataSet.write(histogramsXY.data(), PredType::NATIVE_INT64);
 
     if (depth > 1) {
         auto statsXYZGroup = statsGroup.createGroup("XYZ");
+        
         DataSpace xyzStatsDataSpace(N - 3, xyStatsDims.data());
         DataSpace xyzHistogramDataSpace(N - 2, xyzHistogramDims.data());
+        
         auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", floatDataType, xyzStatsDataSpace);
         auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", floatDataType, xyzStatsDataSpace);
-        auto xyzMeanDataSet = statsXYZGroup.createDataSet("MEAN", floatDataType, xyzStatsDataSpace);
+        auto xyzSumDataSet = statsXYZGroup.createDataSet("SUM", floatDataType, xyzStatsDataSpace);
+        auto xyzSumSqDataSet = statsXYZGroup.createDataSet("SUM_SQ", floatDataType, xyzStatsDataSpace);
         auto xyzNanCountDataSet = statsXYZGroup.createDataSet("NAN_COUNT", int64Type, xyzStatsDataSpace);
         auto xyzHistogramDataSet = statsXYZGroup.createDataSet("HISTOGRAM", int64Type, xyzHistogramDataSpace);
+        
         xyzMinDataSet.write(minValsXYZ.data(), PredType::NATIVE_FLOAT);
         xyzMaxDataSet.write(maxValsXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzMeanDataSet.write(meanValsXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzNanCountDataSet.write(nanValsXYZ.data(), PredType::NATIVE_INT64);
+        xyzSumDataSet.write(sumsXYZ.data(), PredType::NATIVE_FLOAT);
+        xyzSumSqDataSet.write(sumsSqXYZ.data(), PredType::NATIVE_FLOAT);
+        xyzNanCountDataSet.write(nanCountsXYZ.data(), PredType::NATIVE_INT64);
         xyzHistogramDataSet.write(histogramsXYZ.data(), PredType::NATIVE_INT64);
 
         auto statsZGroup = statsGroup.createGroup("Z");
+        
         DataSpace zStatsDataSpace(N - 1, zStatsDims.data());
+        
         auto zMinDataSet = statsZGroup.createDataSet("MIN", floatDataType, zStatsDataSpace);
         auto zMaxDataSet = statsZGroup.createDataSet("MAX", floatDataType, zStatsDataSpace);
-        auto zMeanDataSet = statsZGroup.createDataSet("MEAN", floatDataType, zStatsDataSpace);
+        auto zSumDataSet = statsZGroup.createDataSet("SUM", floatDataType, zStatsDataSpace);
+        auto zSumSqDataSet = statsZGroup.createDataSet("SUM_SQ", floatDataType, zStatsDataSpace);
         auto zNanCountDataSet = statsZGroup.createDataSet("NAN_COUNT", int64Type, zStatsDataSpace);
 
         zMinDataSet.write(minValsZ.data(), PredType::NATIVE_FLOAT);
         zMaxDataSet.write(maxValsZ.data(), PredType::NATIVE_FLOAT);
-        zMeanDataSet.write(meanValsZ.data(), PredType::NATIVE_FLOAT);
-        zNanCountDataSet.write(nanValsZ.data(), PredType::NATIVE_INT64);
+        zSumDataSet.write(sumsZ.data(), PredType::NATIVE_FLOAT);
+        zSumSqDataSet.write(sumsSqZ.data(), PredType::NATIVE_FLOAT);
+        zNanCountDataSet.write(nanCountsZ.data(), PredType::NATIVE_INT64);
     }
 
     outputFile.close();
