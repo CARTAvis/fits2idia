@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
                         // very unlikely when we're iterating over all values in a channel.
                         if (val < minVal) {
                             minVal = val;
-                        } elif (val > maxVal) {
+                        } else if (val > maxVal) {
                             maxVal = val;
                         }
                         sum += val;
