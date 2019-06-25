@@ -269,8 +269,13 @@ int main(int argc, char** argv) {
                     
                     // Stats
                     if (!isnan(val)) {
-                        minVal = min(minVal, val);
-                        maxVal = max(maxVal, val);
+                        // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
+                        // very unlikely when we're iterating over all values in a channel.
+                        if (val < minVal) {
+                            minVal = val;
+                        } elif (val > maxVal) {
+                            maxVal = val;
+                        }
                         sum += val;
                         sumSq += val * val;
                     } else {
@@ -278,7 +283,7 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            
+
             auto indexXY = currentStokes * depth + i;
             
             nanCountsXY[indexXY] = nanCount;
@@ -344,6 +349,7 @@ int main(int argc, char** argv) {
                         auto val = standardCube[sourceIndex];
 
                         if (!isnan(val)) {
+                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
                             minVal = min(minVal, val);
                             maxVal = max(maxVal, val);
                             sum += val;
