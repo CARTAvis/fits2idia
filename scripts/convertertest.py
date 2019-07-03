@@ -46,15 +46,17 @@ dims = {v: fitsdata.shape[k] for k, v in enumerate(reversed(axis_names))}
 
 # CHECK SWIZZLES
 
+swizzled_name = None
+
 if ndim == 3:
     swizzled_name = "ZYX"
 elif ndim == 4:
     swizzled_name = "ZYXW"
-    
-swizzled_shape = tuple(dims[a] for a in reversed(swizzled_name))    
-    
-assert swizzled_name in hdf5file["0/SwizzledData"], "No swizzled dataset found."
-assert hdf5file["0/SwizzledData"][swizzled_name].shape == swizzled_shape, "Swizzled dataset has incorrect dimensions."
+
+if swizzled_name:
+    swizzled_shape = tuple(dims[a] for a in reversed(swizzled_name))    
+    assert swizzled_name in hdf5file["0/SwizzledData"], "No swizzled dataset found."
+    assert hdf5file["0/SwizzledData"][swizzled_name].shape == swizzled_shape, "Swizzled dataset has incorrect dimensions."
 
 # CHECK STATS
 
