@@ -6,6 +6,7 @@ import argparse
 from astropy.io import fits
 import h5py
 import numpy as np
+from numpy.testing import assert_equal, assert_allclose
 
 parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
 parser.add_argument('filename', help='Converted HDF5 filename')
@@ -27,8 +28,7 @@ hdf5data = hdf5file["0/DATA"]
 
 # CHECK MAIN DATASET
 
-assert fitsdata.shape == hdf5data.shape, "Main dataset has incorrect dimensions."
-assert (fitsdata == hdf5data).all(), "Main dataset differs."
+assert_equal(hdf5data, fitsdata, err_msg="Main dataset differs.")
 
 ndim = fitsdata.ndim
 
@@ -72,17 +72,15 @@ for s in stats:
     sdata = hdf5file["0/Statistics"][s]
     stats_axis = tuple(axes[a] for a in s)
     
-    if "SUM" in sdata:
-        assert np.abs(sdata["SUM"] - np.nansum(fitsdata, axis=stats_axis)).max() < 1e-6, "%s/SUM is incorrect." % s
-    
-    if "SUM_SQ" in sdata:
-        assert np.abs(sdata["SUM_SQ"] - np.nansum(fitsdata**2, axis=stats_axis)).max() < 1e-6, "%s/SUM_SQ is incorrect." % s
-        
-    if "MEAN" in sdata:
-        assert np.abs(sdata["MEAN"] - np.nanmean(fitsdata, axis=stats_axis)).max() < 1e-6, "%s/MEAN is incorrect." % s
-        
-    assert np.abs(sdata["MIN"] - np.nanmin(fitsdata, axis=stats_axis)).max() < 1e-6, "%s/MIN is incorrect." % s
-    assert np.abs(sdata["MAX"] - np.nanmax(fitsdata, axis=stats_axis)).max() < 1e-6, "%s/MAX is incorrect." % s
+    def assert_close(stat, func, data=fitsdata):
+        if stat in sdata:
+            assert_allclose(sdata[stat], func(data, axis=stats_axis), rtol=1e-5, err_msg = "%s/%s is incorrect." % (s, stat))
+            
+    assert_close("SUM", np.nansum)
+    assert_close("SUM_SQ", np.nansum, fitsdata**2)
+    assert_close("MEAN", np.nanmean)
+    assert_close("MIN", np.nanmin)
+    assert_close("MAX", np.nanmax)
     
     assert (np.count_nonzero(np.isnan(fitsdata), axis=stats_axis) == sdata["NAN_COUNT"]).all(), "%s/NAN_COUNT is incorrect." % s
     
