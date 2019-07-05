@@ -190,6 +190,9 @@ int main(int argc, char** argv) {
                             attribute.write(int64Type, &attributeValueInt);
                         } catch (const std::invalid_argument& ia) {
                             cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
+                            // FALL BACK TO STRING
+                            attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
+                            attribute.write(strType, attributeValue);
                         }
                     }
                 }
