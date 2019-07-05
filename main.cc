@@ -160,6 +160,8 @@ int main(int argc, char** argv) {
                     trim(attributeName);
                     trim(attributeValue);
                     
+                    bool parsingFailure(false);
+                    
                     if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
                         attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
                         // STRING
@@ -181,6 +183,7 @@ int main(int argc, char** argv) {
                             attribute.write(doubleType, &attributeValueDouble);
                         } catch (const std::invalid_argument& ia) {
                             cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << endl;
+                            parsingFailure = true;
                         }
                     } else {
                         // TRY TO PARSE AS INTEGER
@@ -190,10 +193,14 @@ int main(int argc, char** argv) {
                             attribute.write(int64Type, &attributeValueInt);
                         } catch (const std::invalid_argument& ia) {
                             cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
-                            // FALL BACK TO STRING
-                            attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                            attribute.write(strType, attributeValue);
+                            parsingFailure = true;
                         }
+                    }
+                    
+                    if (parsingFailure) {
+                        // FALL BACK TO STRING
+                        attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
+                        attribute.write(strType, attributeValue);
                     }
                 }
             }
