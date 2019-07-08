@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     auto height = dims[1];
     auto width = dims[0];
 
-    int numBinsHistXY = sqrt(width * height) + 0.5;
+    int numBinsHistXY = int(std::max(sqrt(width * height), 2.0));
     int numBinsHistXYZ = numBinsHistXY;
 
     vector<hsize_t> standardDims = {height, width};
