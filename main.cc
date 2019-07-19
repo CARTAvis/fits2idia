@@ -12,7 +12,7 @@ using namespace std;
 
 #define SCHEMA_VERSION "0.2"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.5"
+#define HDF5_CONVERTER_VERSION "0.1.6"
 
 // Stolen from From https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 // trim from start (in place)
