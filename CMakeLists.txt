@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(hdf_convert)
 
 set(CMAKE_CXX_STANDARD 11)
-FIND_PACKAGE(HDF5)
+FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
 find_package(OpenMP)
 
@@ -12,7 +12,7 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
-set(LINK_LIBS ${LINK_LIBS} cfitsio hdf5_serial hdf5_cpp hdf5_hl_cpp)
+set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 
 add_executable(hdf_convert main.cc)
 target_link_libraries(hdf_convert ${LINK_LIBS})
