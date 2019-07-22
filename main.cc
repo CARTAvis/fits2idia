@@ -12,7 +12,7 @@ using namespace std;
 
 #define SCHEMA_VERSION "0.2"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.6"
+#define HDF5_CONVERTER_VERSION "0.1.7"
 
 // Stolen from From https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 // trim from start (in place)
@@ -151,13 +151,13 @@ int main(int argc, char** argv) {
             auto commentPos = headerLine.find_last_of('/');
             if (eqPos != string::npos) {
                 auto attributeName = headerLine.substr(0, eqPos);
+                trim(attributeName);
                 
                 if (outputGroup.attrExists(attributeName)) {
                     cout << "Warning: Skipping duplicate attribute '" << attributeName << "'" << endl;
                 } else {
                     auto endPos = commentPos != string::npos ? commentPos - eqPos - 1 : string::npos;
                     string attributeValue = headerLine.substr(eqPos + 1, endPos);
-                    trim(attributeName);
                     trim(attributeValue);
                     
                     bool parsingFailure(false);
@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
                         bool attributeValueBool = (attributeValue == "T");
                         attribute = outputGroup.createAttribute(attributeName, boolType, attributeDataSpace);
                         attribute.write(boolType, &attributeValueBool);
-                    } else if (attributeValue.find('.') >= 0) {
+                    } else if (attributeValue.find('.') != std::string::npos) {
                         // TRY TO PARSE AS DOUBLE
                         try {
                             double attributeValueDouble = std::stod(attributeValue);
