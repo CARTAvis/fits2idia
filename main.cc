@@ -12,26 +12,7 @@ using namespace std;
 
 #define SCHEMA_VERSION "0.2"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.7"
-
-// Stolen from From https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
-// trim from start (in place)
-static inline void ltrim(string& s) {
-    s.erase(s.begin(), find_if(s.begin(), s.end(), [](int ch) { return !isspace(ch); }));
-}
-
-// trim from end (in place)
-static inline void rtrim(string& s) {
-    s.erase(find_if(s.rbegin(), s.rend(), [](int ch) { return !isspace(ch); }).base(), s.end());
-}
-
-// trim from both ends (in place)
-static inline void trim(string& s) {
-    ltrim(s);
-    rtrim(s);
-}
-
-// End stolen from https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
+#define HDF5_CONVERTER_VERSION "0.1.8"
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
@@ -141,67 +122,61 @@ int main(int argc, char** argv) {
 
     int numHeaders;
     fits_get_hdrspace(inputFilePtr, &numHeaders, NULL, &status);
-    char headerTmp[255];
+    char keyTmp[255];
+    char valueTmp[255];
     for (auto i = 0; i < numHeaders; i++) {
-        fits_read_record(inputFilePtr, i, headerTmp, &status);
-        string headerLine(headerTmp);
-        if (headerLine.find("COMMENT") == 0 || headerLine.find("HISTORY") == 0) {
+        fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
+        string attributeName(keyTmp);
+        string attributeValue(valueTmp);
+        
+        if (attributeName.empty() || attributeName.find("COMMENT") == 0 || attributeName.find("HISTORY") == 0) {
         } else {
-            auto eqPos = headerLine.find('=');
-            auto commentPos = headerLine.find_last_of('/');
-            if (eqPos != string::npos) {
-                auto attributeName = headerLine.substr(0, eqPos);
-                trim(attributeName);
+            if (outputGroup.attrExists(attributeName)) {
+                cout << "Warning: Skipping duplicate attribute '" << attributeName << "'" << endl;
+            } else {
+                bool parsingFailure(false);
                 
-                if (outputGroup.attrExists(attributeName)) {
-                    cout << "Warning: Skipping duplicate attribute '" << attributeName << "'" << endl;
+                if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
+                    attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
+                    // STRING
+                    int strLen;
+                    char strValueTmp[255];
+                    fits_read_string_key(inputFilePtr, attributeName.c_str(), 1, 255, strValueTmp, &strLen, NULL, &status);
+                    string attributeValueStr(strValueTmp);
+
+                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
+                    attribute.write(strType, attributeValueStr);
+                } else if (attributeValue == "T" || attributeValue == "F") {
+                    // BOOLEAN
+                    bool attributeValueBool = (attributeValue == "T");
+                    attribute = outputGroup.createAttribute(attributeName, boolType, attributeDataSpace);
+                    attribute.write(boolType, &attributeValueBool);
+                } else if (attributeValue.find('.') != std::string::npos) {
+                    // TRY TO PARSE AS DOUBLE
+                    try {
+                        double attributeValueDouble = std::stod(attributeValue);
+                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
+                        attribute.write(doubleType, &attributeValueDouble);
+                    } catch (const std::invalid_argument& ia) {
+                        cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << endl;
+                        parsingFailure = true;
+                    }
                 } else {
-                    auto endPos = commentPos != string::npos ? commentPos - eqPos - 1 : string::npos;
-                    string attributeValue = headerLine.substr(eqPos + 1, endPos);
-                    trim(attributeValue);
-                    
-                    bool parsingFailure(false);
-                    
-                    if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
-                        attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
-                        // STRING
-                        attributeValue = attributeValue.substr(1, attributeValue.length() - 2);
-                        trim(attributeValue);
-                        
-                        attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                        attribute.write(strType, attributeValue);
-                    } else if (attributeValue == "T" || attributeValue == "F") {
-                        // BOOLEAN
-                        bool attributeValueBool = (attributeValue == "T");
-                        attribute = outputGroup.createAttribute(attributeName, boolType, attributeDataSpace);
-                        attribute.write(boolType, &attributeValueBool);
-                    } else if (attributeValue.find('.') != std::string::npos) {
-                        // TRY TO PARSE AS DOUBLE
-                        try {
-                            double attributeValueDouble = std::stod(attributeValue);
-                            attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
-                            attribute.write(doubleType, &attributeValueDouble);
-                        } catch (const std::invalid_argument& ia) {
-                            cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << endl;
-                            parsingFailure = true;
-                        }
-                    } else {
-                        // TRY TO PARSE AS INTEGER
-                        try {
-                            int64_t attributeValueInt = std::stoi(attributeValue);
-                            attribute = outputGroup.createAttribute(attributeName, int64Type, attributeDataSpace);
-                            attribute.write(int64Type, &attributeValueInt);
-                        } catch (const std::invalid_argument& ia) {
-                            cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
-                            parsingFailure = true;
-                        }
+                    // TRY TO PARSE AS INTEGER
+                    try {
+                        int64_t attributeValueInt = std::stoi(attributeValue);
+                        attribute = outputGroup.createAttribute(attributeName, int64Type, attributeDataSpace);
+                        attribute.write(int64Type, &attributeValueInt);
+                    } catch (const std::invalid_argument& ia) {
+                        cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
+                        parsingFailure = true;
                     }
-                    
-                    if (parsingFailure) {
-                        // FALL BACK TO STRING
-                        attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                        attribute.write(strType, attributeValue);
-                    }
+                }
+                
+                if (parsingFailure) {
+                    // FALL BACK TO STRING
+                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
+                    attribute.write(strType, attributeValue);
                 }
             }
         }
