@@ -101,7 +101,20 @@ int main(int argc, char** argv) {
 
     DataSpace swizzledDataSpace(N, swizzledDims.data());
     DataSpace standardDataSpace(N, standardDims.data());
-
+    
+    DSetCreatPropList standardCreatePlist;
+    
+    if (N == 2) {
+        hsize_t tileDims[2] = {512, 512}; 
+        standardCreatePlist.setChunk(N, tileDims);
+    } else if (N == 3) {
+        hsize_t tileDims[3] = {1, 512, 512}; 
+        standardCreatePlist.setChunk(N, tileDims);
+    } else { // N == 4
+        hsize_t tileDims[4] = {1, 1, 512, 512}; 
+        standardCreatePlist.setChunk(N, tileDims);
+    }
+    
     string tempOutputFileName = outputFileName + ".tmp";
     H5File outputFile(tempOutputFileName, H5F_ACC_TRUNC);
     auto outputGroup = outputFile.createGroup("0");
@@ -188,7 +201,7 @@ int main(int argc, char** argv) {
         auto swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatDataType, swizzledDataSpace);
     }
 
-    auto standardDataSet = outputGroup.createDataSet("DATA", floatDataType, standardDataSpace);
+    auto standardDataSet = outputGroup.createDataSet("DATA", floatDataType, standardDataSpace, standardCreatePlist);
 
     auto cubeSize = depth * height * width;
     cout << "Allocating " << cubeSize * 4 * 2 * 1e-9 << " GB of memory..." << flush;
