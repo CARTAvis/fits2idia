@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <getopt.h>
 
 #include <H5Cpp.h>
 #include <fitsio.h>
@@ -15,16 +16,57 @@ using namespace std;
 #define HDF5_CONVERTER_VERSION "0.1.8"
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        cout << "Usage: hdf_convert {INPUT FITS file} {OUTPUT HDF5 file}" << endl;
+    extern int optind;
+    extern char *optarg;
+    
+    int opt;
+    bool err;
+    string usage = "Usage: hdf_convert [-o output_filename] [-s] input_filename\n\nConvert a FITS file to an HDF5 file with the IDIA schema\n\nOptions:\n\n-o\tOutput filename\n-s\tUse slower but less memory-intensive method (enable if memory allocation fails)";
+    
+    string inputFileName;
+    string outputFileName;
+    bool slow;
+    
+    while ((opt = getopt(argc, argv, ":o:s")) != -1) {
+        switch (opt) {
+            case 'o':
+                // TODO: output filename
+                outputFileName.assign(optarg);
+                break;
+            case 's':
+                // use slower but less memory-intensive method
+                slow = true;
+                break;
+            case ':':
+                err = true;
+                cerr << "Missing argument for option " << opt << "." << endl;
+                break;
+            case '?':
+                err = true;
+                cerr << "Unknown option " << opt << "." << endl;
+                break;
+        }
+    }
+    
+    if (optind >= argc) {
+        err = true;
+        cerr << "Missing input filename parameter." << endl;
+    } else {
+        inputFileName.assign(argv[optind]);
+        optind++;
+    }
+    
+    if (argc > optind) {
+        err = true;
+        cerr << "Unexpected additional parameters." << endl;
+    }
+    
+    if (err) {
+        cerr << usage << endl;
         return 1;
     }
-
-    string inputFileName = argv[1];
-    string outputFileName;
-    if (argc == 3) {
-        outputFileName = argv[2];
-    } else {
+    
+    if (outputFileName.empty()) {
         auto fitsIndex = inputFileName.find_last_of(".fits");
         if (fitsIndex != string::npos) {
             outputFileName = inputFileName.substr(0, fitsIndex - 4);
@@ -33,6 +75,7 @@ int main(int argc, char** argv) {
             outputFileName = inputFileName + ".hdf5";
         }
     }
+    
     cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << endl;
 
     FloatType floatDataType(PredType::NATIVE_FLOAT);
