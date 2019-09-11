@@ -177,16 +177,10 @@ int main(int argc, char** argv) {
     if (!getDims(inputFilePtr, N, stokes, depth, height, width)) {
         return 1;
     }
-    
-    cout << "N: " << N << " stokes: " << stokes << " depth: " << depth << " height: " << height << " width: " << width << endl;
-        
+            
     map<string, vector<hsize_t>> dataDims;
     map<string, int> numBins;
     getDataDims(N, stokes, depth, height, width, dataDims, numBins);
-    
-    for (auto& dim : dataDims["standard"]) {
-        cout << "main dset dim: " << dim << endl;
-    }
 
     int status = 0;
     DataSpace swizzledDataSpace(N, dataDims["swizzled"].data());
