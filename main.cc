@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <map>
 #include <getopt.h>
 
 #include <H5Cpp.h>
@@ -15,17 +16,13 @@ using namespace std;
 #define HDF5_CONVERTER "hdf_convert"
 #define HDF5_CONVERTER_VERSION "0.1.8"
 
-int main(int argc, char** argv) {
+bool getOptions(int argc, char** argv, string& inputFileName, string& outputFileName, bool& slow) {
     extern int optind;
     extern char *optarg;
     
     int opt;
-    bool err;
+    bool err(false);
     string usage = "Usage: hdf_convert [-o output_filename] [-s] input_filename\n\nConvert a FITS file to an HDF5 file with the IDIA schema\n\nOptions:\n\n-o\tOutput filename\n-s\tUse slower but less memory-intensive method (enable if memory allocation fails)";
-    
-    string inputFileName;
-    string outputFileName;
-    bool slow;
     
     while ((opt = getopt(argc, argv, ":o:s")) != -1) {
         switch (opt) {
@@ -60,10 +57,10 @@ int main(int argc, char** argv) {
         err = true;
         cerr << "Unexpected additional parameters." << endl;
     }
-    
+        
     if (err) {
         cerr << usage << endl;
-        return 1;
+        return false;
     }
     
     if (outputFileName.empty()) {
@@ -76,7 +73,91 @@ int main(int argc, char** argv) {
         }
     }
     
-    cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << endl;
+    return true;
+}
+
+bool openFitsFile(string inputFileName, fitsfile*& inputFilePtr) {
+    int status = 0;
+    int bitpix;
+    
+    fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
+    
+    if (status != 0) {
+        cerr << "error opening FITS file" << endl;
+        return false;
+    }
+    
+    fits_get_img_type(inputFilePtr, &bitpix, &status);
+
+    if (bitpix != -32) {
+        cerr << "Currently only supports FP32 files" << endl;
+        return false;
+    }
+
+    return true;
+}
+
+
+bool getDims(fitsfile* inputFilePtr, int& N, long& stokes, long& depth, long& height, long& width) {
+    int status = 0;
+    
+    fits_get_img_dim(inputFilePtr, &N, &status);
+    
+    if (N < 2 || N > 4) {
+        cerr << "Currently only supports 2D, 3D and 4D cubes" << endl;
+        return false;
+    }
+    
+    long dims[4];
+    fits_get_img_size(inputFilePtr, 4, dims, &status);
+        
+    stokes = N == 4 ? dims[3] : 1;
+    depth = N >= 3 ? dims[2] : 1;
+    height = dims[1];
+    width = dims[0];
+    
+    return true;
+}
+
+void getDataDims(int N, long stokes, long depth, long height, long width, map<string, vector<hsize_t>>& dataDims, map<string, int>& numBins) {
+    numBins["XY"] = int(std::max(sqrt(width * height), 2.0));
+    numBins["XYZ"] = numBins["XY"];
+    
+    dataDims["standard"] = {height, width};
+    dataDims["swizzled"] = {width, height};
+    dataDims["xyHistogram"] = {numBins["XY"]};
+    dataDims["xyStats"] = {};
+    dataDims["zStats"] = {height, width};
+    dataDims["xyzHistogram"] = {numBins["XYZ"]};
+    dataDims["xyzStats"] = {};
+    dataDims["tile"] = {512, 512};
+
+    if (N >= 3) {
+        for (const auto& d : {"standard", "xyHistogram", "xyStats"}) {
+            dataDims[d].insert(dataDims[d].begin(), depth);
+        }
+        dataDims["swizzled"].push_back(depth);
+        dataDims["tile"].insert(dataDims["tile"].begin(), 1);
+    }
+    
+    if (N == 4) {
+        for (auto & kv : dataDims) {
+            kv.second.insert(kv.second.begin(), stokes);
+        }
+        dataDims["tile"][0] = 1;
+    }
+}
+
+int main(int argc, char** argv) {
+    string inputFileName;
+    string outputFileName;
+    bool slow;
+    
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow)) {
+        return 1;
+    }
+    
+    cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
 
     FloatType floatDataType(PredType::NATIVE_FLOAT);
     floatDataType.setOrder(H5T_ORDER_LE);
@@ -86,77 +167,34 @@ int main(int argc, char** argv) {
     auto tStart = chrono::high_resolution_clock::now();
 
     fitsfile* inputFilePtr;
-    int status = 0;
-    int bitpix;
+        
+    if (!openFitsFile(inputFileName, inputFilePtr)) {
+        return 1;
+    }
+        
     int N;
-    fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
-    if (status != 0) {
-        cout << "error opening FITS file" << endl;
+    long stokes, depth, width, height;
+    
+    if (!getDims(inputFilePtr, N, stokes, depth, width, height)) {
         return 1;
     }
-    fits_get_img_type(inputFilePtr, &bitpix, &status);
-    fits_get_img_dim(inputFilePtr, &N, &status);
-
-    if (bitpix != -32) {
-        cout << "Currently only supports FP32 files" << endl;
-        return 1;
+    
+    cout << "N: " << N << " stokes: " << stokes << " depth: " << depth << " height: " << height << " width: " << width << endl;
+        
+    map<string, vector<hsize_t>> dataDims;
+    map<string, int> numBins;
+    getDataDims(N, stokes, depth, width, height, dataDims, numBins);
+    
+    for (auto& dim : dataDims["standard"]) {
+        cout << "main dset dim: " << dim << endl;
     }
 
-    if (N < 2 || N > 4) {
-        cout << "Currently only supports 2D, 3D and 4D cubes" << endl;
-        return 1;
-    }
-
-    long dims[4];
-    fits_get_img_size(inputFilePtr, 4, dims, &status);
-
-    auto stokes = N == 4 ? dims[3] : 1;
-    auto depth = N >= 3 ? dims[2] : 1;
-    auto height = dims[1];
-    auto width = dims[0];
-
-    int numBinsHistXY = int(std::max(sqrt(width * height), 2.0));
-    int numBinsHistXYZ = numBinsHistXY;
-
-    vector<hsize_t> standardDims = {height, width};
-    vector<hsize_t> swizzledDims = {width, height};
-    vector<hsize_t> xyHistogramDims = {numBinsHistXY};
-    vector<hsize_t> xyStatsDims = {};
-    vector<hsize_t> zStatsDims = {height, width};
-    vector<hsize_t> xyzHistogramDims = {numBinsHistXYZ};
-    vector<hsize_t> xyzStatsDims = {};
-
-    if (N >= 3) {
-        standardDims.insert(standardDims.begin(), depth);
-        swizzledDims.push_back(depth);
-        xyHistogramDims.insert(xyHistogramDims.begin(), depth);
-        xyStatsDims.insert(xyStatsDims.begin(), depth);
-    }
-    if (N == 4) {
-        standardDims.insert(standardDims.begin(), stokes);
-        swizzledDims.insert(swizzledDims.begin(), stokes);
-        xyHistogramDims.insert(xyHistogramDims.begin(), stokes);
-        xyStatsDims.insert(xyStatsDims.begin(), stokes);
-        zStatsDims.insert(zStatsDims.begin(), stokes);
-        xyzHistogramDims.insert(xyzHistogramDims.begin(), stokes);
-        xyzStatsDims.insert(xyzStatsDims.begin(), stokes);
-    }
-
-    DataSpace swizzledDataSpace(N, swizzledDims.data());
-    DataSpace standardDataSpace(N, standardDims.data());
+    int status = 0;
+    DataSpace swizzledDataSpace(N, dataDims["swizzled"].data());
+    DataSpace standardDataSpace(N, dataDims["standard"].data());
     
     DSetCreatPropList standardCreatePlist;
-    
-    if (N == 2) {
-        hsize_t tileDims[2] = {512, 512}; 
-        standardCreatePlist.setChunk(N, tileDims);
-    } else if (N == 3) {
-        hsize_t tileDims[3] = {1, 512, 512}; 
-        standardCreatePlist.setChunk(N, tileDims);
-    } else { // N == 4
-        hsize_t tileDims[4] = {1, 1, 512, 512}; 
-        standardCreatePlist.setChunk(N, tileDims);
-    }
+    standardCreatePlist.setChunk(N, dataDims["tile"].data());
     
     string tempOutputFileName = outputFileName + ".tmp";
     H5File outputFile(tempOutputFileName, H5F_ACC_TRUNC);
@@ -258,7 +296,7 @@ int main(int argc, char** argv) {
     vector<float> sumsSqXY(depth * stokes);
     vector<int64_t> nanCountsXY(depth * stokes);
     
-    vector<int64_t> histogramsXY(depth * stokes * numBinsHistXY);
+    vector<int64_t> histogramsXY(depth * stokes * numBins["XY"]);
     
     float* rotatedCube;
     
@@ -294,8 +332,8 @@ int main(int argc, char** argv) {
         nanCountsXYZ.resize(stokes);
         
         // XYZ histograms calculated using OpenMP and summed later
-        partialHistogramsXYZ.resize(depth * stokes * numBinsHistXYZ);
-        histogramsXYZ.resize(stokes * numBinsHistXYZ);
+        partialHistogramsXYZ.resize(depth * stokes * numBins["XYZ"]);
+        histogramsXYZ.resize(stokes * numBins["XYZ"]);
     }
 
     auto tEndAlloc = chrono::high_resolution_clock::now();
@@ -479,13 +517,13 @@ int main(int argc, char** argv) {
 
                 if (!isnan(val)) {
                     // XY Histogram
-                    int binIndex = min(numBinsHistXY - 1, (int)(numBinsHistXY * (val - sliceMin) / range));
-                    histogramsXY[currentStokes * depth * numBinsHistXY + i * numBinsHistXY + binIndex]++;
+                    int binIndex = min(numBins["XY"] - 1, (int)(numBins["XY"] * (val - sliceMin) / range));
+                    histogramsXY[currentStokes * depth * numBins["XY"] + i * numBins["XY"] + binIndex]++;
                     
                     if (depth > 1) {
                         // XYZ Partial histogram
-                        int binIndexXYZ = min(numBinsHistXYZ - 1, (int)(numBinsHistXYZ * (val - cubeMin) / cubeRange));
-                        partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + binIndexXYZ]++;
+                        int binIndexXYZ = min(numBins["XYZ"] - 1, (int)(numBins["XYZ"] * (val - cubeMin) / cubeRange));
+                        partialHistogramsXYZ[currentStokes * depth * numBins["XYZ"] + i * numBins["XYZ"] + binIndexXYZ]++;
                     }
                 }
             }
@@ -494,9 +532,9 @@ int main(int argc, char** argv) {
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             for (auto i = 0; i < depth; i++) {
-                for (auto j = 0; j < numBinsHistXYZ; j++) {
-                    histogramsXYZ[currentStokes * numBinsHistXYZ + j] +=
-                        partialHistogramsXYZ[currentStokes * depth * numBinsHistXYZ + i * numBinsHistXYZ + j];
+                for (auto j = 0; j < numBins["XYZ"]; j++) {
+                    histogramsXYZ[currentStokes * numBins["XYZ"] + j] +=
+                        partialHistogramsXYZ[currentStokes * depth * numBins["XYZ"] + i * numBins["XYZ"] + j];
                 }
             }
         }
@@ -541,8 +579,8 @@ int main(int argc, char** argv) {
     auto statsGroup = outputGroup.createGroup("Statistics");
     auto statsXYGroup = statsGroup.createGroup("XY");
     
-    DataSpace xyStatsDataSpace(N - 2, xyStatsDims.data());
-    DataSpace xyHistogramDataSpace(N - 1, xyHistogramDims.data());
+    DataSpace xyStatsDataSpace(N - 2, dataDims["xyStats"].data());
+    DataSpace xyHistogramDataSpace(N - 1, dataDims["xyHistogram"].data());
     
     auto xyMinDataSet = statsXYGroup.createDataSet("MIN", floatDataType, xyStatsDataSpace);
     auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", floatDataType, xyStatsDataSpace);
@@ -561,8 +599,8 @@ int main(int argc, char** argv) {
     if (depth > 1) {
         auto statsXYZGroup = statsGroup.createGroup("XYZ");
         
-        DataSpace xyzStatsDataSpace(N - 3, xyStatsDims.data());
-        DataSpace xyzHistogramDataSpace(N - 2, xyzHistogramDims.data());
+        DataSpace xyzStatsDataSpace(N - 3, dataDims["xyStats"].data());
+        DataSpace xyzHistogramDataSpace(N - 2, dataDims["xyzHistogram"].data());
         
         auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", floatDataType, xyzStatsDataSpace);
         auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", floatDataType, xyzStatsDataSpace);
@@ -580,7 +618,7 @@ int main(int argc, char** argv) {
 
         auto statsZGroup = statsGroup.createGroup("Z");
         
-        DataSpace zStatsDataSpace(N - 1, zStatsDims.data());
+        DataSpace zStatsDataSpace(N - 1, dataDims["zStats"].data());
         
         auto zMinDataSet = statsZGroup.createDataSet("MIN", floatDataType, zStatsDataSpace);
         auto zMaxDataSet = statsZGroup.createDataSet("MAX", floatDataType, zStatsDataSpace);
