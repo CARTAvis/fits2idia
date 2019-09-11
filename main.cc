@@ -97,7 +97,6 @@ bool openFitsFile(string inputFileName, fitsfile*& inputFilePtr) {
     return true;
 }
 
-
 bool getDims(fitsfile* inputFilePtr, int& N, long& stokes, long& depth, long& height, long& width) {
     int status = 0;
     
@@ -173,9 +172,9 @@ int main(int argc, char** argv) {
     }
         
     int N;
-    long stokes, depth, width, height;
+    long stokes, depth, height, width;
     
-    if (!getDims(inputFilePtr, N, stokes, depth, width, height)) {
+    if (!getDims(inputFilePtr, N, stokes, depth, height, width)) {
         return 1;
     }
     
@@ -183,7 +182,7 @@ int main(int argc, char** argv) {
         
     map<string, vector<hsize_t>> dataDims;
     map<string, int> numBins;
-    getDataDims(N, stokes, depth, width, height, dataDims, numBins);
+    getDataDims(N, stokes, depth, height, width, dataDims, numBins);
     
     for (auto& dim : dataDims["standard"]) {
         cout << "main dset dim: " << dim << endl;
