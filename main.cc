@@ -15,6 +15,7 @@ using namespace std;
 #define HDF5_CONVERTER "hdf_convert"
 #define HDF5_CONVERTER_VERSION "0.1.8"
 
+// TODO: this is messy and should be eliminated
 struct Types {
     Types() :
         strType(PredType::C_S1, 256),
@@ -35,6 +36,7 @@ struct Types {
     IntType intType;
 };
 
+// TODO: this should also incorporate stats vector sizes and dataspace dimensions
 struct DataDims {    
     DataDims(long height, long width, int numBinsXY, int numBinsXYZ, int tileSize) : 
         standard({height, width}), 
@@ -85,6 +87,53 @@ struct DataDims {
     vector<hsize_t> xyzHistogram;
     vector<hsize_t> xyzStats;
     vector<hsize_t> tile;
+};
+
+struct Stats {
+    Stats() {}
+    
+    Stats(long size, int numBins=0, long partialHistMult=0) : 
+        minVals(size, numeric_limits<float>::max()), 
+        maxVals(size, -numeric_limits<float>::max()),
+        sums(size),
+        sumsSq(size),
+        nanCounts(size),
+        partialHistograms(size * numBins * partialHistMult),
+        histograms(size * numBins)
+    {}
+    
+    void writeDset(Group group, string name, vector<float> vals, FloatType type, DataSpace dspace) {
+        auto dset = group.createDataSet(name, type, dspace);
+        dset.write(vals.data(), PredType::NATIVE_FLOAT);
+    }
+    
+    void writeDset(Group group, string name, vector<int64_t> vals, IntType type, DataSpace dspace) {
+        auto dset = group.createDataSet(name, type, dspace);
+        dset.write(vals.data(), PredType::NATIVE_INT64);
+    }
+    
+    void write(Group group, Types types, DataSpace statsDspace) {
+        writeDset(group, "MIN", minVals, types.floatType, statsDspace);
+        writeDset(group, "MAX", maxVals, types.floatType, statsDspace);
+        writeDset(group, "SUM", sums, types.floatType, statsDspace);
+        writeDset(group, "SUM_SQ", sumsSq, types.floatType, statsDspace);
+        
+        writeDset(group, "NAN_COUNT", nanCounts, types.intType, statsDspace);
+    }
+    
+    void write(Group group, Types types, DataSpace statsDspace, DataSpace histDspace) {
+        write(group, types, statsDspace);
+        
+        writeDset(group, "HISTOGRAM", histograms, types.intType, histDspace);
+    }
+
+    vector<float> minVals;
+    vector<float> maxVals;
+    vector<float> sums;
+    vector<float> sumsSq;
+    vector<int64_t> nanCounts;
+    vector<int64_t> partialHistograms;
+    vector<int64_t> histograms;
 };
 
 bool getOptions(int argc, char** argv, string& inputFileName, string& outputFileName, bool& slow) {
@@ -327,51 +376,16 @@ int main(int argc, char** argv) {
     auto tStartAlloc = chrono::high_resolution_clock::now();
 
     float* standardCube = new float[cubeSize];
-    
-    vector<float> minValsXY(depth * stokes);
-    vector<float> maxValsXY(depth * stokes);
-    vector<float> sumsXY(depth * stokes);
-    vector<float> sumsSqXY(depth * stokes);
-    vector<int64_t> nanCountsXY(depth * stokes);
-    
-    vector<int64_t> histogramsXY(depth * stokes * numBinsXY);
-    
     float* rotatedCube;
     
-    vector<float> minValsZ;
-    vector<float> maxValsZ;
-    vector<float> sumsZ;
-    vector<float> sumsSqZ;
-    vector<int64_t> nanCountsZ;
-
-    vector<float> minValsXYZ;
-    vector<float> maxValsXYZ;
-    vector<float> sumsXYZ;
-    vector<float> sumsSqXYZ;
-    vector<int64_t> nanCountsXYZ;
-    
-    // XYZ histograms calculated using OpenMP and summed later
-    vector<int64_t> partialHistogramsXYZ;
-    vector<int64_t> histogramsXYZ;
+    Stats statsXY = Stats(depth * stokes, numBinsXY);
+    Stats statsZ;
+    Stats statsXYZ;
     
     if (depth > 1) {
         rotatedCube = new float[cubeSize];
-        
-        minValsZ.resize(width * height * stokes, numeric_limits<float>::max());
-        maxValsZ.resize(width * height * stokes, -numeric_limits<float>::max());
-        sumsZ.resize(width * height * stokes);
-        sumsSqZ.resize(width * height * stokes);
-        nanCountsZ.resize(width * height * stokes);
-
-        minValsXYZ.resize(stokes);
-        maxValsXYZ.resize(stokes);
-        sumsXYZ.resize(stokes);
-        sumsSqXYZ.resize(stokes);
-        nanCountsXYZ.resize(stokes);
-        
-        // XYZ histograms calculated using OpenMP and summed later
-        partialHistogramsXYZ.resize(depth * stokes * numBinsXYZ);
-        histogramsXYZ.resize(stokes * numBinsXYZ);
+        statsZ = Stats(width * height * stokes);
+        statsXYZ = Stats(stokes, numBinsXYZ, depth);
     }
 
     auto tEndAlloc = chrono::high_resolution_clock::now();
@@ -433,18 +447,18 @@ int main(int argc, char** argv) {
 
             auto indexXY = currentStokes * depth + i;
             
-            nanCountsXY[indexXY] = nanCount;
+            statsXY.nanCounts[indexXY] = nanCount;
             
             if (nanCount != (height * width)) {
-                minValsXY[indexXY] = minVal;
-                maxValsXY[indexXY] = maxVal;
-                sumsXY[indexXY] = sum;
-                sumsSqXY[indexXY] = sumSq;
+                statsXY.minVals[indexXY] = minVal;
+                statsXY.maxVals[indexXY] = maxVal;
+                statsXY.sums[indexXY] = sum;
+                statsXY.sumsSq[indexXY] = sumSq;
             } else {
-                minValsXY[indexXY] = NAN;
-                maxValsXY[indexXY] = NAN;
-                sumsXY[indexXY] = NAN;
-                sumsSqXY[indexXY] = NAN;
+                statsXY.minVals[indexXY] = NAN;
+                statsXY.maxVals[indexXY] = NAN;
+                statsXY.sums[indexXY] = NAN;
+                statsXY.sumsSq[indexXY] = NAN;
             }
         }
         
@@ -456,26 +470,26 @@ int main(int argc, char** argv) {
             double xyzSum = 0;
             double xyzSumSq = 0;
             int64_t xyzNanCount = 0;
-            xyzMin = minValsXY[currentStokes * depth];
-            xyzMax = maxValsXY[currentStokes * depth];
+            xyzMin = statsXY.minVals[currentStokes * depth];
+            xyzMax = statsXY.maxVals[currentStokes * depth];
 
             for (auto i = 0; i < depth; i++) {
                 auto indexXY = currentStokes * depth + i;
-                auto sum = sumsXY[indexXY];
+                auto sum = statsXY.sums[indexXY];
                 if (!isnan(sum)) {
                     xyzSum += sum;
-                    xyzSumSq += sumsSqXY[indexXY];
-                    xyzMin = fmin(xyzMin, minValsXY[indexXY]);
-                    xyzMax = fmax(xyzMax, maxValsXY[indexXY]);
+                    xyzSumSq += statsXY.sumsSq[indexXY];
+                    xyzMin = fmin(xyzMin, statsXY.minVals[indexXY]);
+                    xyzMax = fmax(xyzMax, statsXY.maxVals[indexXY]);
                 }
-                xyzNanCount += nanCountsXY[indexXY];
+                xyzNanCount += statsXY.nanCounts[indexXY];
             }
 
-            sumsXYZ[currentStokes] = xyzSum;
-            sumsSqXYZ[currentStokes] = xyzSumSq;
-            minValsXYZ[currentStokes] = xyzMin;
-            maxValsXYZ[currentStokes] = xyzMax;
-            nanCountsXYZ[currentStokes] = xyzNanCount;
+            statsXYZ.sums[currentStokes] = xyzSum;
+            statsXYZ.sumsSq[currentStokes] = xyzSumSq;
+            statsXYZ.minVals[currentStokes] = xyzMin;
+            statsXYZ.maxVals[currentStokes] = xyzMax;
+            statsXYZ.nanCounts[currentStokes] = xyzNanCount;
         }
 
         cout << "1..." << flush;
@@ -508,18 +522,18 @@ int main(int argc, char** argv) {
                     
                     auto indexZ = currentStokes * width * height + k + j * width;
                     
-                    nanCountsZ[indexZ] = nanCount;
+                    statsZ.nanCounts[indexZ] = nanCount;
                     
                     if (nanCount != (height * width)) {
-                        minValsZ[indexZ] = minVal;
-                        maxValsZ[indexZ] = maxVal;
-                        sumsZ[indexZ] = sum;
-                        sumsSqZ[indexZ] = sumSq;
+                        statsZ.minVals[indexZ] = minVal;
+                        statsZ.maxVals[indexZ] = maxVal;
+                        statsZ.sums[indexZ] = sum;
+                        statsZ.sumsSq[indexZ] = sumSq;
                     } else {
-                        minValsZ[indexZ] = NAN;
-                        maxValsZ[indexZ] = NAN;
-                        sumsZ[indexZ] = NAN;
-                        sumsSqZ[indexZ] = NAN;
+                        statsZ.minVals[indexZ] = NAN;
+                        statsZ.maxVals[indexZ] = NAN;
+                        statsZ.sums[indexZ] = NAN;
+                        statsZ.sumsSq[indexZ] = NAN;
                     }
                 }
             }
@@ -542,8 +556,8 @@ int main(int argc, char** argv) {
 #pragma omp parallel for
         for (auto i = 0; i < depth; i++) {
             auto indexXY = currentStokes * depth + i;
-            double sliceMin = minValsXY[indexXY];
-            double sliceMax = maxValsXY[indexXY];
+            double sliceMin = statsXY.minVals[indexXY];
+            double sliceMax = statsXY.maxVals[indexXY];
             double range = sliceMax - sliceMin;
 
             if (isnan(sliceMin) || isnan(sliceMax) || range == 0) {
@@ -556,12 +570,12 @@ int main(int argc, char** argv) {
                 if (!isnan(val)) {
                     // XY Histogram
                     int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - sliceMin) / range));
-                    histogramsXY[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
+                    statsXY.histograms[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
                     
                     if (depth > 1) {
                         // XYZ Partial histogram
                         int binIndexXYZ = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                        partialHistogramsXYZ[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
+                        statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
                     }
                 }
             }
@@ -571,8 +585,8 @@ int main(int argc, char** argv) {
             // Consolidate partial XYZ histograms into final histogram
             for (auto i = 0; i < depth; i++) {
                 for (auto j = 0; j < numBinsXYZ; j++) {
-                    histogramsXYZ[currentStokes * numBinsXYZ + j] +=
-                        partialHistogramsXYZ[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + j];
+                    statsXYZ.histograms[currentStokes * numBinsXYZ + j] +=
+                        statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + j];
                 }
             }
         }
@@ -615,60 +629,21 @@ int main(int argc, char** argv) {
     }
 
     auto statsGroup = outputGroup.createGroup("Statistics");
-    auto statsXYGroup = statsGroup.createGroup("XY");
     
+    auto statsXYGroup = statsGroup.createGroup("XY");
     DataSpace xyStatsDataSpace(N - 2, dataDims.xyStats.data());
     DataSpace xyHistogramDataSpace(N - 1, dataDims.xyHistogram.data());
-    
-    auto xyMinDataSet = statsXYGroup.createDataSet("MIN", types.floatType, xyStatsDataSpace);
-    auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", types.floatType, xyStatsDataSpace);
-    auto xySumDataSet = statsXYGroup.createDataSet("SUM", types.floatType, xyStatsDataSpace);
-    auto xySumSqDataSet = statsXYGroup.createDataSet("SUM_SQ", types.floatType, xyStatsDataSpace);
-    auto xyNanCountDataSet = statsXYGroup.createDataSet("NAN_COUNT", types.intType, xyStatsDataSpace);
-    auto xyHistogramDataSet = statsXYGroup.createDataSet("HISTOGRAM", types.intType, xyHistogramDataSpace);
-
-    xyMinDataSet.write(minValsXY.data(), PredType::NATIVE_FLOAT);
-    xyMaxDataSet.write(maxValsXY.data(), PredType::NATIVE_FLOAT);
-    xySumDataSet.write(sumsXY.data(), PredType::NATIVE_FLOAT);
-    xySumSqDataSet.write(sumsSqXY.data(), PredType::NATIVE_FLOAT);
-    xyNanCountDataSet.write(nanCountsXY.data(), PredType::NATIVE_INT64);
-    xyHistogramDataSet.write(histogramsXY.data(), PredType::NATIVE_INT64);
+    statsXY.write(statsXYGroup, types, xyStatsDataSpace, xyHistogramDataSpace);
 
     if (depth > 1) {
         auto statsXYZGroup = statsGroup.createGroup("XYZ");
-        
-        DataSpace xyzStatsDataSpace(N - 3, dataDims.xyStats.data());
+        DataSpace xyzStatsDataSpace(N - 3, dataDims.xyzStats.data());
         DataSpace xyzHistogramDataSpace(N - 2, dataDims.xyzHistogram.data());
-        
-        auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", types.floatType, xyzStatsDataSpace);
-        auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", types.floatType, xyzStatsDataSpace);
-        auto xyzSumDataSet = statsXYZGroup.createDataSet("SUM", types.floatType, xyzStatsDataSpace);
-        auto xyzSumSqDataSet = statsXYZGroup.createDataSet("SUM_SQ", types.floatType, xyzStatsDataSpace);
-        auto xyzNanCountDataSet = statsXYZGroup.createDataSet("NAN_COUNT", types.intType, xyzStatsDataSpace);
-        auto xyzHistogramDataSet = statsXYZGroup.createDataSet("HISTOGRAM", types.intType, xyzHistogramDataSpace);
-        
-        xyzMinDataSet.write(minValsXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzMaxDataSet.write(maxValsXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzSumDataSet.write(sumsXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzSumSqDataSet.write(sumsSqXYZ.data(), PredType::NATIVE_FLOAT);
-        xyzNanCountDataSet.write(nanCountsXYZ.data(), PredType::NATIVE_INT64);
-        xyzHistogramDataSet.write(histogramsXYZ.data(), PredType::NATIVE_INT64);
+        statsXYZ.write(statsXYZGroup, types, xyzStatsDataSpace, xyzHistogramDataSpace);
 
         auto statsZGroup = statsGroup.createGroup("Z");
-        
         DataSpace zStatsDataSpace(N - 1, dataDims.zStats.data());
-        
-        auto zMinDataSet = statsZGroup.createDataSet("MIN", types.floatType, zStatsDataSpace);
-        auto zMaxDataSet = statsZGroup.createDataSet("MAX", types.floatType, zStatsDataSpace);
-        auto zSumDataSet = statsZGroup.createDataSet("SUM", types.floatType, zStatsDataSpace);
-        auto zSumSqDataSet = statsZGroup.createDataSet("SUM_SQ", types.floatType, zStatsDataSpace);
-        auto zNanCountDataSet = statsZGroup.createDataSet("NAN_COUNT", types.intType, zStatsDataSpace);
-
-        zMinDataSet.write(minValsZ.data(), PredType::NATIVE_FLOAT);
-        zMaxDataSet.write(maxValsZ.data(), PredType::NATIVE_FLOAT);
-        zSumDataSet.write(sumsZ.data(), PredType::NATIVE_FLOAT);
-        zSumSqDataSet.write(sumsSqZ.data(), PredType::NATIVE_FLOAT);
-        zNanCountDataSet.write(nanCountsZ.data(), PredType::NATIVE_INT64);
+        statsZ.write(statsZGroup, types, zStatsDataSpace);
     }
 
     outputFile.close();
