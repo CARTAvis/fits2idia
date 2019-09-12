@@ -16,6 +16,26 @@ using namespace std;
 #define HDF5_CONVERTER "hdf_convert"
 #define HDF5_CONVERTER_VERSION "0.1.8"
 
+struct Types {
+    Types() :
+        strType(PredType::C_S1, 256),
+        boolType(PredType::NATIVE_HBOOL), 
+        doubleType(PredType::NATIVE_DOUBLE),
+        floatType(PredType::NATIVE_FLOAT),
+        intType(PredType::NATIVE_INT64)
+    {
+        doubleType.setOrder(H5T_ORDER_LE);
+        floatType.setOrder(H5T_ORDER_LE);
+        intType.setOrder(H5T_ORDER_LE);
+    }
+    
+    StrType strType;
+    IntType boolType;
+    FloatType doubleType;
+    FloatType floatType;
+    IntType intType;
+};
+
 bool getOptions(int argc, char** argv, string& inputFileName, string& outputFileName, bool& slow) {
     extern int optind;
     extern char *optarg;
@@ -147,6 +167,84 @@ void getDataDims(int N, long stokes, long depth, long height, long width, map<st
     }
 }
 
+void writeHeaders(fitsfile* inputFilePtr, Types types, Group& outputGroup) {
+    int status = 0;
+    
+    DataSpace attributeDataSpace = DataSpace(H5S_SCALAR);
+    
+    Attribute attribute = outputGroup.createAttribute("SCHEMA_VERSION", types.strType, attributeDataSpace);
+    attribute.write(types.strType, SCHEMA_VERSION);
+    attribute = outputGroup.createAttribute("HDF5_CONVERTER", types.strType, attributeDataSpace);
+    attribute.write(types.strType, HDF5_CONVERTER);
+    attribute = outputGroup.createAttribute("HDF5_CONVERTER_VERSION", types.strType, attributeDataSpace);
+    attribute.write(types.strType, HDF5_CONVERTER_VERSION);
+
+    int numHeaders;
+    fits_get_hdrspace(inputFilePtr, &numHeaders, NULL, &status);
+    
+    char keyTmp[255];
+    char valueTmp[255];
+    
+    for (auto i = 0; i < numHeaders; i++) {
+        fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
+        string attributeName(keyTmp);
+        string attributeValue(valueTmp);
+        
+        if (attributeName.empty() || attributeName.find("COMMENT") == 0 || attributeName.find("HISTORY") == 0) {
+            // TODO we should actually do something about these
+        } else {
+            if (outputGroup.attrExists(attributeName)) {
+                cout << "Warning: Skipping duplicate attribute '" << attributeName << "'" << endl;
+            } else {
+                bool parsingFailure(false);
+                
+                if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
+                    attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
+                    // STRING
+                    int strLen;
+                    char strValueTmp[255];
+                    fits_read_string_key(inputFilePtr, attributeName.c_str(), 1, 255, strValueTmp, &strLen, NULL, &status);
+                    string attributeValueStr(strValueTmp);
+
+                    attribute = outputGroup.createAttribute(attributeName, types.strType, attributeDataSpace);
+                    attribute.write(types.strType, attributeValueStr);
+                } else if (attributeValue == "T" || attributeValue == "F") {
+                    // BOOLEAN
+                    bool attributeValueBool = (attributeValue == "T");
+                    attribute = outputGroup.createAttribute(attributeName, types.boolType, attributeDataSpace);
+                    attribute.write(types.boolType, &attributeValueBool);
+                } else if (attributeValue.find('.') != std::string::npos) {
+                    // TRY TO PARSE AS DOUBLE
+                    try {
+                        double attributeValueDouble = std::stod(attributeValue);
+                        attribute = outputGroup.createAttribute(attributeName, types.doubleType, attributeDataSpace);
+                        attribute.write(types.doubleType, &attributeValueDouble);
+                    } catch (const std::invalid_argument& ia) {
+                        cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << endl;
+                        parsingFailure = true;
+                    }
+                } else {
+                    // TRY TO PARSE AS INTEGER
+                    try {
+                        int64_t attributeValueInt = std::stoi(attributeValue);
+                        attribute = outputGroup.createAttribute(attributeName, types.intType, attributeDataSpace);
+                        attribute.write(types.intType, &attributeValueInt);
+                    } catch (const std::invalid_argument& ia) {
+                        cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
+                        parsingFailure = true;
+                    }
+                }
+                
+                if (parsingFailure) {
+                    // FALL BACK TO STRING
+                    attribute = outputGroup.createAttribute(attributeName, types.strType, attributeDataSpace);
+                    attribute.write(types.strType, attributeValue);
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     string inputFileName;
     string outputFileName;
@@ -157,12 +255,7 @@ int main(int argc, char** argv) {
     }
     
     cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
-
-    FloatType floatDataType(PredType::NATIVE_FLOAT);
-    floatDataType.setOrder(H5T_ORDER_LE);
-    IntType int64Type(PredType::NATIVE_INT64);
-    int64Type.setOrder(H5T_ORDER_LE);
-
+    
     auto tStart = chrono::high_resolution_clock::now();
 
     fitsfile* inputFilePtr;
@@ -191,91 +284,19 @@ int main(int argc, char** argv) {
     
     string tempOutputFileName = outputFileName + ".tmp";
     H5File outputFile(tempOutputFileName, H5F_ACC_TRUNC);
-    auto outputGroup = outputFile.createGroup("0");
+    Group outputGroup = outputFile.createGroup("0");
 
-    // Headers
-    DataSpace attributeDataSpace = DataSpace(H5S_SCALAR);
-    StrType strType(PredType::C_S1, 256);
-    IntType boolType(PredType::NATIVE_HBOOL);
-    FloatType doubleType(PredType::NATIVE_DOUBLE);
-    doubleType.setOrder(H5T_ORDER_LE);
-    
-    Attribute attribute = outputGroup.createAttribute("SCHEMA_VERSION", strType, attributeDataSpace);
-    attribute.write(strType, SCHEMA_VERSION);
-    attribute = outputGroup.createAttribute("HDF5_CONVERTER", strType, attributeDataSpace);
-    attribute.write(strType, HDF5_CONVERTER);
-    attribute = outputGroup.createAttribute("HDF5_CONVERTER_VERSION", strType, attributeDataSpace);
-    attribute.write(strType, HDF5_CONVERTER_VERSION);
+    Types types;
 
-    int numHeaders;
-    fits_get_hdrspace(inputFilePtr, &numHeaders, NULL, &status);
-    char keyTmp[255];
-    char valueTmp[255];
-    for (auto i = 0; i < numHeaders; i++) {
-        fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
-        string attributeName(keyTmp);
-        string attributeValue(valueTmp);
-        
-        if (attributeName.empty() || attributeName.find("COMMENT") == 0 || attributeName.find("HISTORY") == 0) {
-        } else {
-            if (outputGroup.attrExists(attributeName)) {
-                cout << "Warning: Skipping duplicate attribute '" << attributeName << "'" << endl;
-            } else {
-                bool parsingFailure(false);
-                
-                if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
-                    attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
-                    // STRING
-                    int strLen;
-                    char strValueTmp[255];
-                    fits_read_string_key(inputFilePtr, attributeName.c_str(), 1, 255, strValueTmp, &strLen, NULL, &status);
-                    string attributeValueStr(strValueTmp);
-
-                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                    attribute.write(strType, attributeValueStr);
-                } else if (attributeValue == "T" || attributeValue == "F") {
-                    // BOOLEAN
-                    bool attributeValueBool = (attributeValue == "T");
-                    attribute = outputGroup.createAttribute(attributeName, boolType, attributeDataSpace);
-                    attribute.write(boolType, &attributeValueBool);
-                } else if (attributeValue.find('.') != std::string::npos) {
-                    // TRY TO PARSE AS DOUBLE
-                    try {
-                        double attributeValueDouble = std::stod(attributeValue);
-                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
-                        attribute.write(doubleType, &attributeValueDouble);
-                    } catch (const std::invalid_argument& ia) {
-                        cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << endl;
-                        parsingFailure = true;
-                    }
-                } else {
-                    // TRY TO PARSE AS INTEGER
-                    try {
-                        int64_t attributeValueInt = std::stoi(attributeValue);
-                        attribute = outputGroup.createAttribute(attributeName, int64Type, attributeDataSpace);
-                        attribute.write(int64Type, &attributeValueInt);
-                    } catch (const std::invalid_argument& ia) {
-                        cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << endl;
-                        parsingFailure = true;
-                    }
-                }
-                
-                if (parsingFailure) {
-                    // FALL BACK TO STRING
-                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                    attribute.write(strType, attributeValue);
-                }
-            }
-        }
-    }
+    writeHeaders(inputFilePtr, types, outputGroup);
 
     if (depth > 1) {
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         string swizzledName = N == 3 ? "ZYX" : "ZYXW";
-        auto swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatDataType, swizzledDataSpace);
+        auto swizzledDataSet = swizzledGroup.createDataSet(swizzledName, types.floatType, swizzledDataSpace);
     }
 
-    auto standardDataSet = outputGroup.createDataSet("DATA", floatDataType, standardDataSpace, standardCreatePlist);
+    auto standardDataSet = outputGroup.createDataSet("DATA", types.floatType, standardDataSpace, standardCreatePlist);
 
     auto cubeSize = depth * height * width;
     cout << "Allocating " << cubeSize * 4 * 2 * 1e-9 << " GB of memory..." << flush;
@@ -575,12 +596,12 @@ int main(int argc, char** argv) {
     DataSpace xyStatsDataSpace(N - 2, dataDims["xyStats"].data());
     DataSpace xyHistogramDataSpace(N - 1, dataDims["xyHistogram"].data());
     
-    auto xyMinDataSet = statsXYGroup.createDataSet("MIN", floatDataType, xyStatsDataSpace);
-    auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", floatDataType, xyStatsDataSpace);
-    auto xySumDataSet = statsXYGroup.createDataSet("SUM", floatDataType, xyStatsDataSpace);
-    auto xySumSqDataSet = statsXYGroup.createDataSet("SUM_SQ", floatDataType, xyStatsDataSpace);
-    auto xyNanCountDataSet = statsXYGroup.createDataSet("NAN_COUNT", int64Type, xyStatsDataSpace);
-    auto xyHistogramDataSet = statsXYGroup.createDataSet("HISTOGRAM", int64Type, xyHistogramDataSpace);
+    auto xyMinDataSet = statsXYGroup.createDataSet("MIN", types.floatType, xyStatsDataSpace);
+    auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", types.floatType, xyStatsDataSpace);
+    auto xySumDataSet = statsXYGroup.createDataSet("SUM", types.floatType, xyStatsDataSpace);
+    auto xySumSqDataSet = statsXYGroup.createDataSet("SUM_SQ", types.floatType, xyStatsDataSpace);
+    auto xyNanCountDataSet = statsXYGroup.createDataSet("NAN_COUNT", types.intType, xyStatsDataSpace);
+    auto xyHistogramDataSet = statsXYGroup.createDataSet("HISTOGRAM", types.intType, xyHistogramDataSpace);
 
     xyMinDataSet.write(minValsXY.data(), PredType::NATIVE_FLOAT);
     xyMaxDataSet.write(maxValsXY.data(), PredType::NATIVE_FLOAT);
@@ -595,12 +616,12 @@ int main(int argc, char** argv) {
         DataSpace xyzStatsDataSpace(N - 3, dataDims["xyStats"].data());
         DataSpace xyzHistogramDataSpace(N - 2, dataDims["xyzHistogram"].data());
         
-        auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", floatDataType, xyzStatsDataSpace);
-        auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", floatDataType, xyzStatsDataSpace);
-        auto xyzSumDataSet = statsXYZGroup.createDataSet("SUM", floatDataType, xyzStatsDataSpace);
-        auto xyzSumSqDataSet = statsXYZGroup.createDataSet("SUM_SQ", floatDataType, xyzStatsDataSpace);
-        auto xyzNanCountDataSet = statsXYZGroup.createDataSet("NAN_COUNT", int64Type, xyzStatsDataSpace);
-        auto xyzHistogramDataSet = statsXYZGroup.createDataSet("HISTOGRAM", int64Type, xyzHistogramDataSpace);
+        auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", types.floatType, xyzStatsDataSpace);
+        auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", types.floatType, xyzStatsDataSpace);
+        auto xyzSumDataSet = statsXYZGroup.createDataSet("SUM", types.floatType, xyzStatsDataSpace);
+        auto xyzSumSqDataSet = statsXYZGroup.createDataSet("SUM_SQ", types.floatType, xyzStatsDataSpace);
+        auto xyzNanCountDataSet = statsXYZGroup.createDataSet("NAN_COUNT", types.intType, xyzStatsDataSpace);
+        auto xyzHistogramDataSet = statsXYZGroup.createDataSet("HISTOGRAM", types.intType, xyzHistogramDataSpace);
         
         xyzMinDataSet.write(minValsXYZ.data(), PredType::NATIVE_FLOAT);
         xyzMaxDataSet.write(maxValsXYZ.data(), PredType::NATIVE_FLOAT);
@@ -613,11 +634,11 @@ int main(int argc, char** argv) {
         
         DataSpace zStatsDataSpace(N - 1, dataDims["zStats"].data());
         
-        auto zMinDataSet = statsZGroup.createDataSet("MIN", floatDataType, zStatsDataSpace);
-        auto zMaxDataSet = statsZGroup.createDataSet("MAX", floatDataType, zStatsDataSpace);
-        auto zSumDataSet = statsZGroup.createDataSet("SUM", floatDataType, zStatsDataSpace);
-        auto zSumSqDataSet = statsZGroup.createDataSet("SUM_SQ", floatDataType, zStatsDataSpace);
-        auto zNanCountDataSet = statsZGroup.createDataSet("NAN_COUNT", int64Type, zStatsDataSpace);
+        auto zMinDataSet = statsZGroup.createDataSet("MIN", types.floatType, zStatsDataSpace);
+        auto zMaxDataSet = statsZGroup.createDataSet("MAX", types.floatType, zStatsDataSpace);
+        auto zSumDataSet = statsZGroup.createDataSet("SUM", types.floatType, zStatsDataSpace);
+        auto zSumSqDataSet = statsZGroup.createDataSet("SUM_SQ", types.floatType, zStatsDataSpace);
+        auto zNanCountDataSet = statsZGroup.createDataSet("NAN_COUNT", types.intType, zStatsDataSpace);
 
         zMinDataSet.write(minValsZ.data(), PredType::NATIVE_FLOAT);
         zMaxDataSet.write(maxValsZ.data(), PredType::NATIVE_FLOAT);
