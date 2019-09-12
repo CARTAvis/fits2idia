@@ -3,7 +3,6 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
-#include <map>
 #include <getopt.h>
 
 #include <H5Cpp.h>
@@ -34,6 +33,58 @@ struct Types {
     FloatType doubleType;
     FloatType floatType;
     IntType intType;
+};
+
+struct DataDims {    
+    DataDims(long height, long width, int numBinsXY, int numBinsXYZ, int tileSize) : 
+        standard({height, width}), 
+        swizzled({width, height}), 
+        xyHistogram({numBinsXY}), 
+        zStats({height, width}), 
+        xyzHistogram({numBinsXYZ}), 
+        tile({tileSize, tileSize}) 
+    {}
+    
+    DataDims(long depth, long height, long width, int numBinsXY, int numBinsXYZ, int tileSize) : 
+        standard({depth, height, width}), 
+        swizzled({width, height, depth}), 
+        xyHistogram({depth, numBinsXY}), 
+        xyStats({depth}), 
+        zStats({height, width}), 
+        xyzHistogram({numBinsXYZ}), 
+        tile({1, tileSize, tileSize}) 
+    {}
+    
+    DataDims(long stokes, long depth, long height, long width, int numBinsXY, int numBinsXYZ, int tileSize) : 
+        standard({stokes, depth, height, width}), 
+        swizzled({stokes, width, height, depth}), 
+        xyHistogram({stokes, depth, numBinsXY}), 
+        xyStats({stokes, depth}), 
+        zStats({stokes, height, width}), 
+        xyzHistogram({stokes, numBinsXYZ}), 
+        xyzStats({stokes}), 
+        tile({1, 1, tileSize, tileSize}) 
+    {}
+    
+    static DataDims getDataDims(int N, long stokes, long depth, long height, long width, int numBinsXY, int numBinsXYZ, int tileSize)
+    {
+        if (N == 2) {
+            return DataDims(height, width, numBinsXY, numBinsXYZ, tileSize);
+        } else if (N == 3) {
+            return DataDims(depth, height, width, numBinsXY, numBinsXYZ, tileSize);
+        } else if (N == 4) {
+            return DataDims(stokes, depth, height, width, numBinsXY, numBinsXYZ, tileSize);
+        }
+    }
+
+    vector<hsize_t> standard;
+    vector<hsize_t> swizzled;
+    vector<hsize_t> xyHistogram;
+    vector<hsize_t> xyStats;
+    vector<hsize_t> zStats;
+    vector<hsize_t> xyzHistogram;
+    vector<hsize_t> xyzStats;
+    vector<hsize_t> tile;
 };
 
 bool getOptions(int argc, char** argv, string& inputFileName, string& outputFileName, bool& slow) {
@@ -136,35 +187,6 @@ bool getDims(fitsfile* inputFilePtr, int& N, long& stokes, long& depth, long& he
     width = dims[0];
     
     return true;
-}
-
-void getDataDims(int N, long stokes, long depth, long height, long width, map<string, vector<hsize_t>>& dataDims, map<string, int>& numBins) {
-    numBins["XY"] = int(std::max(sqrt(width * height), 2.0));
-    numBins["XYZ"] = numBins["XY"];
-    
-    dataDims["standard"] = {height, width};
-    dataDims["swizzled"] = {width, height};
-    dataDims["xyHistogram"] = {numBins["XY"]};
-    dataDims["xyStats"] = {};
-    dataDims["zStats"] = {height, width};
-    dataDims["xyzHistogram"] = {numBins["XYZ"]};
-    dataDims["xyzStats"] = {};
-    dataDims["tile"] = {512, 512};
-
-    if (N >= 3) {
-        for (const auto& d : {"standard", "xyHistogram", "xyStats"}) {
-            dataDims[d].insert(dataDims[d].begin(), depth);
-        }
-        dataDims["swizzled"].push_back(depth);
-        dataDims["tile"].insert(dataDims["tile"].begin(), 1);
-    }
-    
-    if (N == 4) {
-        for (auto & kv : dataDims) {
-            kv.second.insert(kv.second.begin(), stokes);
-        }
-        dataDims["tile"][0] = 1;
-    }
 }
 
 void writeHeaders(fitsfile* inputFilePtr, Types types, Group& outputGroup) {
@@ -270,17 +292,19 @@ int main(int argc, char** argv) {
     if (!getDims(inputFilePtr, N, stokes, depth, height, width)) {
         return 1;
     }
+    
+    int numBinsXY = int(std::max(sqrt(width * height), 2.0));
+    int numBinsXYZ = numBinsXY;
+    int tileSize = 512;
             
-    map<string, vector<hsize_t>> dataDims;
-    map<string, int> numBins;
-    getDataDims(N, stokes, depth, height, width, dataDims, numBins);
+    DataDims dataDims = DataDims::getDataDims(N, stokes, depth, height, width, numBinsXY, numBinsXYZ, tileSize);
 
     int status = 0;
-    DataSpace swizzledDataSpace(N, dataDims["swizzled"].data());
-    DataSpace standardDataSpace(N, dataDims["standard"].data());
+    DataSpace swizzledDataSpace(N, dataDims.swizzled.data());
+    DataSpace standardDataSpace(N, dataDims.standard.data());
     
     DSetCreatPropList standardCreatePlist;
-    standardCreatePlist.setChunk(N, dataDims["tile"].data());
+    standardCreatePlist.setChunk(N, dataDims.tile.data());
     
     string tempOutputFileName = outputFileName + ".tmp";
     H5File outputFile(tempOutputFileName, H5F_ACC_TRUNC);
@@ -310,7 +334,7 @@ int main(int argc, char** argv) {
     vector<float> sumsSqXY(depth * stokes);
     vector<int64_t> nanCountsXY(depth * stokes);
     
-    vector<int64_t> histogramsXY(depth * stokes * numBins["XY"]);
+    vector<int64_t> histogramsXY(depth * stokes * numBinsXY);
     
     float* rotatedCube;
     
@@ -346,8 +370,8 @@ int main(int argc, char** argv) {
         nanCountsXYZ.resize(stokes);
         
         // XYZ histograms calculated using OpenMP and summed later
-        partialHistogramsXYZ.resize(depth * stokes * numBins["XYZ"]);
-        histogramsXYZ.resize(stokes * numBins["XYZ"]);
+        partialHistogramsXYZ.resize(depth * stokes * numBinsXYZ);
+        histogramsXYZ.resize(stokes * numBinsXYZ);
     }
 
     auto tEndAlloc = chrono::high_resolution_clock::now();
@@ -531,13 +555,13 @@ int main(int argc, char** argv) {
 
                 if (!isnan(val)) {
                     // XY Histogram
-                    int binIndex = min(numBins["XY"] - 1, (int)(numBins["XY"] * (val - sliceMin) / range));
-                    histogramsXY[currentStokes * depth * numBins["XY"] + i * numBins["XY"] + binIndex]++;
+                    int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - sliceMin) / range));
+                    histogramsXY[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
                     
                     if (depth > 1) {
                         // XYZ Partial histogram
-                        int binIndexXYZ = min(numBins["XYZ"] - 1, (int)(numBins["XYZ"] * (val - cubeMin) / cubeRange));
-                        partialHistogramsXYZ[currentStokes * depth * numBins["XYZ"] + i * numBins["XYZ"] + binIndexXYZ]++;
+                        int binIndexXYZ = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                        partialHistogramsXYZ[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
                     }
                 }
             }
@@ -546,9 +570,9 @@ int main(int argc, char** argv) {
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             for (auto i = 0; i < depth; i++) {
-                for (auto j = 0; j < numBins["XYZ"]; j++) {
-                    histogramsXYZ[currentStokes * numBins["XYZ"] + j] +=
-                        partialHistogramsXYZ[currentStokes * depth * numBins["XYZ"] + i * numBins["XYZ"] + j];
+                for (auto j = 0; j < numBinsXYZ; j++) {
+                    histogramsXYZ[currentStokes * numBinsXYZ + j] +=
+                        partialHistogramsXYZ[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + j];
                 }
             }
         }
@@ -593,8 +617,8 @@ int main(int argc, char** argv) {
     auto statsGroup = outputGroup.createGroup("Statistics");
     auto statsXYGroup = statsGroup.createGroup("XY");
     
-    DataSpace xyStatsDataSpace(N - 2, dataDims["xyStats"].data());
-    DataSpace xyHistogramDataSpace(N - 1, dataDims["xyHistogram"].data());
+    DataSpace xyStatsDataSpace(N - 2, dataDims.xyStats.data());
+    DataSpace xyHistogramDataSpace(N - 1, dataDims.xyHistogram.data());
     
     auto xyMinDataSet = statsXYGroup.createDataSet("MIN", types.floatType, xyStatsDataSpace);
     auto xyMaxDataSet = statsXYGroup.createDataSet("MAX", types.floatType, xyStatsDataSpace);
@@ -613,8 +637,8 @@ int main(int argc, char** argv) {
     if (depth > 1) {
         auto statsXYZGroup = statsGroup.createGroup("XYZ");
         
-        DataSpace xyzStatsDataSpace(N - 3, dataDims["xyStats"].data());
-        DataSpace xyzHistogramDataSpace(N - 2, dataDims["xyzHistogram"].data());
+        DataSpace xyzStatsDataSpace(N - 3, dataDims.xyStats.data());
+        DataSpace xyzHistogramDataSpace(N - 2, dataDims.xyzHistogram.data());
         
         auto xyzMinDataSet = statsXYZGroup.createDataSet("MIN", types.floatType, xyzStatsDataSpace);
         auto xyzMaxDataSet = statsXYZGroup.createDataSet("MAX", types.floatType, xyzStatsDataSpace);
@@ -632,7 +656,7 @@ int main(int argc, char** argv) {
 
         auto statsZGroup = statsGroup.createGroup("Z");
         
-        DataSpace zStatsDataSpace(N - 1, dataDims["zStats"].data());
+        DataSpace zStatsDataSpace(N - 1, dataDims.zStats.data());
         
         auto zMinDataSet = statsZGroup.createDataSet("MIN", types.floatType, zStatsDataSpace);
         auto zMaxDataSet = statsZGroup.createDataSet("MAX", types.floatType, zStatsDataSpace);
