@@ -181,31 +181,30 @@ public:
         outputGroup = outputFile.createGroup("0");
         
         // TODO: I'm sure there's a way to avoid doing some of this and to remove some of the duplication with the stats size
-
+        // TODO: pass the dimensions, N and the stats axes into the stats constructor (factory method)?
+        if (N == 2) {
+            standardDims = {height, width};
+            swizzledDims = {width, height};
+            xyStatsDims = {};
+            xyHistogramDims = {numBinsXY};
+        } else if (N == 3) {
+            standardDims = {depth, height, width};
+            swizzledDims = {width, height, depth};
+            xyStatsDims = {depth};
+            xyHistogramDims = {depth, numBinsXY};
+            xyzStatsDims = {};
+            xyzHistogramDims = {numBinsXYZ};
+            zStatsDims = {height, width};
             
-            if (N == 2) {
-                standardDims = {height, width};
-                swizzledDims = {width, height};
-                xyStatsDims = {};
-                xyHistogramDims = {numBinsXY};
-            } else if (N == 3) {
-                standardDims = {depth, height, width};
-                swizzledDims = {width, height, depth};
-                xyStatsDims = {depth};
-                xyHistogramDims = {depth, numBinsXY};
-                xyzStatsDims = {};
-                xyzHistogramDims = {numBinsXYZ};
-                zStatsDims = {height, width};
-                
-            } else if (N == 4) {
-                standardDims = {stokes, depth, height, width};
-                swizzledDims = {stokes, width, height, depth};
-                xyStatsDims = {stokes, depth};
-                xyHistogramDims = {stokes, depth, numBinsXY};
-                xyzStatsDims = {stokes};
-                xyzHistogramDims = {stokes, numBinsXYZ};
-                zStatsDims = {stokes, height, width};
-            }
+        } else if (N == 4) {
+            standardDims = {stokes, depth, height, width};
+            swizzledDims = {stokes, width, height, depth};
+            xyStatsDims = {stokes, depth};
+            xyHistogramDims = {stokes, depth, numBinsXY};
+            xyzStatsDims = {stokes};
+            xyzHistogramDims = {stokes, numBinsXYZ};
+            zStatsDims = {stokes, height, width};
+        }
     }
     
     ~Image() {
