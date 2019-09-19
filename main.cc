@@ -17,17 +17,106 @@ using namespace std;
 
 #define TILE_SIZE 512
 
+
+struct StatsDims {
+    StatsDims() {}
+    
+    StatsDims(vector<hsize_t> statsDims, hsize_t statsSize, int numBins=0, hsize_t partialHistMult=0) :
+        statsDims(statsDims),
+        statsSize(statsSize),
+        histSize(statsSize * numBins),
+        partialHistSize(statsSize * numBins * partialHistMult),
+        numBins(numBins)
+    {
+        if (numBins) {
+            for (auto d : statsDims) {
+                histDims.push_back(d);
+            }
+            histDims.push_back(numBins);
+        }
+    }
+    
+    vector<hsize_t> statsDims;
+    vector<hsize_t> histDims;
+    hsize_t statsSize;
+    hsize_t histSize;
+    hsize_t partialHistSize;
+    int numBins;
+};
+
+// This is a bit repetitive but I think it's best to define each case explicitly
+struct Dims {
+    Dims() {}
+    
+    Dims(hsize_t width, hsize_t height) :
+        N(2),
+        width(width), height(height), depth(1), stokes(1),
+        standard({height, width}),
+        swizzled({width, height}),
+        tileDims({TILE_SIZE, TILE_SIZE}),
+        statsXY({}, depth * stokes, defaultBins()) // dims, size, bins
+    {}
+    
+    Dims(hsize_t width, hsize_t height, hsize_t depth) :
+        N(3),
+        width(width), height(height), depth(depth), stokes(1),
+        standard({depth, height, width}),
+        swizzled({width, height, depth}),
+        tileDims({1, TILE_SIZE, TILE_SIZE}),
+        statsXY({depth}, depth * stokes, defaultBins()), // dims, size, bins
+        statsXYZ({}, stokes, defaultBins(), depth), // dims, size, bins, partial multiplier
+        statsZ({height, width}, width * height * stokes) // dims, size
+    {}
+
+    Dims(hsize_t width, hsize_t height, hsize_t depth, hsize_t stokes) :
+        N(4),
+        width(width), height(height), depth(depth), stokes(stokes),
+        standard({stokes, depth, height, width}),
+        swizzled({stokes, width, height, depth}),
+        tileDims({1, 1, TILE_SIZE, TILE_SIZE}),
+        statsXY({stokes, depth}, depth * stokes, defaultBins()), // dims, size, bins
+        statsXYZ({stokes}, stokes, defaultBins(), depth), // dims, size, bins, partial multiplier
+        statsZ({stokes, height, width}, width * height * stokes) // dims, size
+    {}
+    
+    int defaultBins() {
+        return int(std::max(sqrt(width * height), 2.0));
+    }
+    
+    static Dims makeDims(int N, long* dims) {
+        if (N == 2) {
+            return Dims(dims[0], dims[1]);
+        } else if (N == 3) {
+            return Dims(dims[0], dims[1], dims[2]);
+        } else if (N == 4) {
+            return Dims(dims[0], dims[1], dims[2], dims[3]);
+        }
+    }
+
+    int N;
+    hsize_t width, height, depth, stokes;
+    
+    vector<hsize_t> standard;
+    vector<hsize_t> swizzled;
+    vector<hsize_t> tileDims;
+    
+    StatsDims statsXY;
+    StatsDims statsXYZ;
+    StatsDims statsZ;
+};
+
 struct Stats {
     Stats() {}
     
-    Stats(long size, int numBins=0, long partialHistMult=0) : 
-        minVals(size, numeric_limits<float>::max()), 
-        maxVals(size, -numeric_limits<float>::max()),
-        sums(size),
-        sumsSq(size),
-        nanCounts(size),
-        partialHistograms(size * numBins * partialHistMult),
-        histograms(size * numBins)
+    Stats(StatsDims dims) : 
+        dims(dims),
+        minVals(dims.statsSize, numeric_limits<float>::max()), 
+        maxVals(dims.statsSize, -numeric_limits<float>::max()),
+        sums(dims.statsSize),
+        sumsSq(dims.statsSize),
+        nanCounts(dims.statsSize),
+        partialHistograms(dims.histSize),
+        histograms(dims.partialHistSize)
     {}
     
     void writeDset(Group& group, string name, vector<float>& vals, FloatType type, DataSpace dspace) {
@@ -39,21 +128,22 @@ struct Stats {
         auto dset = group.createDataSet(name, type, dspace);
         dset.write(vals.data(), PredType::NATIVE_INT64);
     }
-    
-    void write(Group& group, DataSpace statsSpace, FloatType floatType, IntType intType) {
+
+    void write(Group& group, FloatType floatType, IntType intType) {
+        auto statsSpace = DataSpace(dims.statsDims.size(), dims.statsDims.data());
         writeDset(group, "MIN", minVals, floatType, statsSpace);
         writeDset(group, "MAX", maxVals, floatType, statsSpace);
         writeDset(group, "SUM", sums, floatType, statsSpace);
         writeDset(group, "SUM_SQ", sumsSq, floatType, statsSpace);
-        
         writeDset(group, "NAN_COUNT", nanCounts, intType, statsSpace);
+        
+        if (dims.histSize) {
+            auto histSpace = DataSpace(dims.histDims.size(), dims.histDims.data());
+            writeDset(group, "HISTOGRAM", histograms, intType, histSpace);
+        }
     }
     
-    void write(Group& group, DataSpace statsSpace, DataSpace histSpace, FloatType floatType, IntType intType) {
-        write(group, statsSpace, floatType, intType);
-        
-        writeDset(group, "HISTOGRAM", histograms, intType, histSpace);
-    }
+    StatsDims dims;
 
     vector<float> minVals;
     vector<float> maxVals;
@@ -129,7 +219,6 @@ public:
     Image() {}
     
     Image(string inputFileName, string outputFileName, bool slow) :
-        tileDims({TILE_SIZE, TILE_SIZE}),
         status(0),
         strType(PredType::C_S1, 256),
         boolType(PredType::NATIVE_HBOOL), 
@@ -164,9 +253,6 @@ public:
         height = dims[1];
         width = dims[0];
         
-        numBinsXY = int(std::max(sqrt(width * height), 2.0));
-        numBinsXYZ = numBinsXY;
-        
         this->slow = slow;
         
         // Customise types
@@ -174,37 +260,15 @@ public:
         floatType.setOrder(H5T_ORDER_LE);
         intType.setOrder(H5T_ORDER_LE);
         
+        // Dimensions of various datasets
+        this->dims = Dims::makeDims(N, dims);
+        
+        // Prepare output file
         this->outputFileName = outputFileName;
         tempOutputFileName = outputFileName + ".tmp";
         
         outputFile = H5File(tempOutputFileName, H5F_ACC_TRUNC);
         outputGroup = outputFile.createGroup("0");
-        
-        // TODO: I'm sure there's a way to avoid doing some of this and to remove some of the duplication with the stats size
-        // TODO: pass the dimensions, N and the stats axes into the stats constructor (factory method)?
-        if (N == 2) {
-            standardDims = {height, width};
-            swizzledDims = {width, height};
-            xyStatsDims = {};
-            xyHistogramDims = {numBinsXY};
-        } else if (N == 3) {
-            standardDims = {depth, height, width};
-            swizzledDims = {width, height, depth};
-            xyStatsDims = {depth};
-            xyHistogramDims = {depth, numBinsXY};
-            xyzStatsDims = {};
-            xyzHistogramDims = {numBinsXYZ};
-            zStatsDims = {height, width};
-            
-        } else if (N == 4) {
-            standardDims = {stokes, depth, height, width};
-            swizzledDims = {stokes, width, height, depth};
-            xyStatsDims = {stokes, depth};
-            xyHistogramDims = {stokes, depth, numBinsXY};
-            xyzStatsDims = {stokes};
-            xyzHistogramDims = {stokes, numBinsXYZ};
-            zStatsDims = {stokes, height, width};
-        }
     }
     
     ~Image() {
@@ -294,14 +358,17 @@ public:
 
         standardCube = new float[cubeSize];
         
-        statsXY = Stats(depth * stokes, numBinsXY);
+        statsXY = Stats(dims.statsXY);
+        int numBinsXY = dims.statsXY.numBins;
+        int numBinsXYZ;
         
         if (depth > 1) {
             if (!slow) {
                 rotatedCube = new float[cubeSize];
             }
-            statsZ = Stats(width * height * stokes);
-            statsXYZ = Stats(stokes, numBinsXYZ, depth);
+            statsZ = Stats(dims.statsZ);
+            statsXYZ = Stats(dims.statsXYZ);
+            numBinsXYZ = dims.statsXYZ.numBins;
         }
 
         auto tEndAlloc = chrono::high_resolution_clock::now();
@@ -309,13 +376,13 @@ public:
         cout << "Done in " << dtAlloc * 1e-3 << " seconds" << endl;
             
         DSetCreatPropList standardCreatePlist;
-        standardCreatePlist.setChunk(N, tileDims.data());
-        auto standardDataSpace = DataSpace(N, standardDims.data());
+        standardCreatePlist.setChunk(N, dims.tileDims.data());
+        auto standardDataSpace = DataSpace(N, dims.standard.data());
         
         if (depth > 1) {
             auto swizzledGroup = outputGroup.createGroup("SwizzledData");
             string swizzledName = N == 3 ? "ZYX" : "ZYXW";
-            auto swizzledDataSpace = DataSpace(N, swizzledDims.data());
+            auto swizzledDataSpace = DataSpace(N, dims.swizzled.data());
             auto swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatType, swizzledDataSpace);
         }
 
@@ -562,19 +629,14 @@ public:
 
         auto statsGroup = outputGroup.createGroup("Statistics");
         
-        auto xyStatsDataSpace = DataSpace(N - 2, xyStatsDims.data());
-        auto xyHistogramDataSpace = DataSpace(N - 1, xyHistogramDims.data());
         auto statsXYGroup = statsGroup.createGroup("XY"); 
-        statsXY.write(statsXYGroup, xyStatsDataSpace, xyHistogramDataSpace, floatType, intType);
+        statsXY.write(statsXYGroup, floatType, intType);
 
         if (depth > 1) {
-            auto xyzStatsDataSpace = DataSpace(N - 3, xyzStatsDims.data());
-            auto xyzHistogramDataSpace = DataSpace(N - 2, xyzHistogramDims.data());
-            auto zStatsDataSpace = DataSpace(N - 1, zStatsDims.data());
             auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
             auto statsZGroup = statsGroup.createGroup("Z"); 
-            statsXYZ.write(statsXYZGroup, xyzStatsDataSpace, xyzHistogramDataSpace, floatType, intType);
-            statsZ.write(statsZGroup, zStatsDataSpace, floatType, intType);
+            statsXYZ.write(statsXYZGroup, floatType, intType);
+            statsZ.write(statsZGroup, floatType, intType);
         }
         
         delete[] standardCube;
@@ -616,18 +678,8 @@ private:
     bool slow;
     
     int N;
-    long stokes, depth, height, width;
-    int numBinsXY, numBinsXYZ;
-
-    // Dimensions
-    vector<hsize_t> standardDims;
-    vector<hsize_t> swizzledDims;
-    vector<hsize_t> xyStatsDims;
-    vector<hsize_t> xyHistogramDims;
-    vector<hsize_t> xyzStatsDims;
-    vector<hsize_t> xyzHistogramDims;
-    vector<hsize_t> zStatsDims;
-    vector<hsize_t> tileDims;
+    hsize_t stokes, depth, height, width;
+    Dims dims;
     
     // Types
     StrType strType;
