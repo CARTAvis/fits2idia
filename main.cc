@@ -595,14 +595,14 @@ public:
             
             auto standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
             auto sliceDataSpace = standardDataSet.getSpace();
-            
+                        
             vector<hsize_t> count;
             vector<hsize_t> start;
             
             if (N == 2) {
                 count = {height, width};
                 start = {0, 0};
-            } else if (N >= 3) {
+            } else if (N == 3) {
                 count = {depth, height, width};
                 start = {0, 0, 0};
             } else if (N == 4) {
