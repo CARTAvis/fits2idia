@@ -519,7 +519,7 @@ public:
                         
                         statsZ.nanCounts[indexZ] = nanCount;
                         
-                        if (nanCount != (height * width)) {
+                        if (nanCount != depth) {
                             statsZ.minVals[indexZ] = minVal;
                             statsZ.maxVals[indexZ] = maxVal;
                             statsZ.sums[indexZ] = sum;
