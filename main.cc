@@ -115,8 +115,8 @@ struct Stats {
         sums(dims.statsSize),
         sumsSq(dims.statsSize),
         nanCounts(dims.statsSize),
-        partialHistograms(dims.histSize),
-        histograms(dims.partialHistSize)
+        histograms(dims.histSize),
+        partialHistograms(dims.partialHistSize)
     {}
     
     void writeDset(Group& group, string name, vector<float>& vals, FloatType type, DataSpace dspace) {
@@ -150,8 +150,8 @@ struct Stats {
     vector<float> sums;
     vector<float> sumsSq;
     vector<int64_t> nanCounts;
-    vector<int64_t> partialHistograms;
     vector<int64_t> histograms;
+    vector<int64_t> partialHistograms;
 };
 
 bool getOptions(int argc, char** argv, string& inputFileName, string& outputFileName, bool& slow) {
