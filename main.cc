@@ -378,7 +378,8 @@ public:
         DSetCreatPropList standardCreatePlist;
         standardCreatePlist.setChunk(N, dims.tileDims.data());
         auto standardDataSpace = DataSpace(N, dims.standard.data());
-        
+        auto standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
+
         if (depth > 1) {
             auto swizzledGroup = outputGroup.createGroup("SwizzledData");
             string swizzledName = N == 3 ? "ZYX" : "ZYXW";
@@ -593,7 +594,6 @@ public:
             cout << "Writing Stokes " << currentStokes << " dataset..." << flush;
             auto tStartWrite = chrono::high_resolution_clock::now();
             
-            auto standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
             auto sliceDataSpace = standardDataSet.getSpace();
                         
             vector<hsize_t> count;
@@ -692,7 +692,7 @@ private:
 int main(int argc, char** argv) {
     string inputFileName;
     string outputFileName;
-    bool slow;
+    bool slow(false);
     
     if (!getOptions(argc, argv, inputFileName, outputFileName, slow)) {
         return 1;
