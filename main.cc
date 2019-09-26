@@ -51,7 +51,6 @@ struct Dims {
         N(2),
         width(width), height(height), depth(1), stokes(1),
         standard({height, width}),
-        swizzled({width, height}),
         tileDims({TILE_SIZE, TILE_SIZE}),
         statsXY({}, depth * stokes, defaultBins()) // dims, size, bins
     {}
@@ -80,6 +79,10 @@ struct Dims {
     
     int defaultBins() {
         return int(std::max(sqrt(width * height), 2.0));
+    }
+    
+    bool useChunks() {
+        return TILE_SIZE <= width && TILE_SIZE <= height;
     }
     
     static Dims makeDims(int N, long* dims) {
@@ -375,7 +378,9 @@ public:
         cout << "Done in " << dtAlloc * 1e-3 << " seconds" << endl;
             
         DSetCreatPropList standardCreatePlist;
-        standardCreatePlist.setChunk(N, dims.tileDims.data());
+        if (dims.useChunks()) {
+            standardCreatePlist.setChunk(N, dims.tileDims.data());
+        }
         auto standardDataSpace = DataSpace(N, dims.standard.data());
         auto standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
 
@@ -403,7 +408,7 @@ public:
             cout << "Processing Stokes " << currentStokes << " dataset..." << endl;
             auto tStartProcess = chrono::high_resolution_clock::now();
             
-            cout << " * XY statistics" << (slow ? "" : " and fast swizzling") <<  "... " << endl;
+            cout << " * XY statistics" << (depth > 1 && !slow ? " and fast swizzling" : "") <<  "... " << endl;
 
             // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
