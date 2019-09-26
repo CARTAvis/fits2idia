@@ -711,10 +711,10 @@ public:
                     } else if (N == 4) {
                         standardMemDims = {1, depth, ySize, xSize};
                         swizzledMemDims = {1, xSize, ySize, depth};
-                        standardOffset = {1, 0, yOffset, xOffset};
-                        standardCount = {s, depth, ySize, xSize};
-                        swizzledOffset = {1, xOffset, yOffset, 0};
-                        swizzledCount = {s, xSize, ySize, depth};
+                        standardOffset = {s, 0, yOffset, xOffset};
+                        standardCount = {1, depth, ySize, xSize};
+                        swizzledOffset = {s, xOffset, yOffset, 0};
+                        swizzledCount = {1, xSize, ySize, depth};
                     }
                     
                     DataSpace standardMemspace(standardMemDims.size(), standardMemDims.data());
