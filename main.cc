@@ -13,7 +13,7 @@ using namespace std;
 
 #define SCHEMA_VERSION "0.2"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.8"
+#define HDF5_CONVERTER_VERSION "0.1.9"
 
 hsize_t TILE_SIZE = 512;
 
