@@ -120,7 +120,7 @@ struct Stats {
         histograms(dims.histSize),
         partialHistograms(dims.partialHistSize)
     {}
-    
+        
     void writeDset(Group& group, string name, vector<float>& vals, FloatType type, DataSpace dspace) {
         auto dset = group.createDataSet(name, type, dspace);
         dset.write(vals.data(), PredType::NATIVE_FLOAT);
@@ -721,6 +721,8 @@ public:
             vector<hsize_t> count;
             vector<hsize_t> start;
             
+            // TODO: this should be moved into dims
+            // TODO: also stop using the same dims for standard and swizzled even though it inexplicably works
             if (N == 2) {
                 count = {height, width};
                 start = {0, 0};
@@ -763,54 +765,96 @@ public:
                 long fpixel[] = {1, 1, c + 1, s + 1};
                 readFits(fpixel, cubeSize);
                 
-                // XY accumulators
-                float minVal = numeric_limits<float>::max();
-                float maxVal = -numeric_limits<float>::max();
-                float sum = 0;
-                float sumSq = 0;
-                int64_t nanCount = 0;
+                auto indexXY = s * depth + c;
                 
                 for (auto y = 0; y < height; y++) {
                     for (auto x = 0; x < width; x++) {
                         auto sourceIndex = x + width * y;
                         auto val = standardCube[sourceIndex];
                         
+                        // Accumulate XY statistics
+                        // TODO: check if indexing stats arrays inside loop is slow or is optimised away
+                        
                         if (!isnan(val)) {
                             // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
                             // very unlikely when we're iterating over all values in a channel.
-                            if (val < minVal) {
-                                minVal = val;
-                            } else if (val > maxVal) {
-                                maxVal = val;
+                            if (val < statsXY.minVals[indexXY]) {
+                                statsXY.minVals[indexXY] = val;
+                            } else if (val > statsXY.maxVals[indexXY]) {
+                                statsXY.maxVals[indexXY] = val;
                             }
-                            sum += val;
-                            sumSq += val * val;
+                            statsXY.sums[indexXY] += val;
+                            statsXY.sumsSq[indexXY] += val * val;
                         } else {
-                            nanCount += 1;
+                            statsXY.nanCounts[indexXY] += 1;
+                        }
+                        
+                        // Accumulate Z statistics
+                        
+                        // TODO: can we just increment this?
+                        auto indexZ = s * width * height + x + y * width;
+                        
+                        if (!isnan(val)) {
+                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
+                            // TODO was there any reason to use min/max here instead of fmin/fmax? Speed?
+                            statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
+                            statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
+                            statsZ.sums[indexZ] += val;
+                            statsZ.sumsSq[indexZ] += val * val;
+                        } else {
+                            statsZ.nanCounts[indexZ] += 1;
                         }
                     }
                 }
                 
-                auto indexXY = s * depth + c;
-                
-                statsXY.nanCounts[indexXY] = nanCount;
-                
-                if (nanCount != (height * width)) {
-                    statsXY.minVals[indexXY] = minVal;
-                    statsXY.maxVals[indexXY] = maxVal;
-                    statsXY.sums[indexXY] = sum;
-                    statsXY.sumsSq[indexXY] = sumSq;
-                } else {
+                // TODO: see if this can be done in stats
+                if (statsXY.nanCounts[indexXY] == (height * width)) {
                     statsXY.minVals[indexXY] = NAN;
                     statsXY.maxVals[indexXY] = NAN;
                     statsXY.sums[indexXY] = NAN;
                     statsXY.sumsSq[indexXY] = NAN;
                 }
                 
-                // TODO: remaining statistics
-                // TODO: better timing output -- sum all the reads, etc., and print once at the end
+                // Accumulate XYZ statistics
+                
+                if (depth > 1) {
+                    if (!isnan(statsXY.sums[indexXY])) {
+                        statsXYZ.sums[s] += statsXY.sums[indexXY];
+                        statsXYZ.sumsSq[s] += statsXY.sumsSq[indexXY];
+                        statsXYZ.minVals[s] = fmin(statsXYZ.minVals[s], statsXY.minVals[indexXY]);
+                        statsXYZ.maxVals[s] = fmax(statsXYZ.maxVals[s], statsXY.maxVals[indexXY]);
+                    }
+                    statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
+                }
+            }
+            
+            // A final pass over all XY to fix the Z stats NaNs 
+            for (auto y = 0; y < height; y++) {
+                for (auto x = 0; x < width; x++) {
+                    
+                    auto indexZ = s * width * height + x + y * width;
+                                            
+                    // TODO can we do this in stats?
+                    if (statsZ.nanCounts[indexZ] == depth) {
+                        statsZ.minVals[indexZ] = NAN;
+                        statsZ.maxVals[indexZ] = NAN;
+                        statsZ.sums[indexZ] = NAN;
+                        statsZ.sumsSq[indexZ] = NAN;
+                    }
+                }
             }
         }
+        
+        
+
+                
+        // TODO: HISTOGRAMS
+        // Have to do a separate pass because we need min and max
+        // Angus suggests: do the second pass backwards to take advantage of caching
+        
+        // TODO: WRITE the standard dataset and stats
+        
+        // TODO: better timing output -- sum all the reads, etc., and print once at the end
         
         // Swizzle
         if (depth > 1) {
