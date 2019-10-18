@@ -714,6 +714,9 @@ public:
             cout << "Done in " << dtRotate * 1e-3 << " seconds" << endl;
 
             cout << "Writing Stokes " << currentStokes << " dataset... " << flush;
+            
+            
+            // TODO: PUT IN FUNCTION
             auto tStartWrite = chrono::high_resolution_clock::now();
             
             auto sliceDataSpace = standardDataSet.getSpace();
@@ -741,7 +744,7 @@ public:
 
             standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
             
-            if (depth > 1 && !slow) {
+            if (depth > 1) {
                 swizzledDataSet.write(rotatedCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
             }
 
@@ -757,13 +760,44 @@ public:
         auto cubeSize = height * width;
         allocate(cubeSize, 0);
         
+        auto sliceDataSpace = standardDataSet.getSpace();
+                            
+        vector<hsize_t> count;
+        vector<hsize_t> start;
+        
+        // TODO: this should be moved into dims
+        if (N == 2) {
+            count = {height, width};
+        } else if (N == 3) {
+            count = {1, height, width};
+        } else if (N == 4) {
+            count = {1, 1, height, width};
+        }
+        
+        hsize_t memDims[] = {height, width};
+        DataSpace memspace(2, memDims);
+        
         for (unsigned int s = 0; s < stokes; s++) {
             cout << "Processing Stokes " << s << " dataset... " << flush;
             
-            for (int c = 0; c < depth; c++) {
+            for (hsize_t c = 0; c < depth; c++) {
                 // read one channel
-                long fpixel[] = {1, 1, c + 1, s + 1};
+                long fpixel[] = {1, 1, (long)c + 1, s + 1};
                 readFits(fpixel, cubeSize);
+                
+                // Write the standard dataset
+                // TODO: this should go in a function, once the swizzled dims are fixed in the fast function
+                // TODO: this should be moved into dims (a function which takes s and c as parameters)
+                if (N == 2) {
+                    start = {0, 0};
+                } else if (N == 3) {
+                    start = {c, 0, 0};
+                } else if (N == 4) {
+                    start = {s, c, 0, 0};
+                }
+
+                sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+                standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
                 
                 auto indexXY = s * depth + c;
                 
@@ -847,17 +881,17 @@ public:
             double cubeRange = cubeMax - cubeMin;
             bool cubeHist(!isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0);
             
-            for (int c = depth - 1; c >= 0; c--) {
+            for (hsize_t c = depth - 1; c > 0; c--) {
                 
                 auto indexXY = s * depth + c;
-                
+                                
                 double chanMin = statsXY.minVals[indexXY];
                 double chanMax = statsXY.maxVals[indexXY];
                 double chanRange = chanMax - chanMin;
                 bool chanHist(!isnan(chanMin) && !isnan(chanMax) && chanRange > 0);
                 
                 // read one channel
-                long fpixel[] = {1, 1, c + 1, s + 1};
+                long fpixel[] = {1, 1, (long)c + 1, s + 1};
                 readFits(fpixel, cubeSize);
                 
                 if (!chanHist && !cubeHist) {
@@ -882,8 +916,6 @@ public:
             } // end of second channel loop (XY and XYZ histograms)
             
         } // end of stokes
-        
-        // TODO: WRITE the standard dataset
         
         // TODO: better timing output -- sum all the reads, etc., and print once at the end
         
