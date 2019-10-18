@@ -760,52 +760,49 @@ public:
         for (unsigned int s = 0; s < stokes; s++) {
             cout << "Processing Stokes " << s << " dataset... " << flush;
             
-            for (auto c = 0; c < depth; c++) {
+            for (int c = 0; c < depth; c++) {
                 // read one channel
                 long fpixel[] = {1, 1, c + 1, s + 1};
                 readFits(fpixel, cubeSize);
                 
                 auto indexXY = s * depth + c;
                 
-                for (auto y = 0; y < height; y++) {
-                    for (auto x = 0; x < width; x++) {
-                        auto sourceIndex = x + width * y;
-                        auto val = standardCube[sourceIndex];
-                        
-                        // Accumulate XY statistics
-                        // TODO: check if indexing stats arrays inside loop is slow or is optimised away
-                        
-                        if (!isnan(val)) {
-                            // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
-                            // very unlikely when we're iterating over all values in a channel.
-                            if (val < statsXY.minVals[indexXY]) {
-                                statsXY.minVals[indexXY] = val;
-                            } else if (val > statsXY.maxVals[indexXY]) {
-                                statsXY.maxVals[indexXY] = val;
-                            }
-                            statsXY.sums[indexXY] += val;
-                            statsXY.sumsSq[indexXY] += val * val;
-                        } else {
-                            statsXY.nanCounts[indexXY] += 1;
+                for (auto p = 0; p < width * height; p++) {
+                    auto val = standardCube[p];
+                    
+                    // XY statistics
+                    // TODO: check if indexing stats arrays inside loop is slow or is optimised away
+                    
+                    if (!isnan(val)) {
+                        // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
+                        // very unlikely when we're iterating over all values in a channel.
+                        if (val < statsXY.minVals[indexXY]) {
+                            statsXY.minVals[indexXY] = val;
+                        } else if (val > statsXY.maxVals[indexXY]) {
+                            statsXY.maxVals[indexXY] = val;
                         }
-                        
-                        // Accumulate Z statistics
-                        
-                        // TODO: can we just increment this?
-                        auto indexZ = s * width * height + x + y * width;
-                        
-                        if (!isnan(val)) {
-                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                            // TODO was there any reason to use min/max here instead of fmin/fmax? Speed?
-                            statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
-                            statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
-                            statsZ.sums[indexZ] += val;
-                            statsZ.sumsSq[indexZ] += val * val;
-                        } else {
-                            statsZ.nanCounts[indexZ] += 1;
-                        }
+                        statsXY.sums[indexXY] += val;
+                        statsXY.sumsSq[indexXY] += val * val;
+                    } else {
+                        statsXY.nanCounts[indexXY] += 1;
                     }
-                }
+                    
+                    // Accumulate Z statistics
+                    // TODO maybe we should do this during the swizzle?
+                    // TODO: can we just increment this?
+                    auto indexZ = s * width * height + p;
+                    
+                    if (!isnan(val)) {
+                        // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
+                        // TODO was there any reason to use min/max here instead of fmin/fmax? Speed?
+                        statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
+                        statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
+                        statsZ.sums[indexZ] += val;
+                        statsZ.sumsSq[indexZ] += val * val;
+                    } else {
+                        statsZ.nanCounts[indexZ] += 1;
+                    }
+                } // end of XY loop
                 
                 // TODO: see if this can be done in stats
                 if (statsXY.nanCounts[indexXY] == (height * width)) {
@@ -826,33 +823,67 @@ public:
                     }
                     statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
                 }
-            }
+            } // end of first channel loop
             
             // A final pass over all XY to fix the Z stats NaNs 
-            for (auto y = 0; y < height; y++) {
-                for (auto x = 0; x < width; x++) {
-                    
-                    auto indexZ = s * width * height + x + y * width;
-                                            
-                    // TODO can we do this in stats?
-                    if (statsZ.nanCounts[indexZ] == depth) {
-                        statsZ.minVals[indexZ] = NAN;
-                        statsZ.maxVals[indexZ] = NAN;
-                        statsZ.sums[indexZ] = NAN;
-                        statsZ.sumsSq[indexZ] = NAN;
-                    }
+            for (auto p = 0; p < width * height; p++) {
+                auto indexZ = s * width * height + p;
+                                        
+                // TODO can we do this in stats?
+                if (statsZ.nanCounts[indexZ] == depth) {
+                    statsZ.minVals[indexZ] = NAN;
+                    statsZ.maxVals[indexZ] = NAN;
+                    statsZ.sums[indexZ] = NAN;
+                    statsZ.sumsSq[indexZ] = NAN;
                 }
             }
-        }
-        
-        
-
+            
+            // XY and XYZ histograms
+            // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
+            // We do the second pass backwards to take advantage of caching
+            
+            double cubeMin = statsXYZ.minVals[s];
+            double cubeMax = statsXYZ.maxVals[s];
+            double cubeRange = cubeMax - cubeMin;
+            bool cubeHist(!isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0);
+            
+            for (int c = depth - 1; c >= 0; c--) {
                 
-        // TODO: HISTOGRAMS
-        // Have to do a separate pass because we need min and max
-        // Angus suggests: do the second pass backwards to take advantage of caching
+                auto indexXY = s * depth + c;
+                
+                double chanMin = statsXY.minVals[indexXY];
+                double chanMax = statsXY.maxVals[indexXY];
+                double chanRange = chanMax - chanMin;
+                bool chanHist(!isnan(chanMin) && !isnan(chanMax) && chanRange > 0);
+                
+                // read one channel
+                long fpixel[] = {1, 1, c + 1, s + 1};
+                readFits(fpixel, cubeSize);
+                
+                if (!chanHist && !cubeHist) {
+                    continue;
+                }
+
+                for (auto p = 0; p < width * height; p++) {
+                    auto val = standardCube[p];
+                        if (!isnan(val)) {
+                            if (chanHist) {
+                                int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - chanMin) / chanRange));
+                                statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
+                            }
+                            
+                            if (depth > 1 && cubeHist) {
+                                // TODO: is this the right bin index?
+                                int binIndex = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                                statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
+                            }
+                        }
+                } // end of XY loop
+            } // end of second channel loop (XY and XYZ histograms)
+            
+        } // end of stokes
         
-        // TODO: WRITE the standard dataset and stats
+        // TODO: WRITE the standard dataset
         
         // TODO: better timing output -- sum all the reads, etc., and print once at the end
         
