@@ -147,6 +147,7 @@ struct Stats {
     
     StatsDims dims;
 
+    // TODO: figure out how to convert these to doubles correctly
     vector<float> minVals;
     vector<float> maxVals;
     vector<float> sums;
@@ -781,6 +782,7 @@ public:
             cout << "Processing Stokes " << s << " dataset... " << flush;
             
             for (hsize_t c = 0; c < depth; c++) {
+                cout << "c = " << c << endl;
                 // read one channel
                 long fpixel[] = {1, 1, (long)c + 1, s + 1};
                 readFits(fpixel, cubeSize);
@@ -881,7 +883,8 @@ public:
             double cubeRange = cubeMax - cubeMin;
             bool cubeHist(!isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0);
             
-            for (hsize_t c = depth - 1; c > 0; c--) {
+            for (hsize_t c = depth; c-- > 0; ) {
+                cout << "c = " << c << endl;
                 
                 auto indexXY = s * depth + c;
                                 
@@ -890,13 +893,13 @@ public:
                 double chanRange = chanMax - chanMin;
                 bool chanHist(!isnan(chanMin) && !isnan(chanMax) && chanRange > 0);
                 
-                // read one channel
-                long fpixel[] = {1, 1, (long)c + 1, s + 1};
-                readFits(fpixel, cubeSize);
-                
                 if (!chanHist && !cubeHist) {
                     continue;
                 }
+                
+                // read one channel
+                long fpixel[] = {1, 1, (long)c + 1, s + 1};
+                readFits(fpixel, cubeSize);
 
                 for (auto p = 0; p < width * height; p++) {
                     auto val = standardCube[p];
