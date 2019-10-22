@@ -112,8 +112,8 @@ struct Stats {
     
     Stats(StatsDims dims) : 
         dims(dims),
-        minVals(dims.statsSize, numeric_limits<float>::max()), 
-        maxVals(dims.statsSize, -numeric_limits<float>::max()),
+        minVals(dims.statsSize, numeric_limits<double>::max()), 
+        maxVals(dims.statsSize, -numeric_limits<double>::max()),
         sums(dims.statsSize),
         sumsSq(dims.statsSize),
         nanCounts(dims.statsSize),
@@ -121,13 +121,13 @@ struct Stats {
         partialHistograms(dims.partialHistSize)
     {}
         
-    void writeDset(Group& group, string name, vector<float>& vals, FloatType type, DataSpace dspace) {
-        auto dset = group.createDataSet(name, type, dspace);
-        dset.write(vals.data(), PredType::NATIVE_FLOAT);
+    void writeDset(Group& group, string name, vector<double>& vals, FloatType file_dtype, DataSpace dspace) {
+        auto dset = group.createDataSet(name, file_dtype, dspace);
+        dset.write(vals.data(), PredType::NATIVE_DOUBLE);
     }
     
-    void writeDset(Group& group, string name, vector<int64_t>& vals, IntType type, DataSpace dspace) {
-        auto dset = group.createDataSet(name, type, dspace);
+    void writeDset(Group& group, string name, vector<int64_t>& vals, IntType file_dtype, DataSpace dspace) {
+        auto dset = group.createDataSet(name, file_dtype, dspace);
         dset.write(vals.data(), PredType::NATIVE_INT64);
     }
 
@@ -148,10 +148,10 @@ struct Stats {
     StatsDims dims;
 
     // TODO: figure out how to convert these to doubles correctly
-    vector<float> minVals;
-    vector<float> maxVals;
-    vector<float> sums;
-    vector<float> sumsSq;
+    vector<double> minVals;
+    vector<double> maxVals;
+    vector<double> sums;
+    vector<double> sumsSq;
     vector<int64_t> nanCounts;
     vector<int64_t> histograms;
     vector<int64_t> partialHistograms;
@@ -533,8 +533,8 @@ public:
             for (auto i = 0; i < depth; i++) {
                 float minVal = numeric_limits<float>::max();
                 float maxVal = -numeric_limits<float>::max();
-                float sum = 0;
-                float sumSq = 0;
+                double sum = 0;
+                double sumSq = 0;
                 int64_t nanCount = 0;
 
                 for (auto j = 0; j < height; j++) {
@@ -619,8 +619,8 @@ public:
                     for (auto k = 0; k < width; k++) {
                         float minVal = numeric_limits<float>::max();
                         float maxVal = -numeric_limits<float>::max();
-                        float sum = 0;
-                        float sumSq = 0;
+                        double sum = 0;
+                        double sumSq = 0;
                         int64_t nanCount = 0;
                         
                         for (auto i = 0; i < depth; i++) {
@@ -782,7 +782,6 @@ public:
             cout << "Processing Stokes " << s << " dataset... " << flush;
             
             for (hsize_t c = 0; c < depth; c++) {
-                cout << "c = " << c << endl;
                 // read one channel
                 long fpixel[] = {1, 1, (long)c + 1, s + 1};
                 readFits(fpixel, cubeSize);
@@ -883,9 +882,7 @@ public:
             double cubeRange = cubeMax - cubeMin;
             bool cubeHist(!isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0);
             
-            for (hsize_t c = depth; c-- > 0; ) {
-                cout << "c = " << c << endl;
-                
+            for (hsize_t c = depth; c-- > 0; ) {                
                 auto indexXY = s * depth + c;
                                 
                 double chanMin = statsXY.minVals[indexXY];
