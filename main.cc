@@ -1042,6 +1042,7 @@ private:
 };
 
 int main(int argc, char** argv) {
+    auto startAll = chrono::high_resolution_clock::now();
     string inputFileName;
     string outputFileName;
     bool slow(false);
@@ -1062,6 +1063,10 @@ int main(int argc, char** argv) {
     cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
     
     image.convert();
+    
+    auto stopAll = chrono::high_resolution_clock::now();
+    auto allDuration = chrono::duration_cast<chrono::milliseconds>(stopAll - startAll).count();
+    cout << "Total script duration: " << allDuration * 1e-3 << endl;
     
     return 0;
 }
