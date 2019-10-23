@@ -157,36 +157,50 @@ struct Stats {
     vector<int64_t> partialHistograms;
 };
 
+struct TimerCounter {
+    TimerCounter() : value(0) {}
+    
+    void start() {
+        startTime = chrono::high_resolution_clock::now();
+    }
+    
+    void stop() {
+        auto stopTime = chrono::high_resolution_clock::now();
+        value += chrono::duration_cast<chrono::milliseconds>(stopTime - startTime).count();
+    }
+    
+    double seconds() {
+        return value * 1e-3;
+    }
+    
+    double speed(hsize_t imageSize) {
+        return (imageSize * 4) * 1.0e-6 / seconds();
+    }
+    
+    unsigned int value;
+    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+};
+
 struct Timer {
     Timer() {}
-    Timer(hsize_t imageSize) : size(imageSize), alloc(0), read(0), rotate(0), write(0), total(0) {}
+    Timer(hsize_t imageSize) : size(imageSize) {}
     
     hsize_t size;
     
-    unsigned int alloc;
-    unsigned int read;
-    unsigned int rotate;
-    unsigned int write;
-    unsigned int total;
+    // TODO: maybe split out processing into 2 - 3 loops
+    TimerCounter alloc;
+    TimerCounter read;
+    TimerCounter process;
+    TimerCounter write;
+    TimerCounter total;
     
-    double seconds(unsigned int val) {
-        return val * 1e-3;
-    }
-    
-    double speed(unsigned int val) {
-        return (size * 4) * 1.0e-6 / seconds(val);
-    }
-    
-    void print() {
-        unsigned int other = total - (alloc + read + rotate + write);
-        
+    void print() {     
         cout << endl;
-        cout << "Allocated in " << seconds(alloc) << " seconds (" << speed(alloc) << " MB/s)" << endl;
-        cout << "Read in " << seconds(read) << " seconds (" << speed(read) << " MB/s)" << endl;
-        cout << "Rotated in " << seconds(rotate) << " seconds (" << speed(rotate) << " MB/s)" << endl;
-        cout << "Written in " << seconds(write) << " seconds (" << speed(write) << " MB/s)" << endl;
-        cout << "Other computation: " << seconds(other) << " seconds (" << speed(other) << " MB/s)" << endl;
-        cout << "TOTAL: " << seconds(total) << " seconds (" << speed(total) << " MB/s)" << endl;
+        cout << "Allocated in " << alloc.seconds() << " seconds (" << alloc.speed(size) << " MB/s)" << endl;
+        cout << "Read in " << read.seconds() << " seconds (" << read.speed(size) << " MB/s)" << endl;
+        cout << "Processed in " << process.seconds() << " seconds (" << process.speed(size) << " MB/s)" << endl;
+        cout << "Written in " << write.seconds() << " seconds (" << write.speed(size) << " MB/s)" << endl;
+        cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << endl;
     }
 };
 
@@ -420,13 +434,12 @@ public:
         }
         
         cout << "Allocating " << sliceSize * 4 * 2 * 1e-9 << " GB of memory... " << endl;
-        auto tStartAlloc = chrono::high_resolution_clock::now();
+        timer.alloc.start();
         
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
 
-        auto tEndAlloc = chrono::high_resolution_clock::now();
-        timer.alloc += chrono::duration_cast<chrono::milliseconds>(tEndAlloc - tStartAlloc).count();
+        timer.alloc.stop();
         
         auto standardDataSpace = standardDataSet.getSpace();
         auto swizzledDataSpace = swizzledDataSet.getSpace();
@@ -464,14 +477,13 @@ public:
                     DataSpace swizzledMemspace(swizzledMemDims.size(), swizzledMemDims.data());
                     
                     // read tile slice
-                    auto tStartRead = chrono::high_resolution_clock::now();
+                    timer.read.start();
                     
                     standardDataSpace.selectHyperslab(H5S_SELECT_SET, standardCount.data(), standardOffset.data());
                     standardDataSet.read(standardSlice, PredType::NATIVE_FLOAT, standardMemspace, standardDataSpace);
                     
-                    auto tEndRead = chrono::high_resolution_clock::now();
-                    timer.read += chrono::duration_cast<chrono::milliseconds>(tEndRead - tStartRead).count();
-                    auto tStartRotate = chrono::high_resolution_clock::now();
+                    timer.read.stop();
+                    timer.process.start();
                     
                     // rotate tile slice
                     for (auto i = 0; i < depth; i++) {
@@ -484,16 +496,14 @@ public:
                         }
                     }
                     
-                    auto tEndRotate = chrono::high_resolution_clock::now();
-                    timer.rotate += chrono::duration_cast<chrono::milliseconds>(tEndRotate - tStartRotate).count();
-                    auto tStartWrite = chrono::high_resolution_clock::now();
+                    timer.process.stop();
+                    timer.write.start();
                             
                     // write tile slice
                     swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), swizzledOffset.data());
                     swizzledDataSet.write(rotatedSlice, PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
                     
-                    auto tEndWrite = chrono::high_resolution_clock::now();
-                    timer.write += chrono::duration_cast<chrono::milliseconds>(tEndWrite - tStartWrite).count();
+                    timer.write.stop();
                 }
             }
         }
@@ -504,7 +514,7 @@ public:
     
     void allocate(hsize_t cubeSize, hsize_t rotatedSize) {
         cout << "Allocating " << cubeSize * 4 * 2 * 1e-9 << " GB of memory... " << endl;
-        auto tStartAlloc = chrono::high_resolution_clock::now();
+        timer.alloc.start();
 
         standardCube = new float[cubeSize];
         
@@ -518,15 +528,13 @@ public:
             statsXYZ = Stats(dims.statsXYZ);
         }
 
-        auto tEndAlloc = chrono::high_resolution_clock::now();
-        timer.alloc += chrono::duration_cast<chrono::milliseconds>(tEndAlloc - tStartAlloc).count();
+        timer.alloc.stop();
     }
     
     void readFits(long* fpixel, int cubeSize) {
-            auto tStartRead = chrono::high_resolution_clock::now();
+            timer.read.start();
             fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
-            auto tEndRead = chrono::high_resolution_clock::now();
-            timer.read += chrono::duration_cast<chrono::milliseconds>(tEndRead - tStartRead).count();
+            timer.read.stop();
     }
     
     void fastCopy() {
@@ -541,7 +549,7 @@ public:
             readFits(fpixel, cubeSize);
 
             cout << "Processing Stokes " << currentStokes << " dataset..." << endl;
-            auto tStartProcess = chrono::high_resolution_clock::now();
+            timer.process.start();
             
             cout << " * XY statistics" << (depth > 1 && !slow ? " and fast swizzling" : "") <<  "... " << endl;
 
@@ -726,14 +734,12 @@ public:
                 }
             }
 
-            auto tEndRotate = chrono::high_resolution_clock::now();
-            timer.rotate += chrono::duration_cast<chrono::milliseconds>(tEndRotate - tStartProcess).count();
+            timer.process.stop();
 
             cout << "Writing Stokes " << currentStokes << " dataset... " << endl;
             
             
-            // TODO: PUT IN FUNCTION
-            auto tStartWrite = chrono::high_resolution_clock::now();
+            timer.write.start();
             
             auto sliceDataSpace = standardDataSet.getSpace();
                         
@@ -764,8 +770,7 @@ public:
                 swizzledDataSet.write(rotatedCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
             }
 
-            auto tEndWrite = chrono::high_resolution_clock::now();
-            timer.write += chrono::duration_cast<chrono::milliseconds>(tEndWrite - tStartWrite).count();
+            timer.write.stop();
         }
     }
     
@@ -810,8 +815,12 @@ public:
                     start = {s, c, 0, 0};
                 }
 
+                timer.write.start();
                 sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
                 standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
+                timer.write.stop();
+                
+                timer.process.start();
                 
                 auto indexXY = s * depth + c;
                 
@@ -871,8 +880,11 @@ public:
                     }
                     statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
                 }
+                
+                timer.process.stop();
             } // end of first channel loop
             
+            timer.process.start();
             // A final pass over all XY to fix the Z stats NaNs 
             for (auto p = 0; p < width * height; p++) {
                 auto indexZ = s * width * height + p;
@@ -909,7 +921,14 @@ public:
                 
                 // read one channel
                 long fpixel[] = {1, 1, (long)c + 1, s + 1};
+                
+                timer.process.stop();
+                timer.read.start();
+                
                 readFits(fpixel, cubeSize);
+                
+                timer.read.stop();
+                timer.process.start();
 
                 for (auto p = 0; p < width * height; p++) {
                     auto val = standardCube[p];
@@ -920,7 +939,6 @@ public:
                             }
                             
                             if (depth > 1 && cubeHist) {
-                                // TODO: is this the right bin index?
                                 int binIndex = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
                                 statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
                             }
@@ -928,10 +946,10 @@ public:
                 } // end of XY loop
             } // end of second channel loop (XY and XYZ histograms)
             
+            timer.process.stop();
+            
         } // end of stokes
-        
-        // TODO: better timing output -- sum all the reads, etc., and print once at the end
-        
+                
         // Swizzle
         if (depth > 1) {
             cout << "Performing slow, memory-saving rotation." << endl;
@@ -940,7 +958,7 @@ public:
     }
     
     void convert() {
-        auto tStartConvert = chrono::high_resolution_clock::now();
+        timer.total.start();
         
         createOutputFile();
         copyHeaders();
@@ -954,7 +972,7 @@ public:
         }
         
         // Write statistics
-        auto tStartWrite = chrono::high_resolution_clock::now();
+        timer.write.start();
         auto statsGroup = outputGroup.createGroup("Statistics");
         
         auto statsXYGroup = statsGroup.createGroup("XY"); 
@@ -966,8 +984,7 @@ public:
             statsXYZ.write(statsXYZGroup, floatType, intType);
             statsZ.write(statsZGroup, floatType, intType);
         }
-        auto tEndWrite = chrono::high_resolution_clock::now();
-        timer.write += chrono::duration_cast<chrono::milliseconds>(tEndWrite - tStartWrite).count();
+        timer.write.stop();
         
         // Free memory
         delete[] standardCube;
@@ -976,8 +993,7 @@ public:
             delete[] rotatedCube;
         }
         
-        auto tEndConvert = chrono::high_resolution_clock::now();
-        timer.total = chrono::duration_cast<chrono::milliseconds>(tEndConvert - tStartConvert).count();
+        timer.total.stop();
         
         timer.print();
         
