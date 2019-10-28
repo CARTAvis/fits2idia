@@ -188,7 +188,12 @@ struct TimerCounter {
 
 struct Timer {
     Timer() {}
-    Timer(hsize_t imageSize) : size(imageSize) {}
+    Timer(hsize_t imageSize, bool slow) : 
+        size(imageSize),
+        loopLabel1(slow ? "XY, XYZ & Z stats" : "Swizzling, XY & XYZ stats"),
+        loopLabel2(slow ? "Histograms" : "Z stats"),
+        loopLabel3(slow ? "Swizzling" : "Histograms")
+    {}
     
     hsize_t size;
     
@@ -199,6 +204,10 @@ struct Timer {
     TimerCounter process3;
     TimerCounter write;
     
+    string loopLabel1;
+    string loopLabel2;
+    string loopLabel3;
+    
     void print() {
         TimerCounter process = process1 + process2 + process3;
         TimerCounter total = alloc + read + process + write;
@@ -207,9 +216,9 @@ struct Timer {
         cout << "Allocated in " << alloc.seconds() << " seconds (" << alloc.speed(size) << " MB/s)" << endl;
         cout << "Read in " << read.seconds() << " seconds (" << read.speed(size) << " MB/s)" << endl;
         cout << "Processed in " << process.seconds() << " seconds (" << process.speed(size) << " MB/s)" << endl;
-        cout << "\tLoop 1: " << process1.seconds() << endl;
-        cout << "\tLoop 2: " << process2.seconds() << endl;
-        cout << "\tLoop 3: " << process3.seconds() << endl;
+        cout << "\t" << loopLabel1 << ": " << process1.seconds() << endl;
+        cout << "\t" << loopLabel2 << ": " << process2.seconds() << endl;
+        cout << "\t" << loopLabel3 << ": " << process3.seconds() << endl;
         cout << "Written in " << write.seconds() << " seconds (" << write.speed(size) << " MB/s)" << endl;
         cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << endl;
     }
@@ -316,7 +325,7 @@ public:
         swizzledName = N == 3 ? "ZYX" : "ZYXW";
         
         this->slow = slow;
-        timer = Timer(stokes * depth * height * width);
+        timer = Timer(stokes * depth * height * width, slow);
         
         // Customise types
         doubleType.setOrder(H5T_ORDER_LE);
@@ -645,12 +654,13 @@ public:
                 statsXYZ.maxVals[currentStokes] = xyzMax;
                 statsXYZ.nanCounts[currentStokes] = xyzNanCount;
             }
+            
+            timer.process1.stop();
 
             if (depth > 1) {
                 cout << " * Z statistics... " << endl;
                 // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
                 
-                timer.process1.stop();
                 timer.process2.start();
 #pragma omp parallel for
                 for (auto j = 0; j < height; j++) {
@@ -693,13 +703,14 @@ public:
                         }
                     }
                 }
+                
+                timer.process2.stop();
             }
             
             cout << " * Histograms... " << endl;
 
             // Third loop handles histograms
             
-            timer.process2.stop();
             timer.process3.start();
             
             double cubeMin;
