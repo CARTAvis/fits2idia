@@ -147,7 +147,6 @@ struct Stats {
     
     StatsDims dims;
 
-    // TODO: figure out how to convert these to doubles correctly
     vector<double> minVals;
     vector<double> maxVals;
     vector<double> sums;
@@ -215,7 +214,6 @@ bool getOptions(int argc, char** argv, string& inputFileName, string& outputFile
     while ((opt = getopt(argc, argv, ":o:s")) != -1) {
         switch (opt) {
             case 'o':
-                // TODO: output filename
                 outputFileName.assign(optarg);
                 break;
             case 's':
@@ -738,16 +736,11 @@ public:
 
             cout << "Writing Stokes " << currentStokes << " dataset... " << endl;
             
-            
             timer.write.start();
-            
-            auto sliceDataSpace = standardDataSet.getSpace();
                         
             vector<hsize_t> count;
             vector<hsize_t> start;
             
-            // TODO: this should be moved into dims
-            // TODO: also stop using the same dims for standard and swizzled even though it inexplicably works
             if (N == 2) {
                 count = {height, width};
                 start = {0, 0};
@@ -762,12 +755,29 @@ public:
             hsize_t memDims[] = {depth, height, width};
             DataSpace memspace(3, memDims);
 
+            auto sliceDataSpace = standardDataSet.getSpace();
             sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
 
             standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
             
             if (depth > 1) {
-                swizzledDataSet.write(rotatedCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
+                // This all technically worked if we reused the standard filespace and memspace
+                // But it's probably not a good idea to rely on two incorrect values cancelling each other out
+                vector<hsize_t> swizzledCount;
+                
+                if (N == 3) {
+                    swizzledCount = {width, height, depth};
+                } else if (N == 4) {
+                    swizzledCount = {1, width, height, depth};
+                }
+                
+                hsize_t swizzledMemDims[] = {width, height, depth};
+                DataSpace swizzledMemspace(3, swizzledMemDims);
+                
+                auto swizzledDataSpace = swizzledDataSet.getSpace();
+                swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), start.data());
+                
+                swizzledDataSet.write(rotatedCube, PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
             }
 
             timer.write.stop();
@@ -784,7 +794,6 @@ public:
         vector<hsize_t> count;
         vector<hsize_t> start;
         
-        // TODO: this should be moved into dims
         if (N == 2) {
             count = {height, width};
         } else if (N == 3) {
@@ -805,8 +814,6 @@ public:
                 readFits(fpixel, cubeSize);
                 
                 // Write the standard dataset
-                // TODO: this should go in a function, once the swizzled dims are fixed in the fast function
-                // TODO: this should be moved into dims (a function which takes s and c as parameters)
                 if (N == 2) {
                     start = {0, 0};
                 } else if (N == 3) {
@@ -851,7 +858,6 @@ public:
                     
                     if (!isnan(val)) {
                         // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                        // TODO was there any reason to use min/max here instead of fmin/fmax? Speed?
                         statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
                         statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
                         statsZ.sums[indexZ] += val;
