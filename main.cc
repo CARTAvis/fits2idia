@@ -159,6 +159,12 @@ struct Stats {
 struct TimerCounter {
     TimerCounter() : value(0) {}
     
+    TimerCounter(unsigned int value) : value(value) {}
+    
+    TimerCounter operator+(const TimerCounter& other) {
+        return TimerCounter(this->value + other.value);
+    }
+    
     void start() {
         startTime = chrono::high_resolution_clock::now();
     }
@@ -186,18 +192,24 @@ struct Timer {
     
     hsize_t size;
     
-    // TODO: maybe split out processing into 2 - 3 loops
     TimerCounter alloc;
     TimerCounter read;
-    TimerCounter process;
+    TimerCounter process1;
+    TimerCounter process2;
+    TimerCounter process3;
     TimerCounter write;
-    TimerCounter total;
     
-    void print() {     
+    void print() {
+        TimerCounter process = process1 + process2 + process3;
+        TimerCounter total = alloc + read + process + write;
+        
         cout << endl;
         cout << "Allocated in " << alloc.seconds() << " seconds (" << alloc.speed(size) << " MB/s)" << endl;
         cout << "Read in " << read.seconds() << " seconds (" << read.speed(size) << " MB/s)" << endl;
         cout << "Processed in " << process.seconds() << " seconds (" << process.speed(size) << " MB/s)" << endl;
+        cout << "\tLoop 1: " << process1.seconds() << endl;
+        cout << "\tLoop 2: " << process2.seconds() << endl;
+        cout << "\tLoop 3: " << process3.seconds() << endl;
         cout << "Written in " << write.seconds() << " seconds (" << write.speed(size) << " MB/s)" << endl;
         cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << endl;
     }
@@ -481,7 +493,7 @@ public:
                     standardDataSet.read(standardSlice, PredType::NATIVE_FLOAT, standardMemspace, standardDataSpace);
                     
                     timer.read.stop();
-                    timer.process.start();
+                    timer.process3.start();
                     
                     // rotate tile slice
                     for (auto i = 0; i < depth; i++) {
@@ -494,7 +506,7 @@ public:
                         }
                     }
                     
-                    timer.process.stop();
+                    timer.process3.stop();
                     timer.write.start();
                             
                     // write tile slice
@@ -547,7 +559,7 @@ public:
             readFits(fpixel, cubeSize);
 
             cout << "Processing Stokes " << currentStokes << " dataset..." << endl;
-            timer.process.start();
+            timer.process1.start();
             
             cout << " * XY statistics" << (depth > 1 ? " and fast swizzling" : "") <<  "... " << endl;
 
@@ -637,6 +649,9 @@ public:
             if (depth > 1) {
                 cout << " * Z statistics... " << endl;
                 // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
+                
+                timer.process1.stop();
+                timer.process2.start();
 #pragma omp parallel for
                 for (auto j = 0; j < height; j++) {
                     for (auto k = 0; k < width; k++) {
@@ -683,6 +698,9 @@ public:
             cout << " * Histograms... " << endl;
 
             // Third loop handles histograms
+            
+            timer.process2.stop();
+            timer.process3.start();
             
             double cubeMin;
             double cubeMax;
@@ -732,7 +750,7 @@ public:
                 }
             }
 
-            timer.process.stop();
+            timer.process3.stop();
 
             cout << "Writing Stokes " << currentStokes << " dataset... " << endl;
             
@@ -827,7 +845,7 @@ public:
                 standardDataSet.write(standardCube, PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
                 timer.write.stop();
                 
-                timer.process.start();
+                timer.process1.start();
                 
                 auto indexXY = s * depth + c;
                 
@@ -887,10 +905,10 @@ public:
                     statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
                 }
                 
-                timer.process.stop();
+                timer.process1.stop();
             } // end of first channel loop
             
-            timer.process.start();
+            timer.process1.start();
             // A final pass over all XY to fix the Z stats NaNs 
             for (auto p = 0; p < width * height; p++) {
                 auto indexZ = s * width * height + p;
@@ -904,9 +922,13 @@ public:
                 }
             }
             
+            timer.process1.stop();
+            
             // XY and XYZ histograms
             // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
             // We do the second pass backwards to take advantage of caching
+            
+            timer.process2.start();
             
             double cubeMin = statsXYZ.minVals[s];
             double cubeMax = statsXYZ.maxVals[s];
@@ -928,13 +950,13 @@ public:
                 // read one channel
                 long fpixel[] = {1, 1, (long)c + 1, s + 1};
                 
-                timer.process.stop();
+                timer.process2.stop();
                 timer.read.start();
                 
                 readFits(fpixel, cubeSize);
                 
                 timer.read.stop();
-                timer.process.start();
+                timer.process2.start();
 
                 for (auto p = 0; p < width * height; p++) {
                     auto val = standardCube[p];
@@ -952,7 +974,7 @@ public:
                 } // end of XY loop
             } // end of second channel loop (XY and XYZ histograms)
             
-            timer.process.stop();
+            timer.process2.stop();
             
         } // end of stokes
                 
@@ -964,8 +986,6 @@ public:
     }
     
     void convert() {
-        timer.total.start();
-        
         createOutputFile();
         copyHeaders();
         
@@ -998,9 +1018,7 @@ public:
         if (depth > 1 && !slow) {
             delete[] rotatedCube;
         }
-        
-        timer.total.stop();
-        
+                
         timer.print();
         
         // Rename from temp file
@@ -1048,7 +1066,6 @@ private:
 };
 
 int main(int argc, char** argv) {
-    auto startAll = chrono::high_resolution_clock::now();
     string inputFileName;
     string outputFileName;
     bool slow(false);
@@ -1069,10 +1086,6 @@ int main(int argc, char** argv) {
     cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
     
     image.convert();
-    
-    auto stopAll = chrono::high_resolution_clock::now();
-    auto allDuration = chrono::duration_cast<chrono::milliseconds>(stopAll - startAll).count();
-    cout << "Total script duration: " << allDuration * 1e-3 << endl;
-    
+
     return 0;
 }
