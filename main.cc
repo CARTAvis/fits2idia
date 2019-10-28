@@ -551,7 +551,7 @@ public:
             cout << "Processing Stokes " << currentStokes << " dataset..." << endl;
             timer.process.start();
             
-            cout << " * XY statistics" << (depth > 1 && !slow ? " and fast swizzling" : "") <<  "... " << endl;
+            cout << " * XY statistics" << (depth > 1 ? " and fast swizzling" : "") <<  "... " << endl;
 
             // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
