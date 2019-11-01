@@ -16,6 +16,7 @@ using namespace std;
 #define HDF5_CONVERTER_VERSION "0.1.9beta2"
 
 hsize_t TILE_SIZE = 512;
+hsize_t MIN_MIPMAP_SIZE = 128;
 
 struct StatsDims {
     StatsDims() {}
@@ -51,6 +52,7 @@ struct Dims {
         N(2),
         width(width), height(height), depth(1), stokes(1),
         standard({height, width}),
+        mipMapExtra({}),
         tileDims({TILE_SIZE, TILE_SIZE}),
         statsXY({}, depth * stokes, defaultBins()) // dims, size, bins
     {}
@@ -60,6 +62,7 @@ struct Dims {
         width(width), height(height), depth(depth), stokes(1),
         standard({depth, height, width}),
         swizzled({width, height, depth}),
+        mipMapExtra({depth}),
         tileDims({1, TILE_SIZE, TILE_SIZE}),
         statsXY({depth}, depth * stokes, defaultBins()), // dims, size, bins
         statsXYZ({}, stokes, defaultBins(), depth), // dims, size, bins, partial multiplier
@@ -71,6 +74,7 @@ struct Dims {
         width(width), height(height), depth(depth), stokes(stokes),
         standard({stokes, depth, height, width}),
         swizzled({stokes, width, height, depth}),
+        mipMapExtra({stokes, depth}),
         tileDims({1, 1, TILE_SIZE, TILE_SIZE}),
         statsXY({stokes, depth}, depth * stokes, defaultBins()), // dims, size, bins
         statsXYZ({stokes}, stokes, defaultBins(), depth), // dims, size, bins, partial multiplier
@@ -100,6 +104,7 @@ struct Dims {
     
     vector<hsize_t> standard;
     vector<hsize_t> swizzled;
+    vector<hsize_t> mipMapExtra;
     vector<hsize_t> tileDims;
     
     StatsDims statsXY;
@@ -156,6 +161,105 @@ struct Stats {
     vector<int64_t> partialHistograms;
 };
 
+struct MipMap {
+    MipMap() {}
+    
+    MipMap(hsize_t width, hsize_t height, hsize_t depth, int divisor) :
+        divisor(divisor),
+        channelSize(width * height),
+        width(width),
+        height(height),
+        depth(depth),
+        vals(depth * channelSize),
+        count(depth * channelSize)
+    {}
+    
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
+        hsize_t mipIndex = totalChannelOffset * channelSize + (y / divisor) * width + (x / divisor);
+        vals[mipIndex] += val;
+        count[mipIndex]++;
+    }
+    
+    void calculate() {
+        for (int mipIndex = 0; mipIndex < mm.vals.size(); mipIndex++) {
+            if (count[mipIndex]) {
+                vals[mipIndex] /= count[mipIndex];
+            } else {
+                vals[mipIndex] = NaN;
+            }
+        }
+    }
+    
+    void reset() {
+        std::fill(vals.begin(), vals.end(), 0);
+        std::fill(count.begin(), count.end(), 0);
+    }
+    
+    bool useChunks() {
+        return TILE_SIZE <= width && TILE_SIZE <= height;
+    }
+    
+    void createDataset(Group mipMapGroup, FloatType floatType, Dims dims) {
+        vector<hsize_t> mipMapDims = dims.mipMapExtra;
+        mipMapDims.push_back(height);
+        mipMapDims.push_back(width);
+        
+        DSetCreatPropList createPlist;
+        if (useChunks()) {
+            createPlist.setChunk(dims.N, dims.tileDims.data());
+        }
+        
+        auto dataSpace = DataSpace(N, mipMapDims.data());
+        dataSet = mipMapGroup.createDataSet("DATA", floatType, dataSpace, createPlist);
+    }
+    
+    void write(hsize_t stokesOffset, hsize_t channelOffset) {
+        // TODO this can probably be the same for fast and slow
+        vector<hsize_t> count;
+        vector<hsize_t> start;
+        
+        if (N == 2) {
+            count = {height, width};
+            start = {0, 0};
+        } else if (N == 3) {
+            count = {depth, height, width};
+            start = {channelOffset, 0, 0};
+        } else if (N == 4) {
+            count = {1, depth, height, width};
+            start = {stokesOffset, channelOffset, 0, 0};
+        }
+        
+        hsize_t memDims[] = {depth, height, width};
+        DataSpace memspace(3, memDims);
+
+        auto sliceDataSpace = dataSet.getSpace();
+        sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+
+        dataSet.write(vals.data(), PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
+    }
+    
+    static void initialise(vector<MipMap>& mipMaps, hsize_t width, hsize_t height, hsize_t depth) {
+        int divisor = 1;
+        while (width > MIN_MIPMAP_SIZE && height > MIN_MIPMAP_SIZE) {
+            divisor *= 2;
+            width = (width + 1) / 2;
+            height = (height + 1) / 2;
+            mipMaps.push_back(MipMap(width, height, depth, divisor));
+        }
+    }
+    
+    int divisor;
+    hsize_t channelSize;
+    hsize_t width;
+    hsize_t height;
+    hsize_t depth;
+    
+    vector<double> vals;
+    vector<hsize_t> count;
+    
+    DataSet dataSet;
+};
+
 struct TimerCounter {
     TimerCounter() : value(0) {}
     
@@ -192,7 +296,8 @@ struct Timer {
         size(imageSize),
         loopLabel1(slow ? "XY, XYZ & Z stats" : "Swizzling, XY & XYZ stats"),
         loopLabel2(slow ? "Histograms" : "Z stats"),
-        loopLabel3(slow ? "Swizzling" : "Histograms")
+        loopLabel3(slow ? "Swizzling" : "Histograms"),
+        loopLabel4(slow ? "????" : "MipMaps")
     {}
     
     hsize_t size;
@@ -202,14 +307,16 @@ struct Timer {
     TimerCounter process1;
     TimerCounter process2;
     TimerCounter process3;
+    TimerCounter process4;
     TimerCounter write;
     
     string loopLabel1;
     string loopLabel2;
     string loopLabel3;
+    string loopLabel4;
     
     void print() {
-        TimerCounter process = process1 + process2 + process3;
+        TimerCounter process = process1 + process2 + process3 + process4;
         TimerCounter total = alloc + read + process + write;
         
         cout << endl;
@@ -219,6 +326,7 @@ struct Timer {
         cout << "\t" << loopLabel1 << ": " << process1.seconds() << endl;
         cout << "\t" << loopLabel2 << ": " << process2.seconds() << endl;
         cout << "\t" << loopLabel3 << ": " << process3.seconds() << endl;
+        cout << "\t" << loopLabel4 << ": " << process4.seconds() << endl;
         cout << "Written in " << write.seconds() << " seconds (" << write.speed(size) << " MB/s)" << endl;
         cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << endl;
     }
@@ -324,6 +432,8 @@ public:
         
         swizzledName = N == 3 ? "ZYX" : "ZYXW";
         
+        MipMap.initialise(mipMaps, width, height, slow ? 1 : depth);
+        
         this->slow = slow;
         timer = Timer(stokes * depth * height * width, slow);
         
@@ -364,6 +474,13 @@ public:
             auto swizzledGroup = outputGroup.createGroup("SwizzledData");
             auto swizzledDataSpace = DataSpace(N, dims.swizzled.data());
             swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatType, swizzledDataSpace);
+        }
+        
+        // I don't know if this naming convention still makes sense, but I'm replicating the schema for now
+        auto mipMapGroup = outputGroup.createGroup("MipMaps").createGroup("DATA");
+        
+        for (auto& mipMap : mipMaps) {
+            mipMap.createDataset(mipMapGroup, floatType, dims);
         }
     }
     
@@ -531,7 +648,7 @@ public:
         delete[] rotatedSlice;
     }
     
-    void allocate(hsize_t cubeSize, hsize_t rotatedSize) {
+    void allocate(hsize_t cubeSize) {
         cout << "Allocating " << cubeSize * 4 * 2 * 1e-9 << " GB of memory... " << endl;
         timer.alloc.start();
 
@@ -540,14 +657,25 @@ public:
         statsXY = Stats(dims.statsXY);
         
         if (depth > 1) {
-            if (rotatedSize) {
-                rotatedCube = new float[rotatedSize];
-            }
             statsZ = Stats(dims.statsZ);
             statsXYZ = Stats(dims.statsXYZ);
         }
 
         timer.alloc.stop();
+    }
+    
+    void allocateSwizzled(hsize_t rotatedSize) {
+        if (depth > 1) {
+            timer.alloc.start();
+            rotatedCube = new float[rotatedSize];
+            timer.alloc.stop();
+        }
+    }
+    
+    void freeSwizzled() {
+        if (depth > 1) {
+            delete[] rotatedCube;
+        }
     }
     
     void readFits(long* fpixel, int cubeSize) {
@@ -558,7 +686,7 @@ public:
     
     void fastCopy() {
         auto cubeSize = depth * height * width;
-        allocate(cubeSize, cubeSize);
+        allocate(cubeSize);
 
         for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
             // Read data into memory space
@@ -566,6 +694,9 @@ public:
             long fpixel[] = {1, 1, 1, currentStokes + 1};
             cout << "Reading Stokes " << currentStokes << " dataset... " << endl;
             readFits(fpixel, cubeSize);
+            
+            // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
+            allocateSwizzled(cubeSize);
 
             cout << "Processing Stokes " << currentStokes << " dataset..." << endl;
             timer.process1.start();
@@ -810,7 +941,62 @@ public:
             }
 
             timer.write.stop();
-        }
+            
+            // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
+            
+            freeSwizzled();
+            
+            // Fourth loop handles mipmaps
+            
+            // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
+            
+            cout << " * MipMaps... " << endl;
+
+            timer.process4.start()
+            
+#pragma omp parallel for
+            for (auto c = 0; c < depth; c++) {
+                for (auto y = 0; y < height; y++) {
+                    for (auto x = 0; x < width; x++) {
+                        auto sourceIndex = x + width * y + (height * width) * c;
+                        auto val = standardCube[sourceIndex];
+                        if (!isnan(val)) {
+                            for (auto& mipMap : mipMaps) {
+                                mipMap.accumulate(val, x, y, (width * height) + c);
+                            }
+                        }
+                    }
+                }
+            } // end of mipmap loop
+            
+            // Final mipmap calculation
+            
+            for (auto& mipMap : mipMaps) {
+                mipMap.calculate();
+            }
+            
+            timer.process4.stop();
+            timer.write.start();
+            
+            // Write the mipmaps
+            
+            for (auto& mipMap : mipMaps) {
+                // Start at current Stokes and channel 0
+                mipMap.write(currentStokes, 0);
+            }
+            
+            timer.write.stop();
+            
+            // Clear the mipmaps before the next Stokes
+            
+            timer.process4.start()
+            
+            for (auto& mipMap : mipMaps) {
+                mipMap.reset();
+            }
+            
+            timer.process4.stop();
+        } // end of Stokes loop
     }
     
     void slowCopy() {
@@ -860,39 +1046,41 @@ public:
                 
                 auto indexXY = s * depth + c;
                 
-                for (auto p = 0; p < width * height; p++) {
-                    auto val = standardCube[p];
-                    
-                    // XY statistics
-                    // TODO: check if indexing stats arrays inside loop is slow or is optimised away
-                    
-                    if (!isnan(val)) {
-                        // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
-                        // very unlikely when we're iterating over all values in a channel.
-                        if (val < statsXY.minVals[indexXY]) {
-                            statsXY.minVals[indexXY] = val;
-                        } else if (val > statsXY.maxVals[indexXY]) {
-                            statsXY.maxVals[indexXY] = val;
+                for (auto y = 0; y < height; y++) {
+                    for (auto x = 0; x < width; x++) {
+                        auto indexZ = s * width * height + y * width + x;
+                        auto val = standardCube[indexZ];
+                                            
+                        if (!isnan(val)) {
+                            // XY statistics
+                            // TODO: check if indexing stats arrays inside loop is slow or is optimised away
+                            
+                            // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
+                            // very unlikely when we're iterating over all values in a channel.
+                            if (val < statsXY.minVals[indexXY]) {
+                                statsXY.minVals[indexXY] = val;
+                            } else if (val > statsXY.maxVals[indexXY]) {
+                                statsXY.maxVals[indexXY] = val;
+                            }
+                            statsXY.sums[indexXY] += val;
+                            statsXY.sumsSq[indexXY] += val * val;
+                            
+                            // Accumulate Z statistics
+                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
+                            statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
+                            statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
+                            statsZ.sums[indexZ] += val;
+                            statsZ.sumsSq[indexZ] += val * val;
+                            
+                            // Accumulate mipmaps
+                            for (auto& mipMap : mipMaps) {
+                                mipMap.accumulate(val, x, y, (width * height) + c);
+                            }
+                            
+                        } else {
+                            statsXY.nanCounts[indexXY] += 1;
+                            statsZ.nanCounts[indexZ] += 1;
                         }
-                        statsXY.sums[indexXY] += val;
-                        statsXY.sumsSq[indexXY] += val * val;
-                    } else {
-                        statsXY.nanCounts[indexXY] += 1;
-                    }
-                    
-                    // Accumulate Z statistics
-                    // TODO maybe we should do this during the swizzle?
-                    // TODO: can we just increment this?
-                    auto indexZ = s * width * height + p;
-                    
-                    if (!isnan(val)) {
-                        // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                        statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
-                        statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
-                        statsZ.sums[indexZ] += val;
-                        statsZ.sumsSq[indexZ] += val * val;
-                    } else {
-                        statsZ.nanCounts[indexZ] += 1;
                     }
                 } // end of XY loop
                 
@@ -916,7 +1104,32 @@ public:
                     statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
                 }
                 
+                // Final mipmap calculation
+                for (auto& mipMap : mipMaps) {
+                    mipMap.calculate();
+                }
+                
                 timer.process1.stop();
+                
+                // Write the mipmaps
+                
+                timer.write.start();
+            
+                for (auto& mipMap : mipMaps) {
+                    // Start at current Stokes and channel
+                    mipMap.write(s, c);
+                }
+                
+                timer.write.stop();
+                timer.process1.start();
+                
+                // Reset mipmaps before next channel
+                for (auto& mipMap : mipMaps) {
+                    mipMap.reset();
+                }
+                
+                timer.process1.stop();
+                
             } // end of first channel loop
             
             timer.process1.start();
@@ -1026,9 +1239,7 @@ public:
         // Free memory
         delete[] standardCube;
         
-        if (depth > 1 && !slow) {
-            delete[] rotatedCube;
-        }
+        // Rotated cube is freed elsewhere
                 
         timer.print();
         
@@ -1056,6 +1267,9 @@ private:
     Stats statsXY;
     Stats statsZ;
     Stats statsXYZ;
+    
+    // MipMaps
+    vector<MipMap> mipMaps;
     
     int status;
     bool slow;
