@@ -164,7 +164,8 @@ struct Stats {
 struct MipMap {
     MipMap() {}
     
-    MipMap(hsize_t width, hsize_t height, hsize_t depth, int divisor) :
+    MipMap(int N, hsize_t width, hsize_t height, hsize_t depth, int divisor) :
+        N(N),
         divisor(divisor),
         channelSize(width * height),
         width(width),
@@ -181,11 +182,11 @@ struct MipMap {
     }
     
     void calculate() {
-        for (int mipIndex = 0; mipIndex < mm.vals.size(); mipIndex++) {
+        for (int mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
             if (count[mipIndex]) {
                 vals[mipIndex] /= count[mipIndex];
             } else {
-                vals[mipIndex] = NaN;
+                vals[mipIndex] = NAN;
             }
         }
     }
@@ -238,16 +239,17 @@ struct MipMap {
         dataSet.write(vals.data(), PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
     }
     
-    static void initialise(vector<MipMap>& mipMaps, hsize_t width, hsize_t height, hsize_t depth) {
+    static void initialise(vector<MipMap>& mipMaps, int N, hsize_t width, hsize_t height, hsize_t depth) {
         int divisor = 1;
         while (width > MIN_MIPMAP_SIZE && height > MIN_MIPMAP_SIZE) {
             divisor *= 2;
             width = (width + 1) / 2;
             height = (height + 1) / 2;
-            mipMaps.push_back(MipMap(width, height, depth, divisor));
+            mipMaps.push_back(MipMap(N, width, height, depth, divisor));
         }
     }
     
+    int N;
     int divisor;
     hsize_t channelSize;
     hsize_t width;
@@ -432,7 +434,7 @@ public:
         
         swizzledName = N == 3 ? "ZYX" : "ZYXW";
         
-        MipMap.initialise(mipMaps, width, height, slow ? 1 : depth);
+        MipMap::initialise(mipMaps, N, width, height, slow ? 1 : depth);
         
         this->slow = slow;
         timer = Timer(stokes * depth * height * width, slow);
@@ -952,7 +954,7 @@ public:
             
             cout << " * MipMaps... " << endl;
 
-            timer.process4.start()
+            timer.process4.start();
             
 #pragma omp parallel for
             for (auto c = 0; c < depth; c++) {
@@ -989,7 +991,7 @@ public:
             
             // Clear the mipmaps before the next Stokes
             
-            timer.process4.start()
+            timer.process4.start();
             
             for (auto& mipMap : mipMaps) {
                 mipMap.reset();
@@ -1002,7 +1004,7 @@ public:
     void slowCopy() {
         // Allocate one channel at a time, and no swizzled data
         auto cubeSize = height * width;
-        allocate(cubeSize, 0);
+        allocate(cubeSize);
         
         auto sliceDataSpace = standardDataSet.getSpace();
                             
