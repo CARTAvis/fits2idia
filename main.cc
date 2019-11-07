@@ -220,7 +220,6 @@ struct MipMap {
     }
     
     void write(hsize_t stokesOffset, hsize_t channelOffset) {
-        // TODO this can probably be the same for fast and slow
         vector<hsize_t> count;
         vector<hsize_t> start;
         
@@ -241,7 +240,7 @@ struct MipMap {
         auto sliceDataSpace = dataSet.getSpace();
         sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
 
-        dataSet.write(vals.data(), PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
+        dataSet.write(vals.data(), PredType::NATIVE_DOUBLE, memspace, sliceDataSpace);
     }
     
     static void initialise(vector<MipMap>& mipMaps, int N, hsize_t width, hsize_t height, hsize_t depth) {
