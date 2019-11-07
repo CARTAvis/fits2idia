@@ -1050,8 +1050,10 @@ public:
                 
                 for (auto y = 0; y < height; y++) {
                     for (auto x = 0; x < width; x++) {
-                        auto indexZ = s * width * height + y * width + x;
-                        auto val = standardCube[indexZ];
+                        auto pos = y * width + x; // relative to channel slice
+                        auto indexZ = s * width * height + pos; // relative to whole image
+                        
+                        auto val = standardCube[pos];
                                             
                         if (!isnan(val)) {
                             // XY statistics
