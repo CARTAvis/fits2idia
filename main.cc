@@ -964,7 +964,7 @@ public:
                         auto val = standardCube[sourceIndex];
                         if (!isnan(val)) {
                             for (auto& mipMap : mipMaps) {
-                                mipMap.accumulate(val, x, y, (width * height) + c);
+                                mipMap.accumulate(val, x, y, c);
                             }
                         }
                     }
@@ -1078,7 +1078,7 @@ public:
                             
                             // Accumulate mipmaps
                             for (auto& mipMap : mipMaps) {
-                                mipMap.accumulate(val, x, y, (width * height) + c);
+                                mipMap.accumulate(val, x, y, 0);
                             }
                             
                         } else {
