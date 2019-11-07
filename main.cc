@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <getopt.h>
 
@@ -211,7 +212,11 @@ struct MipMap {
         }
         
         auto dataSpace = DataSpace(N, mipMapDims.data());
-        dataSet = mipMapGroup.createDataSet("DATA", floatType, dataSpace, createPlist);
+        
+        ostringstream mipMapName;
+        mipMapName << "DATA_XY_" << divisor;
+        
+        dataSet = mipMapGroup.createDataSet(mipMapName.str().c_str(), floatType, dataSpace, createPlist);
     }
     
     void write(hsize_t stokesOffset, hsize_t channelOffset) {
