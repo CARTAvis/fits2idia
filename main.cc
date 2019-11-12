@@ -412,17 +412,25 @@ public:
         fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
         
         if (status != 0) {
-            throw "error opening FITS file";
+            throw "Could not open FITS file";
         }
         
         int bitpix;
         fits_get_img_type(inputFilePtr, &bitpix, &status);
+        
+        if (status != 0) {
+            throw "Could not read image type";
+        }
 
         if (bitpix != -32) {
             throw "Currently only supports FP32 files";
         }
         
         fits_get_img_dim(inputFilePtr, &N, &status);
+        
+        if (status != 0) {
+            throw "Could not read image dimensions";
+        }
     
         if (N < 2 || N > 4) {
             throw "Currently only supports 2D, 3D and 4D cubes";
@@ -430,6 +438,10 @@ public:
         
         long dims[4];
         fits_get_img_size(inputFilePtr, 4, dims, &status);
+        
+        if (status != 0) {
+            throw "Could not read image size";
+        }
             
         stokes = N == 4 ? dims[3] : 1;
         depth = N >= 3 ? dims[2] : 1;
@@ -503,11 +515,19 @@ public:
         int numHeaders;
         fits_get_hdrspace(inputFilePtr, &numHeaders, NULL, &status);
         
+        if (status != 0) {
+            throw "Could not read image header";
+        }
+        
         char keyTmp[255];
         char valueTmp[255];
         
         for (auto i = 0; i < numHeaders; i++) {
             fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
+        
+            if (status != 0) {
+                throw "Could not read attribute from header";
+            }
             string attributeName(keyTmp);
             string attributeValue(valueTmp);
             
@@ -525,6 +545,11 @@ public:
                         int strLen;
                         char strValueTmp[255];
                         fits_read_string_key(inputFilePtr, attributeName.c_str(), 1, 255, strValueTmp, &strLen, NULL, &status);
+        
+                        if (status != 0) {
+                            throw "Could not read string attribute";
+                        }
+                        
                         string attributeValueStr(strValueTmp);
 
                         attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
@@ -685,9 +710,13 @@ public:
     }
     
     void readFits(long* fpixel, int cubeSize) {
-            timer.read.start();
-            fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
-            timer.read.stop();
+        timer.read.start();
+        fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
+        timer.read.stop();
+        
+        if (status != 0) {
+            throw "Could not read image data";
+        }
     }
     
     void fastCopy() {
@@ -1311,14 +1340,14 @@ int main(int argc, char** argv) {
         
     try {
         image = Image(inputFileName, outputFileName, slow);
+    
+        cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
+
+        image.convert();
     } catch (const char* msg) {
-        cerr << msg << endl;
+        cerr << "Error: " << msg << ". Aborting." << endl;
         return 1;
     }
-    
-    cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << endl;
-    
-    image.convert();
 
     return 0;
 }
