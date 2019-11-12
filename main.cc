@@ -1102,12 +1102,14 @@ public:
                             statsXY.sums[indexXY] += val;
                             statsXY.sumsSq[indexXY] += val * val;
                             
-                            // Accumulate Z statistics
-                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                            statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
-                            statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
-                            statsZ.sums[indexZ] += val;
-                            statsZ.sumsSq[indexZ] += val * val;
+                            if (depth > 1) {
+                                // Accumulate Z statistics
+                                // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
+                                statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
+                                statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
+                                statsZ.sums[indexZ] += val;
+                                statsZ.sumsSq[indexZ] += val * val;
+                            }
                             
                             // Accumulate mipmaps
                             for (auto& mipMap : mipMaps) {
@@ -1116,7 +1118,9 @@ public:
                             
                         } else {
                             statsXY.nanCounts[indexXY] += 1;
-                            statsZ.nanCounts[indexZ] += 1;
+                            if (depth > 1) {
+                                statsZ.nanCounts[indexZ] += 1;
+                            }
                         }
                     }
                 } // end of XY loop
@@ -1169,21 +1173,24 @@ public:
                 
             } // end of first channel loop
             
-            timer.process1.start();
-            // A final pass over all XY to fix the Z stats NaNs 
-            for (auto p = 0; p < width * height; p++) {
-                auto indexZ = s * width * height + p;
-                                        
-                // TODO can we do this in stats?
-                if (statsZ.nanCounts[indexZ] == depth) {
-                    statsZ.minVals[indexZ] = NAN;
-                    statsZ.maxVals[indexZ] = NAN;
-                    statsZ.sums[indexZ] = NAN;
-                    statsZ.sumsSq[indexZ] = NAN;
+            if (depth > 1) {
+                timer.process1.start();
+                
+                // A final pass over all XY to fix the Z stats NaNs
+                for (auto p = 0; p < width * height; p++) {
+                    auto indexZ = s * width * height + p;
+                                            
+                    // TODO can we do this in stats?
+                    if (statsZ.nanCounts[indexZ] == depth) {
+                        statsZ.minVals[indexZ] = NAN;
+                        statsZ.maxVals[indexZ] = NAN;
+                        statsZ.sums[indexZ] = NAN;
+                        statsZ.sumsSq[indexZ] = NAN;
+                    }
                 }
+                
+                timer.process1.stop();
             }
-            
-            timer.process1.stop();
             
             // XY and XYZ histograms
             // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
@@ -1191,10 +1198,17 @@ public:
             
             timer.process2.start();
             
-            double cubeMin = statsXYZ.minVals[s];
-            double cubeMax = statsXYZ.maxVals[s];
-            double cubeRange = cubeMax - cubeMin;
-            bool cubeHist(!isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0);
+            bool cubeHist(0);
+            double cubeMin;
+            double cubeMax;
+            double cubeRange;
+            
+            if (depth > 1) {
+                cubeMin = statsXYZ.minVals[s];
+                cubeMax = statsXYZ.maxVals[s];
+                cubeRange = cubeMax - cubeMin;
+                cubeHist = !isnan(cubeMin) && !isnan(cubeMax) && cubeRange > 0;
+            }
             
             for (hsize_t c = depth; c-- > 0; ) {                
                 auto indexXY = s * depth + c;
@@ -1227,7 +1241,7 @@ public:
                                 statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
                             }
                             
-                            if (depth > 1 && cubeHist) {
+                            if (cubeHist) {
                                 int binIndex = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
                                 statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
                             }
