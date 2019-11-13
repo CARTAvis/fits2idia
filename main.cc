@@ -745,7 +745,6 @@ public:
             // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
             for (auto i = 0; i < depth; i++) {
-                // TODO: we need to set these to the first non-NaN value.
                 float minVal = numeric_limits<float>::max();
                 float maxVal = -numeric_limits<float>::max();
                 double sum = 0;
