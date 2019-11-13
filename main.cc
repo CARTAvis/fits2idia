@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <functional>
 #include <getopt.h>
 
 #include <H5Cpp.h>
@@ -344,9 +345,9 @@ bool getOptions(int argc, char** argv, string& inputFileName, string& outputFile
     
     int opt;
     bool err(false);
-    string usage = "Usage: hdf_convert [-o output_filename] [-s] input_filename\n\nConvert a FITS file to an HDF5 file with the IDIA schema\n\nOptions:\n\n-o\tOutput filename\n-s\tUse slower but less memory-intensive method (enable if memory allocation fails)";
+    string usage = "Usage: hdf_convert [-o output_filename] [-s] [-q] input_filename\n\nConvert a FITS file to an HDF5 file with the IDIA schema\n\nOptions:\n\n-o\tOutput filename\n-s\tUse slower but less memory-intensive method (enable if memory allocation fails)\n-q\tSuppress all non-error output";
     
-    while ((opt = getopt(argc, argv, ":o:s")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:sq")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -354,6 +355,9 @@ bool getOptions(int argc, char** argv, string& inputFileName, string& outputFile
             case 's':
                 // use slower but less memory-intensive method
                 slow = true;
+                break;
+            case 'q':
+                std::cout.rdbuf(nullptr);
                 break;
             case ':':
                 err = true;
@@ -741,12 +745,31 @@ public:
             // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
             for (auto i = 0; i < depth; i++) {
+                // TODO: we need to set these to the first non-NaN value.
                 float minVal = numeric_limits<float>::max();
                 float maxVal = -numeric_limits<float>::max();
                 double sum = 0;
                 double sumSq = 0;
                 int64_t nanCount = 0;
-
+                
+                std::function<void(float)> minmax;
+                
+                auto lazy_minmax = [&] (float val) {
+                    if (val < minVal) {
+                        minVal = val;
+                    } else if (val > maxVal) {
+                        maxVal = val;
+                    }
+                };
+                
+                auto first_minmax = [&] (float val) {
+                    minVal = val;
+                    maxVal = val;
+                    minmax = lazy_minmax;
+                };
+                
+                minmax = first_minmax;
+                
                 for (auto j = 0; j < height; j++) {
                     for (auto k = 0; k < width; k++) {
                         auto sourceIndex = k + width * j + (height * width) * i;
@@ -758,13 +781,7 @@ public:
                         }
                         
                         if (!isnan(val)) {
-                            // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
-                            // very unlikely when we're iterating over all values in a channel.
-                            if (val < minVal) {
-                                minVal = val;
-                            } else if (val > maxVal) {
-                                maxVal = val;
-                            }
+                            minmax(val);
                             sum += val;
                             sumSq += val * val;
                         } else {
@@ -1083,6 +1100,24 @@ public:
                 
                 auto indexXY = s * depth + c;
                 
+                std::function<void(float)> minmax;
+                
+                auto lazy_minmax = [&] (float val) {
+                    if (val < statsXY.minVals[indexXY]) {
+                        statsXY.minVals[indexXY] = val;
+                    } else if (val > statsXY.maxVals[indexXY]) {
+                        statsXY.maxVals[indexXY] = val;
+                    }
+                };
+                
+                auto first_minmax = [&] (float val) {
+                    statsXY.minVals[indexXY] = val;
+                    statsXY.maxVals[indexXY] = val;
+                    minmax = lazy_minmax;
+                };
+                
+                minmax = first_minmax;
+                
                 for (auto y = 0; y < height; y++) {
                     for (auto x = 0; x < width; x++) {
                         auto pos = y * width + x; // relative to channel slice
@@ -1093,14 +1128,7 @@ public:
                         if (!isnan(val)) {
                             // XY statistics
                             // TODO: check if indexing stats arrays inside loop is slow or is optimised away
-                            
-                            // This should be safe. It would only fail if we had a strictly descending or ascending sequence;
-                            // very unlikely when we're iterating over all values in a channel.
-                            if (val < statsXY.minVals[indexXY]) {
-                                statsXY.minVals[indexXY] = val;
-                            } else if (val > statsXY.maxVals[indexXY]) {
-                                statsXY.maxVals[indexXY] = val;
-                            }
+                            minmax(val);
                             statsXY.sums[indexXY] += val;
                             statsXY.sumsSq[indexXY] += val * val;
                             
