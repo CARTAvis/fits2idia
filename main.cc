@@ -776,17 +776,15 @@ public:
                 auto indexXY = currentStokes * depth + i;
                 
                 statsXY.nanCounts[indexXY] = nanCount;
+                statsXY.sums[indexXY] = sum;
+                statsXY.sumsSq[indexXY] = sumSq;
                 
                 if (nanCount != (height * width)) {
                     statsXY.minVals[indexXY] = minVal;
                     statsXY.maxVals[indexXY] = maxVal;
-                    statsXY.sums[indexXY] = sum;
-                    statsXY.sumsSq[indexXY] = sumSq;
                 } else {
                     statsXY.minVals[indexXY] = NAN;
                     statsXY.maxVals[indexXY] = NAN;
-                    statsXY.sums[indexXY] = NAN;
-                    statsXY.sumsSq[indexXY] = NAN;
                 }
             }
             
@@ -814,11 +812,17 @@ public:
                     xyzNanCount += statsXY.nanCounts[indexXY];
                 }
 
+                statsXYZ.nanCounts[currentStokes] = xyzNanCount;
                 statsXYZ.sums[currentStokes] = xyzSum;
                 statsXYZ.sumsSq[currentStokes] = xyzSumSq;
-                statsXYZ.minVals[currentStokes] = xyzMin;
-                statsXYZ.maxVals[currentStokes] = xyzMax;
-                statsXYZ.nanCounts[currentStokes] = xyzNanCount;
+                
+                if (xyzNanCount != depth * height * width) {
+                    statsXYZ.minVals[currentStokes] = xyzMin;
+                    statsXYZ.maxVals[currentStokes] = xyzMax;
+                } else {
+                    statsXYZ.minVals[currentStokes] = NAN;
+                    statsXYZ.maxVals[currentStokes] = NAN;
+                }
             }
             
             timer.process1.stop();
@@ -855,17 +859,15 @@ public:
                         auto indexZ = currentStokes * width * height + k + j * width;
                         
                         statsZ.nanCounts[indexZ] = nanCount;
+                        statsZ.sums[indexZ] = sum;
+                        statsZ.sumsSq[indexZ] = sumSq;
                         
                         if (nanCount != depth) {
                             statsZ.minVals[indexZ] = minVal;
                             statsZ.maxVals[indexZ] = maxVal;
-                            statsZ.sums[indexZ] = sum;
-                            statsZ.sumsSq[indexZ] = sumSq;
                         } else {
                             statsZ.minVals[indexZ] = NAN;
                             statsZ.maxVals[indexZ] = NAN;
-                            statsZ.sums[indexZ] = NAN;
-                            statsZ.sumsSq[indexZ] = NAN;
                         }
                     }
                 }
@@ -1129,8 +1131,6 @@ public:
                 if (statsXY.nanCounts[indexXY] == (height * width)) {
                     statsXY.minVals[indexXY] = NAN;
                     statsXY.maxVals[indexXY] = NAN;
-                    statsXY.sums[indexXY] = NAN;
-                    statsXY.sumsSq[indexXY] = NAN;
                 }
                 
                 // Accumulate XYZ statistics
@@ -1184,9 +1184,14 @@ public:
                     if (statsZ.nanCounts[indexZ] == depth) {
                         statsZ.minVals[indexZ] = NAN;
                         statsZ.maxVals[indexZ] = NAN;
-                        statsZ.sums[indexZ] = NAN;
-                        statsZ.sumsSq[indexZ] = NAN;
                     }
+                }
+                
+                // A final correction of the XYZ NaNs
+                
+                if (statsXYZ.nanCounts[s] == depth * height * width) {
+                    statsXYZ.minVals[s] = NAN;
+                    statsXYZ.maxVals[s] = NAN;
                 }
                 
                 timer.process1.stop();
