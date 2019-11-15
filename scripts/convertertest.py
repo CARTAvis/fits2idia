@@ -37,6 +37,8 @@ def compare_fits_hdf5(fitsname, hdf5name):
 
     axes = {v: k for k, v in enumerate(reversed(axis_names))}
     dims = {v: fitsdata.shape[k] for k, v in enumerate(reversed(axis_names))}
+    
+    width, height, depth, stokes = dims["X"], dims["Y"], dims.get("Z", 1), dims.get("W", 1)
 
     # CHECK SWIZZLES
 
@@ -66,6 +68,8 @@ def compare_fits_hdf5(fitsname, hdf5name):
         sdata = hdf5file["0/Statistics"][s]
         stats_axis = tuple(axes[a] for a in s)
         
+        # CHECK BASIC STATS
+        
         def assert_close(stat, func, data=fitsdata):
             if stat in sdata:
                 assert_allclose(sdata[stat], func(data, axis=stats_axis), rtol=1e-5, err_msg = "%s/%s is incorrect. DIFF: %r" % (s, stat, func(data, axis=stats_axis) - sdata[stat]))
@@ -78,10 +82,30 @@ def compare_fits_hdf5(fitsname, hdf5name):
         
         assert (np.count_nonzero(np.isnan(fitsdata), axis=stats_axis) == sdata["NAN_COUNT"]).all(), "%s/NAN_COUNT is incorrect." % s
         
-    # CHECK HISTOGRAMS
-
-    # TODO: check for bin size correctness
-    # TODO: check histogram values
+        if s in ["XY", "XYZ"]:
+            # CHECK HISTOGRAMS
+            
+            hist = np.array(sdata["HISTOGRAM"])
+            num_bins = int(max(np.sqrt(width * height), 2))
+            d = np.array(hdf5data).astype(np.float64) # We need doubles to get the right min/max to get the bins to match
+            
+            if N == len(s):
+                d = d[~np.isnan(d)]
+                reference = np.histogram(d, num_bins)[0]
+            else:
+                stats_shape = tuple(dims[a] for a in s)
+                stats_merged_shape = np.multiply.reduce(stats_shape)
+                rest_shape = tuple(dims[a] for a in reversed(axis_names) if a not in s)
+                rest_merged_shape = np.multiply.reduce(rest_shape)
+                hist_shape = rest_shape + (num_bins,)
+                                            
+                reference = np.apply_along_axis(lambda a: np.histogram(a[~np.isnan(a)], bins=num_bins)[0], 1, d.reshape(rest_merged_shape, stats_merged_shape)).reshape(hist_shape)
+            
+            assert hist.shape == reference.shape, "%s histogram shape %r does not match expected shape %r" % (s, hist.shape, reference.shape)
+            assert (hist == reference).all(), "%s histogram values do not match expected values.\nDifference:\n%r" % (s, reference - hist)
+    
+    # CHECK MIPMAPS
+    
     # TODO: check mipmaps
 
     fitsfile.close()
