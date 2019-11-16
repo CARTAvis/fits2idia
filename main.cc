@@ -913,27 +913,52 @@ public:
                 double sliceMin = statsXY.minVals[indexXY];
                 double sliceMax = statsXY.maxVals[indexXY];
                 double range = sliceMax - sliceMin;
-
+                
+                std::function<void(float)> channelHistogramFunc;
+                std::function<void(float)> cubeHistogramFunc;
+                
+                auto doChannelHistogram = [&] (float val) {
+                    // XY Histogram
+                    int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - sliceMin) / range));
+                    statsXY.histograms[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
+                };
+                
+                auto doCubeHistogram = [&] (float val) {
+                    // XYZ Partial histogram
+                    int binIndexXYZ = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                    statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
+                };
+                
+                auto doNothing = [&] (float val) {};
+                
+                channelHistogramFunc = doChannelHistogram;
+                cubeHistogramFunc = doCubeHistogram;
+                bool chanHist(true);
+                bool cubeHist(true);
+                
                 if (isnan(sliceMin) || isnan(sliceMax) || range == 0) {
-                    continue;
+                    channelHistogramFunc = doNothing;
+                    chanHist = false;
+                }
+                
+                if (depth <= 1) {
+                    cubeHistogramFunc = doNothing;
+                    cubeHist = false;
+                }
+                
+                if (!chanHist && !cubeHist) {
+                    continue; // skip the loop entirely
                 }
 
                 for (auto j = 0; j < width * height; j++) {
                     auto val = standardCube[i * width * height + j];
 
                     if (!isnan(val)) {
-                        // XY Histogram
-                        int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - sliceMin) / range));
-                        statsXY.histograms[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
-                        
-                        if (depth > 1) {
-                            // XYZ Partial histogram
-                            int binIndexXYZ = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                            statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
-                        }
+                        channelHistogramFunc(val);
+                        cubeHistogramFunc(val);
                     }
-                }
-            }
+                } // end of XY loop
+            } // end of parallel Z loop
             
             if (depth > 1) {
                 // Consolidate partial XYZ histograms into final histogram
@@ -1250,6 +1275,34 @@ public:
                 double chanRange = chanMax - chanMin;
                 bool chanHist(!isnan(chanMin) && !isnan(chanMax) && chanRange > 0);
                 
+                std::function<void(float)> channelHistogramFunc;
+                std::function<void(float)> cubeHistogramFunc;
+                
+                auto doChannelHistogram = [&] (float val) {
+                    // XY Histogram
+                    int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - chanMin) / chanRange));
+                    statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
+                };
+                
+                auto doCubeHistogram = [&] (float val) {
+                    // XYZ histogram
+                    int binIndex = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                    statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
+                };
+                
+                auto doNothing = [&] (float val) {};
+                
+                channelHistogramFunc = doChannelHistogram;
+                cubeHistogramFunc = doCubeHistogram;
+                
+                if (!chanHist) {
+                    channelHistogramFunc = doNothing;
+                }
+                
+                if (!cubeHist) {
+                    cubeHistogramFunc = doNothing;
+                }
+                
                 if (!chanHist && !cubeHist) {
                     continue;
                 }
@@ -1268,15 +1321,8 @@ public:
                 for (auto p = 0; p < width * height; p++) {
                     auto val = standardCube[p];
                         if (!isnan(val)) {
-                            if (chanHist) {
-                                int binIndex = min(numBinsXY - 1, (int)(numBinsXY * (val - chanMin) / chanRange));
-                                statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
-                            }
-                            
-                            if (cubeHist) {
-                                int binIndex = min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                                statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
-                            }
+                            channelHistogramFunc(val);
+                            cubeHistogramFunc(val);
                         }
                 } // end of XY loop
             } // end of second channel loop (XY and XYZ histograms)
