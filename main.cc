@@ -13,9 +13,9 @@
 using namespace H5;
 using namespace std;
 
-#define SCHEMA_VERSION "0.2"
+#define SCHEMA_VERSION "0.3"
 #define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.9beta2"
+#define HDF5_CONVERTER_VERSION "0.1.10"
 
 hsize_t TILE_SIZE = 512;
 hsize_t MIN_MIPMAP_SIZE = 128;
