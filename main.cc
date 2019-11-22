@@ -246,7 +246,7 @@ struct MipMap {
     
     static void initialise(vector<MipMap>& mipMaps, int N, hsize_t width, hsize_t height, hsize_t depth) {
         int divisor = 1;
-        while (width > MIN_MIPMAP_SIZE && height > MIN_MIPMAP_SIZE) {
+        while (width > MIN_MIPMAP_SIZE || height > MIN_MIPMAP_SIZE) {
             divisor *= 2;
             width = (width + 1) / 2;
             height = (height + 1) / 2;
@@ -498,11 +498,13 @@ public:
             swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatType, swizzledDataSpace);
         }
         
-        // I don't know if this naming convention still makes sense, but I'm replicating the schema for now
-        auto mipMapGroup = outputGroup.createGroup("MipMaps").createGroup("DATA");
-        
-        for (auto& mipMap : mipMaps) {
-            mipMap.createDataset(mipMapGroup, floatType, dims);
+        if (mipMaps.size()) {
+            // I don't know if this naming convention still makes sense, but I'm replicating the schema for now
+            auto mipMapGroup = outputGroup.createGroup("MipMaps").createGroup("DATA");
+            
+            for (auto& mipMap : mipMaps) {
+                mipMap.createDataset(mipMapGroup, floatType, dims);
+            }
         }
     }
     

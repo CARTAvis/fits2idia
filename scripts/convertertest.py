@@ -12,10 +12,10 @@ import argparse
 from astropy.io import fits
 import h5py
 import numpy as np
-from numpy.testing import assert_equal, assert_allclose
+from numpy.testing import assert_equal, assert_allclose, assert_almost_equal
 
-def pprint_sparse(a):
-    return "\n".join(["%r: %g" % (i, v) for i, v in np.ndenumerate(a) if v])
+def pprint_sparse_diff(one, two, tolerance=1e-6):
+    return "\n".join(["%r: %g" % (i, v) for i, v in np.ndenumerate(np.abs(one - two)) if v > tolerance])
 
 def compare_fits_hdf5(fitsname, hdf5name):
 
@@ -111,22 +111,36 @@ def compare_fits_hdf5(fitsname, hdf5name):
             
             assert hist.shape == reference.shape, "%s histogram shape %r does not match expected shape %r" % (s, hist.shape, reference.shape)
             # Note: we can't replicate the converter's binning exactly because of a precision issue, so there are occasional off-by-one bin increments.
-            assert diff.sum() == 0 and diff[diff != 0].size / diff.size < 0.01, "Too many %s histogram values do not match expected values.\nSum of difference: %d\nDifference:\n%s" % (s, diff.sum(), pprint_sparse(diff))
+            assert diff.sum() == 0 and diff[diff != 0].size / diff.size < 0.01, "Too many %s histogram values do not match expected values.\nSum of difference: %d\nDifference:\n%s" % (s, diff.sum(), pprint_sparse_diff(hist, reference))
     
     # CHECK MIPMAPS
     
-    for mname, mipmap in hdf5file["0/MipMaps"]["DATA"].items():
-        factor = int(re.match(r"DATA_XY_(\d+)", mname).group(1))
-        mheight, mwidth = mipmap.shape[-2:]
+    if "MipMaps" in hdf5file["0"]:
+        for mname, mipmap in sorted(hdf5file["0/MipMaps"]["DATA"].items(), key=lambda x: x[1].size, reverse=True):
+            factor = int(re.match(r"DATA_XY_(\d+)", mname).group(1))
+            mheight, mwidth = mipmap.shape[-2:]
+            
+            assert mwidth == np.ceil(width / factor) and mheight == np.ceil(height / factor), "Dimensions of mipmap %s are incorrect. Expected: %r Got: %r" % (mname, d.shape[:-2] + (mheight, mwidth), mipmap.shape)
         
-        assert mwidth == np.ceil(width / factor) and mheight == np.ceil(height / factor), "Dimensions of mipmap %s are incorrect. Expected: %r Got: %r" % (mname, d.shape[:-2] + (mheight, mwidth), mipmap.shape)
-    
-        # TODO check mipmap contents
-    # TODO check that the last mipmap is small enough
-        
-        
-        
+            # check mipmap contents
+            
+            def assert_mipmap_channel_equal(name, channel, d, got):
+                got = np.array(got)
+                expected = np.array([[np.nanmean(d[y*factor:(y+1)*factor, x*factor:(x+1)*factor]) for x in range(mwidth)] for y in range(mheight)])
+                assert_allclose(expected, got, rtol=1e-5, atol=1e-7, equal_nan=True, err_msg = "Mipmap %s channel %r is incorrect. \nEXPECTED:\n%r\nGOT:\n%r\nDIFF:\n%s" % (name, channel, expected, got, pprint_sparse_diff(expected, got)))
+            
+            d = np.array(hdf5data)
+            rest = mipmap.shape[:-2]
+            
+            if rest:
+                for i in np.ndindex(rest):
+                    assert_mipmap_channel_equal(mname, i, d[i], mipmap[i])
+            else:
+                assert_mipmap_channel_equal(mname, 0, d, mipmap)
 
+        # check that the last mipmap is small enough
+        assert mheight <= 128 and mwidth <= 128, "Smallest mipmap (%s) does not fit in 128x128 tile (dims: (%d, %d))" % (mname, mwidth, mheight)
+    
     fitsfile.close()
     hdf5file.close()
 
@@ -166,8 +180,8 @@ def test_random_files():
                 
                 test_random_image(dims, nans, nan_density)
     
-    # A few bigger images to test number of mipmaps
-    for dims in ((5000, 1000), (5000, 1000, 10), (5000, 1000, 10, 3)):
+    # A few bigger images to test multiple mipmaps
+    for dims in ((5000, 200), (5000, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
             for nan_density in (50,):
                 test_random_image(dims, nans, nan_density)
