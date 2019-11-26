@@ -1,5 +1,5 @@
 #include <getopt.h>
-#include "Image.h"
+#include "Converter.h"
 
 bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow) {
     extern int optind;
@@ -72,14 +72,14 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    Image image;
+    std::unique_ptr<Converter> converter;
         
     try {
-        image = Image(inputFileName, outputFileName, slow);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow);
     
         std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;
 
-        image.convert();
+        converter->convert();
     } catch (const char* msg) {
         std::cerr << "Error: " << msg << ". Aborting." << std::endl;
         return 1;

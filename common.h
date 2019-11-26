@@ -8,7 +8,8 @@
 #include <iostream>
 #include <chrono>
 #include <sstream>
-#include <limits> // do we actually need this, or is it imported by one of the others?
+#include <limits>
+#include <memory>
 
 #include <H5Cpp.h>
 #include <fitsio.h>

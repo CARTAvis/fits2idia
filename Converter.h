@@ -7,25 +7,25 @@
 #include "MipMap.h"
 #include "Timer.h"
 
-class Image {
+class Converter {
 public:
-    Image() {}
-    Image(std::string inputFileName, std::string outputFileName, bool slow);
-    ~Image();
+    Converter() {}
+    Converter(std::string inputFileName, std::string outputFileName);
+    ~Converter();
     
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow);
+    void convert();
+    
+protected:
     void createOutputFile();
     void copyHeaders();
-    void slowSwizzle();
     void allocate(hsize_t cubeSize);
     void allocateSwizzled(hsize_t rotatedSize);
     void freeSwizzled();
     void readFits(long* fpixel, int cubeSize);
+    virtual void copy();
+    void writeStats();
     
-    void fastCopy();
-    void slowCopy();
-    void convert();
-    
-private:
     std::string tempOutputFileName;
     std::string outputFileName;
     fitsfile* inputFilePtr;
@@ -49,7 +49,6 @@ private:
     std::vector<MipMap> mipMaps;
     
     int status;
-    bool slow;
     Timer timer;
     
     int N;
@@ -65,6 +64,24 @@ private:
     H5::FloatType doubleType;
     H5::FloatType floatType;
     H5::IntType intType;
+};
+
+
+class FastConverter : public Converter {
+public:
+    FastConverter(std::string inputFileName, std::string outputFileName);
+    
+protected:
+    void copy() override;
+};
+
+
+class SlowConverter : public Converter {
+public:
+    SlowConverter(std::string inputFileName, std::string outputFileName);
+    
+protected:
+    void copy() override;
 };
 
 #endif
