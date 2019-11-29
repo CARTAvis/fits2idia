@@ -92,6 +92,8 @@ void Converter::createOutputFile() {
 
     if (depth > 1) {
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
+        // We use this name in papers because it sounds more serious. :)
+        outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
         auto swizzledDataSpace = H5::DataSpace(N, dims.swizzled.data());
         swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatType, swizzledDataSpace);
     }
