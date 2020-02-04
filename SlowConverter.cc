@@ -271,7 +271,7 @@ void SlowConverter::copy() {
             sliceSize = stokes * depth * TILE_SIZE * TILE_SIZE;
         }
         
-        std::cout << "Allocating " << sliceSize * 4 * 2 * 1e-9 << " GB of memory... " << std::endl;
+        std::cout << "Allocating " << sliceSize * 4 * 2 * 1e-9 << " GB of memory for main and rotated dataset slices... " << std::endl;
         timer.alloc.start();
         
         float* standardSlice = new float[sliceSize];
@@ -346,6 +346,7 @@ void SlowConverter::copy() {
             }
         }
         
+        std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;
         delete[] standardSlice;
         delete[] rotatedSlice;
     }

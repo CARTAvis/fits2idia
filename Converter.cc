@@ -198,7 +198,7 @@ void Converter::copyHeaders() {
 }
 
 void Converter::allocate(hsize_t cubeSize) {
-    std::cout << "Allocating " << cubeSize * 4 * 2 * 1e-9 << " GB of memory... " << std::endl;
+    std::cout << "Allocating " << cubeSize * 4 * 1e-9 << " GB of memory for main dataset... " << std::endl;
     timer.alloc.start();
 
     standardCube = new float[cubeSize];
@@ -215,6 +215,7 @@ void Converter::allocate(hsize_t cubeSize) {
 
 void Converter::allocateSwizzled(hsize_t rotatedSize) {
     if (depth > 1) {
+        std::cout << "Allocating " << rotatedSize * 4 * 1e-9 << " GB of memory for rotated dataset... " << std::endl;
         timer.alloc.start();
         rotatedCube = new float[rotatedSize];
         timer.alloc.stop();
@@ -223,6 +224,7 @@ void Converter::allocateSwizzled(hsize_t rotatedSize) {
 
 void Converter::freeSwizzled() {
     if (depth > 1) {
+        std::cout << "Freeing memory from rotated dataset... " << std::endl;
         delete[] rotatedCube;
     }
 }
@@ -265,6 +267,7 @@ void Converter::convert() {
     writeStats();
     
     // Free memory
+    std::cout << "Freeing memory from main dataset... " << std::endl;
     delete[] standardCube;
     
     // Rotated cube is freed elsewhere
