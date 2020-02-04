@@ -6,7 +6,7 @@ FastConverter::FastConverter(std::string inputFileName, std::string outputFileNa
 }
 
 void FastConverter::copy() {
-    auto cubeSize = depth * height * width;
+    hsize_t cubeSize = depth * height * width;
     allocate(cubeSize);
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {

@@ -7,7 +7,7 @@ SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileNa
 
 void SlowConverter::copy() {
     // Allocate one channel at a time, and no swizzled data
-    auto cubeSize = height * width;
+    hsize_t cubeSize = height * width;
     allocate(cubeSize);
     
     auto sliceDataSpace = standardDataSet.getSpace();

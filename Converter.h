@@ -22,7 +22,7 @@ protected:
     void allocate(hsize_t cubeSize);
     void allocateSwizzled(hsize_t rotatedSize);
     void freeSwizzled();
-    void readFits(long* fpixel, int cubeSize);
+    void readFits(long* fpixel, hsize_t cubeSize);
     virtual void copy();
     void writeStats();
     

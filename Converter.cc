@@ -227,7 +227,7 @@ void Converter::freeSwizzled() {
     }
 }
 
-void Converter::readFits(long* fpixel, int cubeSize) {
+void Converter::readFits(long* fpixel, hsize_t cubeSize) {
     timer.read.start();
     fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
     timer.read.stop();
