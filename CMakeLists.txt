@@ -14,5 +14,12 @@ endif()
 
 set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 
-add_executable(hdf_convert main.cc)
+set(SOURCE_FILES
+    ${SOURCE_FILES}
+    main.cc
+    Converter.cc
+    FastConverter.cc
+    SlowConverter.cc)
+
+add_executable(hdf_convert ${SOURCE_FILES})
 target_link_libraries(hdf_convert ${LINK_LIBS})
