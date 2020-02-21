@@ -128,7 +128,8 @@ void Converter::copyHeaders() {
     char keyTmp[255];
     char valueTmp[255];
     
-    for (auto i = 0; i < numHeaders; i++) {
+    // This is 1-indexed!
+    for (auto i = 1; i <= numHeaders; i++) {
         fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
     
         if (status != 0) {
