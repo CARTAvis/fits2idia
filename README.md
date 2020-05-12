@@ -4,7 +4,7 @@ C++ implementation of FITS to IDIA-HDF5 converter, optimised using OpenMP
 
 ## Installation
 
-Dependencies: AEC, CFITSIO, HDF5, HDF5 C++ bindings, SZ
+Dependencies: CFITSIO, HDF5, HDF5 C++ bindings
 
 To install:
 
