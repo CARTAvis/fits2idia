@@ -7,7 +7,15 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     
     int opt;
     bool err(false);
-    std::string usage = "Usage: hdf_convert [-o output_filename] [-s] [-q] input_filename\n\nConvert a FITS file to an HDF5 file with the IDIA schema\n\nOptions:\n\n-o\tOutput filename\n-s\tUse slower but less memory-intensive method (enable if memory allocation fails)\n-q\tSuppress all non-error output";
+    
+    std::ostringstream usage;
+    usage << "IDIA FITS to HDF5 converter version " << HDF5_CONVERTER_VERSION 
+    << " using IDIA schema version " << SCHEMA_VERSION << std::endl
+    << "Usage: hdf_convert [-o output_filename] [-s] [-q] input_filename" << std::endl << std::endl
+    << "Options:" << std::endl 
+    << "-o\tOutput filename" << std::endl 
+    << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
+    << "-q\tSuppress all non-error output" << std::endl;
     
     while ((opt = getopt(argc, argv, ":o:sq")) != -1) {
         switch (opt) {
@@ -46,7 +54,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     }
         
     if (err) {
-        std::cerr << usage << std::endl;
+        std::cerr << std::endl << usage.str() << std::endl;
         return false;
     }
     
