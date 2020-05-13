@@ -175,6 +175,17 @@ void Converter::copyHeaders() {
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << std::endl;
                         parsingFailure = true;
+                    } catch (const std::out_of_range& e) {
+                        long double attributeValueLongDouble = std::stold(attributeValue);
+                        double attributeValueDouble = (double) attributeValueLongDouble;
+                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
+                        attribute.write(doubleType, &attributeValueDouble);
+                        
+                        std::ostringstream ostream;
+                        ostream.precision(13);
+                        ostream << attributeValueDouble;
+                        
+                        std::cout << "Warning: Attribute  '" << attributeName << "' with value '" << attributeValue << "', is not representable as a double precision floating point number on this architecture. Falling back to parsing as a long double and converting to double. Final value is '" << ostream.str() << "'." << std::endl;
                     }
                 } else {
                     // TRY TO PARSE AS INTEGER
