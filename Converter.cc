@@ -173,8 +173,25 @@ void Converter::copyHeaders() {
                         attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
                         attribute.write(doubleType, &attributeValueDouble);
                     } catch (const std::invalid_argument& ia) {
-                        std::cout << "Warning: Could not parse attribute '" << attributeName << "' as a float." << std::endl;
+                        std::cout << "Warning: could not parse attribute '" << attributeName << "' as a float." << std::endl;
                         parsingFailure = true;
+                    } catch (const std::out_of_range& e) {
+                        long double attributeValueLongDouble = std::stold(attributeValue);
+                        double attributeValueDouble = (double) attributeValueLongDouble;
+                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
+                        attribute.write(doubleType, &attributeValueDouble);
+                        
+                        std::ostringstream ostream;
+                        ostream.precision(13);
+                        ostream << attributeValueDouble;
+                        std::string original(attributeValue);
+                        std::string round_trip(ostream.str());
+                        transform(original.begin(), original.end(), original.begin(), ::toupper);
+                        transform(round_trip.begin(), round_trip.end(), round_trip.begin(), ::toupper);
+                                                
+                        if (original != round_trip) {
+                            std::cout << "Warning: the value of attribute  '" << attributeName << "' is not representable as a normalised double precision floating point number. Some precision has been lost.\nOriginal string representation:\n'" << original << "'\nFinal string representation:\n'" << round_trip << "'" << std::endl;
+                        }
                     }
                 } else {
                     // TRY TO PARSE AS INTEGER
@@ -183,7 +200,7 @@ void Converter::copyHeaders() {
                         attribute = outputGroup.createAttribute(attributeName, intType, attributeDataSpace);
                         attribute.write(intType, &attributeValueInt);
                     } catch (const std::invalid_argument& ia) {
-                        std::cout << "Warning: Could not parse attribute '" << attributeName << "' as an integer." << std::endl;
+                        std::cout << "Warning: could not parse attribute '" << attributeName << "' as an integer." << std::endl;
                         parsingFailure = true;
                     }
                 }
