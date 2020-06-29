@@ -27,10 +27,12 @@ void SlowConverter::copy() {
     H5::DataSpace memspace(2, memDims);
     
     for (unsigned int s = 0; s < stokes; s++) {
-        std::cout << "Processing Stokes " << s << " dataset... " << std::endl;
+        std::cout << "Processing Stokes " << s << "... " << std::endl;
         
         for (hsize_t c = 0; c < depth; c++) {
             // read one channel
+            D(std::cout << "Processing channel " << c << "... " << std::endl;);
+            D(std::cout << "Reading main dataset..." << std::endl;);
             long fpixel[] = {1, 1, (long)c + 1, s + 1};
             readFits(fpixel, cubeSize);
             
@@ -42,7 +44,8 @@ void SlowConverter::copy() {
             } else if (N == 4) {
                 start = {s, c, 0, 0};
             }
-
+            
+            D(std::cout << "Writing main dataset..." << std::endl;);
             timer.write.start();
             sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
             standardDataSet.write(standardCube, H5::PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
@@ -50,6 +53,7 @@ void SlowConverter::copy() {
             
             timer.process1.start();
             
+            D(std::cout << "Accumulating XY " << (depth > 1 ? "and Z " : "") << "stats and mipmaps..." << std::endl;);
             auto indexXY = s * depth + c;
             
             std::function<void(float)> minmax;
@@ -107,6 +111,7 @@ void SlowConverter::copy() {
                 }
             } // end of XY loop
             
+            D(std::cout << "Final XY stats..." << std::endl;);
             // TODO: see if this can be done in stats
             if (statsXY.nanCounts[indexXY] == (height * width)) {
                 statsXY.minVals[indexXY] = NAN;
@@ -114,8 +119,8 @@ void SlowConverter::copy() {
             }
             
             // Accumulate XYZ statistics
-            
             if (depth > 1) {
+                D(std::cout << "Accumulating XYZ stats..." << std::endl;);
                 if (!std::isnan(statsXY.sums[indexXY])) {
                     statsXYZ.sums[s] += statsXY.sums[indexXY];
                     statsXYZ.sumsSq[s] += statsXY.sumsSq[indexXY];
@@ -126,6 +131,7 @@ void SlowConverter::copy() {
             }
             
             // Final mipmap calculation
+            D(std::cout << "Final mipmaps..." << std::endl;);
             for (auto& mipMap : mipMaps) {
                 mipMap.calculate();
             }
@@ -135,7 +141,7 @@ void SlowConverter::copy() {
             // Write the mipmaps
             
             timer.write.start();
-        
+            D(std::cout << "Writing mipmaps..." << std::endl;);
             for (auto& mipMap : mipMaps) {
                 // Start at current Stokes and channel
                 mipMap.write(s, c);
@@ -145,6 +151,7 @@ void SlowConverter::copy() {
             timer.process1.start();
             
             // Reset mipmaps before next channel
+            D(std::cout << "Resetting mipmap objects..." << std::endl;);
             for (auto& mipMap : mipMaps) {
                 mipMap.reset();
             }
@@ -155,6 +162,7 @@ void SlowConverter::copy() {
         
         if (depth > 1) {
             timer.process1.start();
+            D(std::cout << "Final Z stats..." << std::endl;);
             
             // A final pass over all XY to fix the Z stats NaNs
             for (auto p = 0; p < width * height; p++) {
@@ -168,6 +176,7 @@ void SlowConverter::copy() {
             }
             
             // A final correction of the XYZ NaNs
+            D(std::cout << "Final XYZ stats..." << std::endl;);
             
             if (statsXYZ.nanCounts[s] == depth * height * width) {
                 statsXYZ.minVals[s] = NAN;
@@ -180,7 +189,7 @@ void SlowConverter::copy() {
         // XY and XYZ histograms
         // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
         // We do the second pass backwards to take advantage of caching
-        
+        D(std::cout << "Histograms..." << std::endl;);
         timer.process2.start();
         
         bool cubeHist(0);
@@ -195,13 +204,18 @@ void SlowConverter::copy() {
             cubeHist = !std::isnan(cubeMin) && !std::isnan(cubeMax) && cubeRange > 0;
         }
         
-        for (hsize_t c = depth; c-- > 0; ) {                
+        D(std::cout << "Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
+        
+        for (hsize_t c = depth; c-- > 0; ) {
+            D(std::cout << "Processing channel " << c << "... " << std::endl;);
             auto indexXY = s * depth + c;
                             
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
             bool chanHist(!std::isnan(chanMin) && !std::isnan(chanMax) && chanRange > 0);
+            
+            D(std::cout << "Will " << (chanHist ? "" : "not ") << "calculate channel histogram." << std::endl;);
             
             std::function<void(float)> channelHistogramFunc;
             std::function<void(float)> cubeHistogramFunc;
@@ -236,6 +250,7 @@ void SlowConverter::copy() {
             }
             
             // read one channel
+            D(std::cout << "Reading main dataset..." << std::endl;);
             long fpixel[] = {1, 1, (long)c + 1, s + 1};
             
             timer.process2.stop();
@@ -246,6 +261,7 @@ void SlowConverter::copy() {
             timer.read.stop();
             timer.process2.start();
 
+            D(std::cout << "Calculating histogram(s)..." << std::endl;);
             for (auto p = 0; p < width * height; p++) {
                 auto val = standardCube[p];
                     if (!std::isnan(val)) {
@@ -283,10 +299,13 @@ void SlowConverter::copy() {
         auto swizzledDataSpace = swizzledDataSet.getSpace();
         
         for (unsigned int s = 0; s < stokes; s++) {
+            D(std::cout << "Processing Stokes " << s << "..." << std::endl;);
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
+                    
+                    D(std::cout << "Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::endl;);
                     
                     std::vector<hsize_t> standardMemDims;
                     std::vector<hsize_t> swizzledMemDims;
@@ -315,6 +334,7 @@ void SlowConverter::copy() {
                     H5::DataSpace swizzledMemspace(swizzledMemDims.size(), swizzledMemDims.data());
                     
                     // read tile slice
+                    D(std::cout << "Reading main dataset..." << std::endl;);
                     timer.read.start();
                     
                     standardDataSpace.selectHyperslab(H5S_SELECT_SET, standardCount.data(), standardOffset.data());
@@ -324,6 +344,7 @@ void SlowConverter::copy() {
                     timer.process3.start();
                     
                     // rotate tile slice
+                    D(std::cout << "Calculating rotation..." << std::endl;);
                     for (auto i = 0; i < depth; i++) {
                         for (auto j = 0; j < ySize; j++) {
                             for (auto k = 0; k < xSize; k++) {
@@ -338,6 +359,7 @@ void SlowConverter::copy() {
                     timer.write.start();
                             
                     // write tile slice
+                    D(std::cout << "Writing rotated dataset..." << std::endl;);
                     swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), swizzledOffset.data());
                     swizzledDataSet.write(rotatedSlice, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
                     
