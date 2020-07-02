@@ -215,37 +215,8 @@ void Converter::copyHeaders() {
     }
 }
 
-void Converter::allocate(hsize_t cubeSize) {
-    std::cout << "Allocating " << cubeSize * 4 * 1e-9 << " GB of memory for main dataset... " << std::endl;
-
-    standardCube = new float[cubeSize];
-    
-    statsXY = Stats(dims.statsXY);
-    
-    if (depth > 1) {
-        statsZ = Stats(dims.statsZ);
-        statsXYZ = Stats(dims.statsXYZ);
-    }
-
-    
-}
-
-void Converter::allocateSwizzled(hsize_t rotatedSize) {
-    if (depth > 1) {
-        std::cout << "Allocating " << rotatedSize * 4 * 1e-9 << " GB of memory for rotated dataset... " << std::endl;
-        rotatedCube = new float[rotatedSize];
-        
-    }
-}
-
-void Converter::freeSwizzled() {
-    if (depth > 1) {
-        std::cout << "Freeing memory from rotated dataset... " << std::endl;
-        delete[] rotatedCube;
-    }
-}
-
-void Converter::readFits(long* fpixel, hsize_t cubeSize) {
+void Converter::readFits(hsize_t channel, unsigned int stokes, hsize_t cubeSize) {
+    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
     fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
     
     if (status != 0) {
@@ -257,7 +228,14 @@ void Converter::copy() {
     // implemented in subclasses
 }
 
-void Converter::writeStats() {
+void Converter::convert() {
+    createOutputFile();
+    copyHeaders();
+    copy();
+    
+    // TODO move these into copy(); it makes no sense for them to be here.
+    // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
+    
     // Write statistics
     timer.start("Write");
     auto statsGroup = outputGroup.createGroup("Statistics");
@@ -271,14 +249,6 @@ void Converter::writeStats() {
         statsXYZ.write(statsXYZGroup, floatType, intType);
         statsZ.write(statsZGroup, floatType, intType);
     }
-    
-}
-
-void Converter::convert() {
-    createOutputFile();
-    copyHeaders();
-    copy();
-    writeStats();
     
     // Free memory
     timer.start("Free");

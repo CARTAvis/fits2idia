@@ -7,20 +7,29 @@ FastConverter::FastConverter(std::string inputFileName, std::string outputFileNa
 }
 
 void FastConverter::copy() {
+    // TODO fix reporting of total memory allocation -- size * 4 * 1e-9 GB
     hsize_t cubeSize = depth * height * width;
     timer.start("Allocate");
-    allocate(cubeSize);
+    standardCube = new float[cubeSize];
+    
+    statsXY = Stats(dims.statsXY);
+    
+    if (depth > 1) {
+        statsZ = Stats(dims.statsZ);
+        statsXYZ = Stats(dims.statsXYZ);
+    }
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         // Read data into memory space
         timer.start("Read");
-        long fpixel[] = {1, 1, 1, currentStokes + 1};
         std::cout << "Reading Stokes " << currentStokes << " dataset... " << std::endl;
-        readFits(fpixel, cubeSize);
+        readFits(0, currentStokes, cubeSize);
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
-        timer.start("Allocate");
-        allocateSwizzled(cubeSize);
+        if (depth > 1) {
+            timer.start("Allocate");
+            rotatedCube = new float[cubeSize];
+        }
 
         std::cout << "Processing Stokes " << currentStokes << " dataset..." << std::endl;
         
@@ -303,12 +312,13 @@ void FastConverter::copy() {
             swizzledDataSet.write(rotatedCube, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
         }
 
-        
-        
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
         
-        timer.start("Free");
-        freeSwizzled();
+        if (depth > 1) {
+            timer.start("Free");
+            std::cout << "Freeing memory from rotated dataset... " << std::endl;
+            delete[] rotatedCube;
+        }
         
         // Fourth loop handles mipmaps
         

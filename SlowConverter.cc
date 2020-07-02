@@ -10,7 +10,14 @@ void SlowConverter::copy() {
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     timer.start("Allocate");
-    allocate(cubeSize);
+    standardCube = new float[cubeSize];
+    
+    statsXY = Stats(dims.statsXY);
+    
+    if (depth > 1) {
+        statsZ = Stats(dims.statsZ);
+        statsXYZ = Stats(dims.statsXYZ);
+    }
     
     auto sliceDataSpace = standardDataSet.getSpace();
                         
@@ -36,8 +43,7 @@ void SlowConverter::copy() {
             D(std::cout << "Processing channel " << c << "... " << std::endl;);
             D(std::cout << "Reading main dataset..." << std::endl;);
             timer.start("Read");
-            long fpixel[] = {1, 1, (long)c + 1, s + 1};
-            readFits(fpixel, cubeSize);
+            readFits(c, s, cubeSize);
             
             // Write the standard dataset
             if (N == 2) {
@@ -253,12 +259,8 @@ void SlowConverter::copy() {
             
             // read one channel
             D(std::cout << "Reading main dataset..." << std::endl;);
-            long fpixel[] = {1, 1, (long)c + 1, s + 1};
-            
-            
             timer.start("Read");
-            
-            readFits(fpixel, cubeSize);
+            readFits(c, s, cubeSize);
             
             
             timer.start("Histograms");

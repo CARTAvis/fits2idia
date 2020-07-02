@@ -19,12 +19,8 @@ public:
 protected:
     void createOutputFile();
     void copyHeaders();
-    void allocate(hsize_t cubeSize);
-    void allocateSwizzled(hsize_t rotatedSize);
-    void freeSwizzled();
-    void readFits(long* fpixel, hsize_t cubeSize);
+    void readFits(hsize_t channel, unsigned int stokes, hsize_t cubeSize);
     virtual void copy();
-    void writeStats();
     
     std::string tempOutputFileName;
     std::string outputFileName;
