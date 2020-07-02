@@ -1,28 +1,34 @@
 #include "Converter.h"
 
 FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
-    MipMap::initialise(mipMaps, N, width, height, depth);
     timer = Timer(stokes * depth * height * width, false);
+    timer.start("Mipmaps");
+    MipMap::initialise(mipMaps, N, width, height, depth);
 }
 
 void FastConverter::copy() {
     hsize_t cubeSize = depth * height * width;
+    timer.start("Allocate");
     allocate(cubeSize);
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         // Read data into memory space
-        
+        timer.start("Read");
         long fpixel[] = {1, 1, 1, currentStokes + 1};
         std::cout << "Reading Stokes " << currentStokes << " dataset... " << std::endl;
         readFits(fpixel, cubeSize);
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
+        timer.start("Allocate");
         allocateSwizzled(cubeSize);
 
         std::cout << "Processing Stokes " << currentStokes << " dataset..." << std::endl;
-        timer.process1.start();
         
-        std::cout << " * XY statistics" << (depth > 1 ? " and fast swizzling" : "") <<  "... " << std::endl;
+        std::string process_label = depth > 1 ? "XY statistics and rotation" : "XY statistics";
+        
+        timer.start(process_label);
+        
+        std::cout << " * " << process_label <<  "... " << std::endl;
 
         // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
@@ -90,6 +96,8 @@ void FastConverter::copy() {
         double xyzMax;
 
         if (depth > 1) {
+            timer.start("XYZ and Z statistics");
+            
             // Consolidate XY stats into XYZ stats
             std::cout << " * XYZ statistics... " << std::endl;
             double xyzSum = 0;
@@ -121,15 +129,10 @@ void FastConverter::copy() {
                 statsXYZ.minVals[currentStokes] = NAN;
                 statsXYZ.maxVals[currentStokes] = NAN;
             }
-        }
-        
-        timer.process1.stop();
 
-        if (depth > 1) {
             std::cout << " * Z statistics... " << std::endl;
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
-            timer.process2.start();
 #pragma omp parallel for
             for (auto j = 0; j < height; j++) {
                 for (auto k = 0; k < width; k++) {
@@ -170,14 +173,14 @@ void FastConverter::copy() {
                 }
             }
             
-            timer.process2.stop();
+            
         }
         
         std::cout << " * Histograms... " << std::endl;
 
         // Third loop handles histograms
         
-        timer.process3.start();
+        timer.start("Histograms");
         
         double cubeMin;
         double cubeMax;
@@ -252,11 +255,11 @@ void FastConverter::copy() {
             }
         }
 
-        timer.process3.stop();
+        
 
         std::cout << "Writing Stokes " << currentStokes << " dataset... " << std::endl;
         
-        timer.write.start();
+        timer.start("Write");
                     
         std::vector<hsize_t> count;
         std::vector<hsize_t> start;
@@ -300,19 +303,20 @@ void FastConverter::copy() {
             swizzledDataSet.write(rotatedCube, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
         }
 
-        timer.write.stop();
+        
         
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
         
+        timer.start("Free");
         freeSwizzled();
         
         // Fourth loop handles mipmaps
         
         // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
         
-        std::cout << " * MipMaps... " << std::endl;
+        std::cout << " * Mipmaps... " << std::endl;
 
-        timer.process4.start();
+        timer.start("Mipmaps");
         
 #pragma omp parallel for
         for (auto c = 0; c < depth; c++) {
@@ -335,8 +339,8 @@ void FastConverter::copy() {
             mipMap.calculate();
         }
         
-        timer.process4.stop();
-        timer.write.start();
+        
+        timer.start("Write");
         
         // Write the mipmaps
         
@@ -345,16 +349,16 @@ void FastConverter::copy() {
             mipMap.write(currentStokes, 0);
         }
         
-        timer.write.stop();
+        
         
         // Clear the mipmaps before the next Stokes
         
-        timer.process4.start();
+        timer.start("Mipmaps");
         
         for (auto& mipMap : mipMaps) {
             mipMap.reset();
         }
         
-        timer.process4.stop();
+        
     } // end of Stokes loop
 }

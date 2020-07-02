@@ -2,6 +2,7 @@
 #define __TIMER_H
 
 #include "common.h"
+#include <unordered_map>
 
 struct TimerCounter {
     TimerCounter() : value(0) {}
@@ -34,43 +35,34 @@ struct TimerCounter {
 };
 
 struct Timer {
-    Timer() {}
-    Timer(hsize_t imageSize, bool slow) : 
-        size(imageSize),
-        loopLabel1(slow ? "XY, XYZ & Z stats" : "Swizzling, XY & XYZ stats"),
-        loopLabel2(slow ? "Histograms" : "Z stats"),
-        loopLabel3(slow ? "Swizzling" : "Histograms"),
-        loopLabel4(slow ? "????" : "MipMaps")
-    {}
+    Timer() : activeCounter() {}
+    Timer(hsize_t imageSize, bool slow) : activeCounter(), size(imageSize) {}
     
     hsize_t size;
     
-    TimerCounter alloc;
-    TimerCounter read;
-    TimerCounter process1;
-    TimerCounter process2;
-    TimerCounter process3;
-    TimerCounter process4;
-    TimerCounter write;
+    std::unordered_map<std::string, TimerCounter> counters;
+    TimerCounter* activeCounter;
     
-    std::string loopLabel1;
-    std::string loopLabel2;
-    std::string loopLabel3;
-    std::string loopLabel4;
+    void start(std::string label) {
+        if (activeCounter) {
+            activeCounter->stop();
+        }
+        activeCounter = &counters[label];
+        activeCounter->start();
+    }
     
     void print() {
-        TimerCounter process = process1 + process2 + process3 + process4;
-        TimerCounter total = alloc + read + process + write;
-        
+        if (activeCounter) {
+            activeCounter->stop();
+        }
         std::cout << std::endl;
-        std::cout << "Allocated in " << alloc.seconds() << " seconds (" << alloc.speed(size) << " MB/s)" << std::endl;
-        std::cout << "Read in " << read.seconds() << " seconds (" << read.speed(size) << " MB/s)" << std::endl;
-        std::cout << "Processed in " << process.seconds() << " seconds (" << process.speed(size) << " MB/s)" << std::endl;
-        std::cout << "\t" << loopLabel1 << ": " << process1.seconds() << std::endl;
-        std::cout << "\t" << loopLabel2 << ": " << process2.seconds() << std::endl;
-        std::cout << "\t" << loopLabel3 << ": " << process3.seconds() << std::endl;
-        std::cout << "\t" << loopLabel4 << ": " << process4.seconds() << std::endl;
-        std::cout << "Written in " << write.seconds() << " seconds (" << write.speed(size) << " MB/s)" << std::endl;
+        TimerCounter total;
+        for (auto& c : counters) {
+            auto& label = c.first;
+            auto& counter = c.second;
+            total = total + counter;
+            std::cout << label << ": " << counter.seconds() << " seconds (" << counter.speed(size) << " MB/s)" << std::endl;
+        }
         std::cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << std::endl;
     }
 };

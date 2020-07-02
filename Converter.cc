@@ -217,7 +217,6 @@ void Converter::copyHeaders() {
 
 void Converter::allocate(hsize_t cubeSize) {
     std::cout << "Allocating " << cubeSize * 4 * 1e-9 << " GB of memory for main dataset... " << std::endl;
-    timer.alloc.start();
 
     standardCube = new float[cubeSize];
     
@@ -228,15 +227,14 @@ void Converter::allocate(hsize_t cubeSize) {
         statsXYZ = Stats(dims.statsXYZ);
     }
 
-    timer.alloc.stop();
+    
 }
 
 void Converter::allocateSwizzled(hsize_t rotatedSize) {
     if (depth > 1) {
         std::cout << "Allocating " << rotatedSize * 4 * 1e-9 << " GB of memory for rotated dataset... " << std::endl;
-        timer.alloc.start();
         rotatedCube = new float[rotatedSize];
-        timer.alloc.stop();
+        
     }
 }
 
@@ -248,9 +246,7 @@ void Converter::freeSwizzled() {
 }
 
 void Converter::readFits(long* fpixel, hsize_t cubeSize) {
-    timer.read.start();
     fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
-    timer.read.stop();
     
     if (status != 0) {
         throw "Could not read image data";
@@ -263,7 +259,7 @@ void Converter::copy() {
 
 void Converter::writeStats() {
     // Write statistics
-    timer.write.start();
+    timer.start("Write");
     auto statsGroup = outputGroup.createGroup("Statistics");
     
     auto statsXYGroup = statsGroup.createGroup("XY");
@@ -275,7 +271,7 @@ void Converter::writeStats() {
         statsXYZ.write(statsXYZGroup, floatType, intType);
         statsZ.write(statsZGroup, floatType, intType);
     }
-    timer.write.stop();
+    
 }
 
 void Converter::convert() {
@@ -285,6 +281,7 @@ void Converter::convert() {
     writeStats();
     
     // Free memory
+    timer.start("Free");
     std::cout << "Freeing memory from main dataset... " << std::endl;
     delete[] standardCube;
     
