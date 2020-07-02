@@ -79,7 +79,24 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
-void Converter::createOutputFile() {
+void Converter::readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination) {
+    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
+    fits_read_pix(inputFilePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
+    
+    if (status != 0) {
+        throw "Could not read image data";
+    }
+}
+
+void Converter::copyAndCalculate() {
+    // implemented in subclasses
+}
+
+void Converter::convert() {
+    timer.start("Headers and preamble");
+    
+    // CREATE OUTPUT FILE
+    
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
     
@@ -89,8 +106,14 @@ void Converter::createOutputFile() {
     }
     auto standardDataSpace = H5::DataSpace(N, dims.standard.data());
     standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
+    
+    auto statsGroup = outputGroup.createGroup("Statistics");    
+    auto statsXYGroup = statsGroup.createGroup("XY");
 
     if (depth > 1) {
+        auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
+        auto statsZGroup = statsGroup.createGroup("Z");
+        
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
@@ -106,9 +129,9 @@ void Converter::createOutputFile() {
             mipMap.createDataset(mipMapGroup, floatType, dims);
         }
     }
-}
-
-void Converter::copyHeaders() {
+    
+    // COPY HEADERS
+    
     H5::DataSpace attributeDataSpace(H5S_SCALAR);
     
     H5::Attribute attribute = outputGroup.createAttribute("SCHEMA_VERSION", strType, attributeDataSpace);
@@ -213,39 +236,23 @@ void Converter::copyHeaders() {
             }
         }
     }
-}
-
-void Converter::readFits(hsize_t channel, unsigned int stokes, hsize_t cubeSize) {
-    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
-    fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
     
-    if (status != 0) {
-        throw "Could not read image data";
-    }
-}
+    // MAIN CONVERSION AND CALCULATION FUNCTION
 
-void Converter::copy() {
-    // implemented in subclasses
-}
-
-void Converter::convert() {
-    createOutputFile();
-    copyHeaders();
-    copy();
+    copyAndCalculate();
     
-    // TODO move these into copy(); it makes no sense for them to be here.
+    
+    // WRITE STATISTICS
+    
     // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
     
-    // Write statistics
     timer.start("Write");
-    auto statsGroup = outputGroup.createGroup("Statistics");
-    
-    auto statsXYGroup = statsGroup.createGroup("XY");
-    statsXY.write(statsXYGroup, floatType, intType);
 
+    statsXY.write(statsXYGroup, floatType, intType);
     if (depth > 1) {
-        auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
-        auto statsZGroup = statsGroup.createGroup("Z"); 
+        auto statsXYZGroup = statsGroup.openGroup("XYZ"); 
+        auto statsZGroup = statsGroup.openGroup("Z");
+        
         statsXYZ.write(statsXYZGroup, floatType, intType);
         statsZ.write(statsZGroup, floatType, intType);
     }

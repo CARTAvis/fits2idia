@@ -6,7 +6,7 @@ SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileNa
     MipMap::initialise(mipMaps, N, width, height, 1);
 }
 
-void SlowConverter::copy() {
+void SlowConverter::copyAndCalculate() {
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     timer.start("Allocate");
@@ -43,7 +43,7 @@ void SlowConverter::copy() {
             D(std::cout << "Processing channel " << c << "... " << std::endl;);
             D(std::cout << "Reading main dataset..." << std::endl;);
             timer.start("Read");
-            readFits(c, s, cubeSize);
+            readFits(c, s, cubeSize, standardCube);
             
             // Write the standard dataset
             if (N == 2) {
@@ -144,8 +144,6 @@ void SlowConverter::copy() {
                 mipMap.calculate();
             }
             
-            
-            
             // Write the mipmaps
             
             timer.start("Write");
@@ -155,7 +153,6 @@ void SlowConverter::copy() {
                 mipMap.write(s, c);
             }
             
-            
             timer.start("Statistics and mipmaps");
             
             // Reset mipmaps before next channel
@@ -163,8 +160,6 @@ void SlowConverter::copy() {
             for (auto& mipMap : mipMaps) {
                 mipMap.reset();
             }
-            
-            
             
         } // end of first channel loop
         
@@ -190,8 +185,6 @@ void SlowConverter::copy() {
                 statsXYZ.minVals[s] = NAN;
                 statsXYZ.maxVals[s] = NAN;
             }
-            
-            
         }
         
         // XY and XYZ histograms
@@ -260,8 +253,7 @@ void SlowConverter::copy() {
             // read one channel
             D(std::cout << "Reading main dataset..." << std::endl;);
             timer.start("Read");
-            readFits(c, s, cubeSize);
-            
+            readFits(c, s, cubeSize, standardCube);
             
             timer.start("Histograms");
 
@@ -274,9 +266,7 @@ void SlowConverter::copy() {
                     }
             } // end of XY loop
         } // end of second channel loop (XY and XYZ histograms)
-        
-        
-        
+    
     } // end of stokes
             
     // Swizzle
@@ -297,8 +287,6 @@ void SlowConverter::copy() {
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
 
-        
-        
         auto standardDataSpace = standardDataSet.getSpace();
         auto swizzledDataSpace = swizzledDataSet.getSpace();
         
@@ -344,7 +332,6 @@ void SlowConverter::copy() {
                     standardDataSpace.selectHyperslab(H5S_SELECT_SET, standardCount.data(), standardOffset.data());
                     standardDataSet.read(standardSlice, H5::PredType::NATIVE_FLOAT, standardMemspace, standardDataSpace);
                     
-                    
                     timer.start("Rotation");
                     
                     // rotate tile slice
@@ -359,15 +346,12 @@ void SlowConverter::copy() {
                         }
                     }
                     
-                    
                     timer.start("Write");
                             
                     // write tile slice
                     D(std::cout << "Writing rotated dataset..." << std::endl;);
                     swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), swizzledOffset.data());
                     swizzledDataSet.write(rotatedSlice, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
-                    
-                    
                 }
             }
         }

@@ -17,10 +17,8 @@ public:
     void convert();
     
 protected:
-    void createOutputFile();
-    void copyHeaders();
-    void readFits(hsize_t channel, unsigned int stokes, hsize_t cubeSize);
-    virtual void copy();
+    void readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
+    virtual void copyAndCalculate();
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -68,7 +66,7 @@ public:
     FastConverter(std::string inputFileName, std::string outputFileName);
     
 protected:
-    void copy() override;
+    void copyAndCalculate() override;
 };
 
 
@@ -77,7 +75,7 @@ public:
     SlowConverter(std::string inputFileName, std::string outputFileName);
     
 protected:
-    void copy() override;
+    void copyAndCalculate() override;
 };
 
 #endif

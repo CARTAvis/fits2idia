@@ -6,7 +6,7 @@ FastConverter::FastConverter(std::string inputFileName, std::string outputFileNa
     MipMap::initialise(mipMaps, N, width, height, depth);
 }
 
-void FastConverter::copy() {
+void FastConverter::copyAndCalculate() {
     // TODO fix reporting of total memory allocation -- size * 4 * 1e-9 GB
     hsize_t cubeSize = depth * height * width;
     timer.start("Allocate");
@@ -23,7 +23,7 @@ void FastConverter::copy() {
         // Read data into memory space
         timer.start("Read");
         std::cout << "Reading Stokes " << currentStokes << " dataset... " << std::endl;
-        readFits(0, currentStokes, cubeSize);
+        readFits(0, currentStokes, cubeSize, standardCube);
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
         if (depth > 1) {
@@ -181,8 +181,7 @@ void FastConverter::copy() {
                     }
                 }
             }
-            
-            
+        
         }
         
         std::cout << " * Histograms... " << std::endl;
@@ -263,8 +262,6 @@ void FastConverter::copy() {
                 }
             }
         }
-
-        
 
         std::cout << "Writing Stokes " << currentStokes << " dataset... " << std::endl;
         
@@ -349,7 +346,6 @@ void FastConverter::copy() {
             mipMap.calculate();
         }
         
-        
         timer.start("Write");
         
         // Write the mipmaps
@@ -359,8 +355,6 @@ void FastConverter::copy() {
             mipMap.write(currentStokes, 0);
         }
         
-        
-        
         // Clear the mipmaps before the next Stokes
         
         timer.start("Mipmaps");
@@ -368,7 +362,6 @@ void FastConverter::copy() {
         for (auto& mipMap : mipMaps) {
             mipMap.reset();
         }
-        
-        
+    
     } // end of Stokes loop
 }
