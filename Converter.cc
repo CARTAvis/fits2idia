@@ -2,12 +2,15 @@
 
 Converter::Converter(std::string inputFileName, std::string outputFileName) :
     status(0),
+    timer(),
     strType(H5::PredType::C_S1, 256),
     boolType(H5::PredType::NATIVE_HBOOL), 
     doubleType(H5::PredType::NATIVE_DOUBLE),
     floatType(H5::PredType::NATIVE_FLOAT),
     intType(H5::PredType::NATIVE_INT64)
 {
+    T(timer.start("Setup"););
+    
     fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
     
     if (status != 0) {
@@ -68,6 +71,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
 }
 
 Converter::~Converter() {
+    // TODO this is probably unnecessary; the file object destructor should close the file properly.
     outputFile.close();
 }
 
@@ -93,8 +97,6 @@ void Converter::copyAndCalculate() {
 }
 
 void Converter::convert() {
-    timer.start("Headers and preamble");
-    
     // CREATE OUTPUT FILE
     
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
@@ -131,6 +133,8 @@ void Converter::convert() {
     }
     
     // COPY HEADERS
+    
+    T(timer.start("Headers"););
     
     H5::DataSpace attributeDataSpace(H5S_SCALAR);
     
@@ -241,12 +245,11 @@ void Converter::convert() {
 
     copyAndCalculate();
     
-    
     // WRITE STATISTICS
     
     // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
     
-    timer.start("Write");
+    T(timer.start("Write"););
 
     statsXY.write(statsXYGroup, floatType, intType);
     if (depth > 1) {
@@ -258,13 +261,13 @@ void Converter::convert() {
     }
     
     // Free memory
-    timer.start("Free");
-    std::cout << "Freeing memory from main dataset... " << std::endl;
+    T(timer.start("Free"););
+    D(std::cout << "Freeing memory from main dataset... " << std::endl;);
     delete[] standardCube;
     
     // Rotated cube is freed elsewhere
             
-    timer.print();
+    T(timer.print(stokes * depth * height * width););
     
     // Rename from temp file
     rename(tempOutputFileName.c_str(), outputFileName.c_str());

@@ -1,15 +1,14 @@
 #include "Converter.h"
 
 FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
-    timer = Timer(stokes * depth * height * width, false);
-    timer.start("Mipmaps");
+    T(timer.start("Mipmaps"););
     MipMap::initialise(mipMaps, N, width, height, depth);
 }
 
 void FastConverter::copyAndCalculate() {
     // TODO fix reporting of total memory allocation -- size * 4 * 1e-9 GB
     hsize_t cubeSize = depth * height * width;
-    timer.start("Allocate");
+    T(timer.start("Allocate"););
     standardCube = new float[cubeSize];
     
     statsXY = Stats(dims.statsXY);
@@ -20,24 +19,22 @@ void FastConverter::copyAndCalculate() {
     }
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
+        D(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
+
         // Read data into memory space
-        timer.start("Read");
-        std::cout << "Reading Stokes " << currentStokes << " dataset... " << std::endl;
+        T(timer.start("Read"););
+        D(std::cout << "+ Reading main dataset..." << std::flush;);
         readFits(0, currentStokes, cubeSize, standardCube);
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
         if (depth > 1) {
-            timer.start("Allocate");
+            T(timer.start("Allocate"););
             rotatedCube = new float[cubeSize];
         }
-
-        std::cout << "Processing Stokes " << currentStokes << " dataset..." << std::endl;
         
-        std::string process_label = depth > 1 ? "XY statistics and rotation" : "XY statistics";
-        
-        timer.start(process_label);
-        
-        std::cout << " * " << process_label <<  "... " << std::endl;
+        std::string first_loop_label = depth > 1 ? "XY statistics and rotation" : "XY statistics";
+        D(std::cout << " " << first_loop_label <<  "..." << std::flush;);
+        T(timer.start(first_loop_label););
 
         // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
@@ -105,10 +102,10 @@ void FastConverter::copyAndCalculate() {
         double xyzMax;
 
         if (depth > 1) {
-            timer.start("XYZ and Z statistics");
+            T(timer.start("XYZ and Z statistics"););
             
             // Consolidate XY stats into XYZ stats
-            std::cout << " * XYZ statistics... " << std::endl;
+            D(std::cout << " XYZ statistics..." << std::flush;);
             double xyzSum = 0;
             double xyzSumSq = 0;
             int64_t xyzNanCount = 0;
@@ -139,7 +136,7 @@ void FastConverter::copyAndCalculate() {
                 statsXYZ.maxVals[currentStokes] = NAN;
             }
 
-            std::cout << " * Z statistics... " << std::endl;
+            D(std::cout << " Z statistics... " << std::flush;);
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
 #pragma omp parallel for
@@ -183,12 +180,11 @@ void FastConverter::copyAndCalculate() {
             }
         
         }
-        
-        std::cout << " * Histograms... " << std::endl;
 
         // Third loop handles histograms
         
-        timer.start("Histograms");
+        D(std::cout << " Histograms..." << std::flush;);
+        T(timer.start("Histograms"););
         
         double cubeMin;
         double cubeMax;
@@ -263,9 +259,8 @@ void FastConverter::copyAndCalculate() {
             }
         }
 
-        std::cout << "Writing Stokes " << currentStokes << " dataset... " << std::endl;
-        
-        timer.start("Write");
+        D(std::cout << " Writing main and rotated datasets... " << std::flush;);
+        T(timer.start("Write"););
                     
         std::vector<hsize_t> count;
         std::vector<hsize_t> start;
@@ -312,8 +307,8 @@ void FastConverter::copyAndCalculate() {
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
         
         if (depth > 1) {
-            timer.start("Free");
-            std::cout << "Freeing memory from rotated dataset... " << std::endl;
+            D(std::cout << " Freeing memory from rotated dataset..." << std::flush;);
+            T(timer.start("Free"););
             delete[] rotatedCube;
         }
         
@@ -321,9 +316,8 @@ void FastConverter::copyAndCalculate() {
         
         // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
         
-        std::cout << " * Mipmaps... " << std::endl;
-
-        timer.start("Mipmaps");
+        D(std::cout << " Mipmaps..." << std::endl;);
+        T(timer.start("Mipmaps"););
         
 #pragma omp parallel for
         for (auto c = 0; c < depth; c++) {
@@ -346,7 +340,7 @@ void FastConverter::copyAndCalculate() {
             mipMap.calculate();
         }
         
-        timer.start("Write");
+        T(timer.start("Write"););
         
         // Write the mipmaps
         
@@ -357,7 +351,7 @@ void FastConverter::copyAndCalculate() {
         
         // Clear the mipmaps before the next Stokes
         
-        timer.start("Mipmaps");
+        T(timer.start("Mipmaps"););
         
         for (auto& mipMap : mipMaps) {
             mipMap.reset();

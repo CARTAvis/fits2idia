@@ -27,4 +27,10 @@
     #define D(x) do {} while (0)
 #endif
 
+#ifdef TIMER
+    #define T(x) do {x} while (0)
+#else
+    #define T(x) do {} while (0)
+#endif
+
 #endif

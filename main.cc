@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     try {
         converter = Converter::getConverter(inputFileName, outputFileName, slow);
     
-        std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;
+        D(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {

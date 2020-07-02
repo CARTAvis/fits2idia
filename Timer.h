@@ -36,9 +36,6 @@ struct TimerCounter {
 
 struct Timer {
     Timer() : activeCounter() {}
-    Timer(hsize_t imageSize, bool slow) : activeCounter(), size(imageSize) {}
-    
-    hsize_t size;
     
     std::unordered_map<std::string, TimerCounter> counters;
     TimerCounter* activeCounter;
@@ -51,7 +48,7 @@ struct Timer {
         activeCounter->start();
     }
     
-    void print() {
+    void print(hsize_t imageSize) {
         if (activeCounter) {
             activeCounter->stop();
         }
@@ -61,9 +58,9 @@ struct Timer {
             auto& label = c.first;
             auto& counter = c.second;
             total = total + counter;
-            std::cout << label << ": " << counter.seconds() << " seconds (" << counter.speed(size) << " MB/s)" << std::endl;
+            std::cout << label << ": " << counter.seconds() << " seconds (" << counter.speed(imageSize) << " MB/s)" << std::endl;
         }
-        std::cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(size) << " MB/s)" << std::endl;
+        std::cout << "TOTAL: " << total.seconds() << " seconds (" << total.speed(imageSize) << " MB/s)" << std::endl;
     }
 };
 

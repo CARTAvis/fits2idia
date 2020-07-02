@@ -16,6 +16,10 @@ if (Verbose)
     ADD_DEFINITIONS(-DDEBUG)
 endif()
 
+if (Timer)
+    ADD_DEFINITIONS(-DTIMER)
+endif()
+
 set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 
 set(SOURCE_FILES
