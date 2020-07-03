@@ -102,7 +102,7 @@ struct MipMap {
     hsize_t depth;
     
     std::vector<double> vals;
-    std::vector<hsize_t> count;
+    std::vector<int> count;
     
     H5::DataSet dataSet;
 };
