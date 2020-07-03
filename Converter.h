@@ -15,6 +15,7 @@ public:
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow);
     void convert();
+    virtual void reportMemoryUsage();
     
 protected:
     void readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
@@ -64,6 +65,7 @@ protected:
 class FastConverter : public Converter {
 public:
     FastConverter(std::string inputFileName, std::string outputFileName);
+    void reportMemoryUsage() override;
     
 protected:
     void copyAndCalculate() override;
@@ -73,6 +75,7 @@ protected:
 class SlowConverter : public Converter {
 public:
     SlowConverter(std::string inputFileName, std::string outputFileName);
+    void reportMemoryUsage() override;
     
 protected:
     void copyAndCalculate() override;

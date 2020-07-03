@@ -96,6 +96,10 @@ void Converter::copyAndCalculate() {
     // implemented in subclasses
 }
 
+void Converter::reportMemoryUsage() {
+    // implemented in subclasses
+}
+
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
@@ -259,13 +263,6 @@ void Converter::convert() {
         statsXYZ.write(statsXYZGroup, floatType, intType);
         statsZ.write(statsZGroup, floatType, intType);
     }
-    
-    // Free memory
-    T(timer.start("Free"););
-    D(std::cout << "Freeing memory from main dataset... " << std::endl;);
-    delete[] standardCube;
-    
-    // Rotated cube is freed elsewhere
             
     T(timer.print(stokes * depth * height * width););
     

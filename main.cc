@@ -1,7 +1,7 @@
 #include <getopt.h>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& onlyReportMemory) {
     extern int optind;
     extern char *optarg;
     
@@ -15,9 +15,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
-    << "-q\tSuppress all non-error output" << std::endl;
+    << "-q\tSuppress all non-error output" << std::endl
+    << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl;
     
-    while ((opt = getopt(argc, argv, ":o:sq")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:sqm")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -28,6 +29,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 break;
             case 'q':
                 std::cout.rdbuf(nullptr);
+                break;
+            case 'm':
+                // only print memory usage and exit
+                onlyReportMemory = true;
                 break;
             case ':':
                 err = true;
@@ -75,8 +80,9 @@ int main(int argc, char** argv) {
     std::string inputFileName;
     std::string outputFileName;
     bool slow(false);
+    bool onlyReportMemory(false);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, onlyReportMemory)) {
         return 1;
     }
     
@@ -84,6 +90,11 @@ int main(int argc, char** argv) {
         
     try {
         converter = Converter::getConverter(inputFileName, outputFileName, slow);
+        
+        if (onlyReportMemory) {
+            converter->reportMemoryUsage();
+            return 0;
+        }
     
         D(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 

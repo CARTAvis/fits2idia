@@ -41,7 +41,7 @@ struct Stats {
         }
     }
     
-    hsize_t size() {
+    static hsize_t size(StatsDims dims) {
         return (4 * sizeof(double) + sizeof(int64_t)) * dims.statsSize + sizeof(int64_t) * (dims.histSize + dims.partialHistSize);
     }
     

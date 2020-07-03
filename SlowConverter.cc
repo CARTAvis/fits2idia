@@ -5,6 +5,41 @@ SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileNa
     MipMap::initialise(mipMaps, N, width, height, 1);
 }
 
+void SlowConverter::reportMemoryUsage() {
+    std::unordered_map<std::string, hsize_t> sizes;
+
+    sizes["Main dataset"] = height * width * sizeof(float);
+    sizes["Mipmaps"] = MipMap::size(width, height, 1);
+    sizes["XY stats"] = Stats::size(dims.statsXY);
+    
+    if (depth > 1) {
+        if (N == 3) {
+            sizes["Rotation"] = 2 * depth * TILE_SIZE * TILE_SIZE;
+        } else if (N == 4) {
+            sizes["Rotation"] = 2 * stokes * depth * TILE_SIZE * TILE_SIZE;
+        }
+        sizes["XYZ stats"] = Stats::size(dims.statsXYZ);
+        sizes["Z stats"] = Stats::size(dims.statsZ);
+    }
+    
+    hsize_t total(0);
+    
+    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
+    
+    for (auto& kv : sizes) {
+        std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
+        total += kv.second;
+    }
+    
+    std::string note = "";
+    if (depth > 1) {
+        total -= std::min(sizes["Main dataset"], sizes["Rotation"]);
+        note = " (Main dataset and slices for rotation are not allocated at the same time.)";
+    }
+
+    std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << note << std::endl;
+}
+
 void SlowConverter::copyAndCalculate() {
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
@@ -17,28 +52,6 @@ void SlowConverter::copyAndCalculate() {
         statsZ = Stats(dims.statsZ);
         statsXYZ = Stats(dims.statsXYZ);
     }
-    
-    D(auto mipMapSize = MipMap::size(mipMaps);
-    auto dataSize = cubeSize * sizeof(float);
-    std::cout << "Memory allocation:" << std::endl;
-    std::cout << "Main dataset:\t" << dataSize * 1e-9 << " GB" << std::endl;
-    std::cout << "Mipmaps:\t" << mipMapSize * 1e-9 << " GB" << std::endl;
-    std::cout << "XY stats:\t" << statsXY.size() * 1e-9 << " GB" << std::endl;
-    hsize_t total = dataSize + statsXY.size() + mipMapSize;
-    if (depth > 1) {
-        hsize_t sliceSize;
-        if (N == 3) {
-            sliceSize = depth * TILE_SIZE * TILE_SIZE;
-        } else if (N == 4) {
-            sliceSize = stokes * depth * TILE_SIZE * TILE_SIZE;
-        }
-        std::cout << "Rotation:\t" << sliceSize * 2 * 1e-9 << " GB (tiled algorithm)" << std::endl;
-        std::cout << "XYZ stats:\t" << statsXYZ.size() * 1e-9 << " GB" << std::endl;
-        std::cout << "Z stats:\t" << statsZ.size() * 1e-9 << " GB" << std::endl;
-        total += sliceSize * 2 + statsXYZ.size() + statsZ.size();
-    }
-    std::cout << "TOTAL:\t" << total * 1e-9 << " GB" << std::endl;);
-    
     
     auto sliceDataSpace = standardDataSet.getSpace();
                         
@@ -289,6 +302,11 @@ void SlowConverter::copyAndCalculate() {
         } // end of second channel loop (XY and XYZ histograms)
     
     } // end of stokes
+    
+    // Free memory
+    T(timer.start("Free"););
+    D(std::cout << "Freeing memory from main dataset... " << std::endl;);
+    delete[] standardCube;
             
     // Swizzle
     if (depth > 1) {

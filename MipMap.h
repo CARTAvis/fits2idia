@@ -94,10 +94,14 @@ struct MipMap {
         }
     }
     
-    static hsize_t size(std::vector<MipMap>& mipMaps) {
+    static hsize_t size(hsize_t width, hsize_t height, hsize_t depth) {
         hsize_t size = 0;
-        for (auto& mipmap : mipMaps) {
-            size += (sizeof(double) + sizeof(int)) * mipmap.vals.size();
+        int divisor = 1;
+        while (width > MIN_MIPMAP_SIZE || height > MIN_MIPMAP_SIZE) {
+            divisor *= 2;
+            width = (width + 1) / 2;
+            height = (height + 1) / 2;
+            size += (sizeof(double) + sizeof(int)) * width * height * depth;
         }
         return size;
     }
