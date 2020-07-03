@@ -41,6 +41,10 @@ struct Stats {
         }
     }
     
+    hsize_t size() {
+        return (4 * sizeof(double) + sizeof(int64_t)) * dims.statsSize + sizeof(int64_t) * (dims.histSize + dims.partialHistSize);
+    }
+    
     StatsDims dims;
 
     std::vector<double> minVals;

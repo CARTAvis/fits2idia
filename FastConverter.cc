@@ -6,7 +6,6 @@ FastConverter::FastConverter(std::string inputFileName, std::string outputFileNa
 }
 
 void FastConverter::copyAndCalculate() {
-    // TODO fix reporting of total memory allocation -- size * 4 * 1e-9 GB
     hsize_t cubeSize = depth * height * width;
     T(timer.start("Allocate"););
     standardCube = new float[cubeSize];
@@ -17,6 +16,23 @@ void FastConverter::copyAndCalculate() {
         statsZ = Stats(dims.statsZ);
         statsXYZ = Stats(dims.statsXYZ);
     }
+    
+    D(auto mipMapSize = MipMap::size(mipMaps);
+    auto dataSize = cubeSize * sizeof(float);
+    std::cout << "Memory allocation:" << std::endl;
+    std::cout << "Main dataset:\t" << dataSize * 1e-9 << " GB" << std::endl;
+    std::cout << "Mipmaps:\t" << mipMapSize * 1e-9 << " GB" << std::endl;
+    std::cout << "XY stats:\t" << statsXY.size() * 1e-9 << " GB" << std::endl;
+    hsize_t total = dataSize + statsXY.size();
+    if (depth > 1) {
+        std::cout << "Rotated d'set:\t" << dataSize * 1e-9 << " GB (reused mipmap memory)" << std::endl;
+        std::cout << "XYZ stats:\t" << statsXYZ.size() * 1e-9 << " GB" << std::endl;
+        std::cout << "Z stats:\t" << statsZ.size() * 1e-9 << " GB" << std::endl;
+        total += std::max(dataSize, mipMapSize) + statsXYZ.size() + statsZ.size();
+    } else {
+        total += mipMapSize;
+    }
+    std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << std::endl;);
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         D(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);

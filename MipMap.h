@@ -94,6 +94,14 @@ struct MipMap {
         }
     }
     
+    static hsize_t size(std::vector<MipMap>& mipMaps) {
+        hsize_t size = 0;
+        for (auto& mipmap : mipMaps) {
+            size += (sizeof(double) + sizeof(int)) * mipmap.vals.size();
+        }
+        return size;
+    }
+    
     int N;
     int divisor;
     hsize_t channelSize;

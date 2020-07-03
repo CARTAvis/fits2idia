@@ -18,6 +18,28 @@ void SlowConverter::copyAndCalculate() {
         statsXYZ = Stats(dims.statsXYZ);
     }
     
+    D(auto mipMapSize = MipMap::size(mipMaps);
+    auto dataSize = cubeSize * sizeof(float);
+    std::cout << "Memory allocation:" << std::endl;
+    std::cout << "Main dataset:\t" << dataSize * 1e-9 << " GB" << std::endl;
+    std::cout << "Mipmaps:\t" << mipMapSize * 1e-9 << " GB" << std::endl;
+    std::cout << "XY stats:\t" << statsXY.size() * 1e-9 << " GB" << std::endl;
+    hsize_t total = dataSize + statsXY.size() + mipMapSize;
+    if (depth > 1) {
+        hsize_t sliceSize;
+        if (N == 3) {
+            sliceSize = depth * TILE_SIZE * TILE_SIZE;
+        } else if (N == 4) {
+            sliceSize = stokes * depth * TILE_SIZE * TILE_SIZE;
+        }
+        std::cout << "Rotation:\t" << sliceSize * 2 * 1e-9 << " GB (tiled algorithm)" << std::endl;
+        std::cout << "XYZ stats:\t" << statsXYZ.size() * 1e-9 << " GB" << std::endl;
+        std::cout << "Z stats:\t" << statsZ.size() * 1e-9 << " GB" << std::endl;
+        total += sliceSize * 2 + statsXYZ.size() + statsZ.size();
+    }
+    std::cout << "TOTAL:\t" << total * 1e-9 << " GB" << std::endl;);
+    
+    
     auto sliceDataSpace = standardDataSet.getSpace();
                         
     std::vector<hsize_t> count;
