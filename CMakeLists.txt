@@ -13,11 +13,11 @@ if (OPENMP_FOUND)
 endif()
 
 if (Verbose)
-    ADD_DEFINITIONS(-DVERBOSE)
+    ADD_DEFINITIONS(-D_VERBOSE_)
 endif()
 
 if (Timer)
-    ADD_DEFINITIONS(-DTIMERS)
+    ADD_DEFINITIONS(-D_TIMER_)
 endif()
 
 set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
