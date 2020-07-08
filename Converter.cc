@@ -9,7 +9,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
     floatType(H5::PredType::NATIVE_FLOAT),
     intType(H5::PredType::NATIVE_INT64)
 {
-    T(timer.start("Setup"););
+    TIMER(timer.start("Setup"););
     
     fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
     
@@ -138,7 +138,7 @@ void Converter::convert() {
     
     // COPY HEADERS
     
-    T(timer.start("Headers"););
+    TIMER(timer.start("Headers"););
     
     H5::DataSpace attributeDataSpace(H5S_SCALAR);
     
@@ -253,7 +253,7 @@ void Converter::convert() {
     
     // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
     
-    T(timer.start("Write"););
+    TIMER(timer.start("Write"););
 
     statsXY.write(statsXYGroup, floatType, intType);
     if (depth > 1) {
@@ -264,7 +264,7 @@ void Converter::convert() {
         statsZ.write(statsZGroup, floatType, intType);
     }
             
-    T(timer.print(stokes * depth * height * width););
+    TIMER(timer.print(stokes * depth * height * width););
     
     // Rename from temp file
     rename(tempOutputFileName.c_str(), outputFileName.c_str());

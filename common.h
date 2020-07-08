@@ -21,16 +21,16 @@
 #define TILE_SIZE (hsize_t)512
 #define MIN_MIPMAP_SIZE (hsize_t)128
 
-#ifdef DEBUG
-    #define D(x) do {x} while (0)
+#ifdef VERBOSE
+    #define DEBUG(x) do {x} while (0)
 #else
-    #define D(x) do {} while (0)
+    #define DEBUG(x) do {} while (0)
 #endif
 
-#ifdef TIMER
-    #define T(x) do {x} while (0)
+#ifdef TIMERS
+    #define TIMER(x) do {x} while (0)
 #else
-    #define T(x) do {} while (0)
+    #define TIMER(x) do {} while (0)
 #endif
 
 #endif

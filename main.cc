@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
             return 0;
         }
     
-        D(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
+        DEBUG(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {
