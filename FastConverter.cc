@@ -103,7 +103,7 @@ void FastConverter::copyAndCalculate() {
                         rotatedCube[destIndex] = val;
                     }
                     
-                    if (!std::isnan(val)) {
+                    if (std::isfinite(val)) {
                         minmax(val);
                         sum += val;
                         sumSq += val * val;
@@ -144,9 +144,8 @@ void FastConverter::copyAndCalculate() {
 
             for (auto i = 0; i < depth; i++) {
                 auto indexXY = currentStokes * depth + i;
-                auto sum = statsXY.sums[indexXY];
-                if (!std::isnan(sum)) {
-                    xyzSum += sum;
+                if (std::isfinite(statsXY.maxVals[indexXY])) {
+                    xyzSum += statsXY.sums[indexXY];
                     xyzSumSq += statsXY.sumsSq[indexXY];
                     xyzMin = fmin(xyzMin, statsXY.minVals[indexXY]);
                     xyzMax = fmax(xyzMax, statsXY.maxVals[indexXY]);
@@ -182,10 +181,10 @@ void FastConverter::copyAndCalculate() {
                         auto sourceIndex = k + width * j + (height * width) * i;
                         auto val = standardCube[sourceIndex];
 
-                        if (!std::isnan(val)) {
+                        if (std::isfinite(val)) {
                             // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                            minVal = std::min(minVal, val);
-                            maxVal = std::max(maxVal, val);
+                            minVal = fmin(minVal, val);
+                            maxVal = fmax(maxVal, val);
                             sum += val;
                             sumSq += val * val;
                         } else {
@@ -255,7 +254,7 @@ void FastConverter::copyAndCalculate() {
             bool chanHist(true);
             bool cubeHist(true);
             
-            if (std::isnan(sliceMin) || std::isnan(sliceMax) || range == 0) {
+            if (!std::isfinite(sliceMin) || !std::isfinite(sliceMax) || range == 0) {
                 channelHistogramFunc = doNothing;
                 chanHist = false;
             }
@@ -272,7 +271,7 @@ void FastConverter::copyAndCalculate() {
             for (auto j = 0; j < width * height; j++) {
                 auto val = standardCube[i * width * height + j];
 
-                if (!std::isnan(val)) {
+                if (std::isfinite(val)) {
                     channelHistogramFunc(val);
                     cubeHistogramFunc(val);
                 }
@@ -355,7 +354,7 @@ void FastConverter::copyAndCalculate() {
                 for (auto x = 0; x < width; x++) {
                     auto sourceIndex = x + width * y + (height * width) * c;
                     auto val = standardCube[sourceIndex];
-                    if (!std::isnan(val)) {
+                    if (std::isfinite(val)) {
                         for (auto& mipMap : mipMaps) {
                             mipMap.accumulate(val, x, y, c);
                         }
