@@ -1,14 +1,57 @@
 #include "Converter.h"
 
 SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
+    TIMER(timer.start("Mipmaps"););
     MipMap::initialise(mipMaps, N, width, height, 1);
-    timer = Timer(stokes * depth * height * width, true);
 }
 
-void SlowConverter::copy() {
+void SlowConverter::reportMemoryUsage() {
+    std::unordered_map<std::string, hsize_t> sizes;
+
+    sizes["Main dataset"] = height * width * sizeof(float);
+    sizes["Mipmaps"] = MipMap::size(width, height, 1);
+    sizes["XY stats"] = Stats::size(dims.statsXY);
+    
+    if (depth > 1) {
+        if (N == 3) {
+            sizes["Rotation"] = 2 * depth * TILE_SIZE * TILE_SIZE;
+        } else if (N == 4) {
+            sizes["Rotation"] = 2 * stokes * depth * TILE_SIZE * TILE_SIZE;
+        }
+        sizes["XYZ stats"] = Stats::size(dims.statsXYZ);
+        sizes["Z stats"] = Stats::size(dims.statsZ);
+    }
+    
+    hsize_t total(0);
+    
+    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
+    
+    for (auto& kv : sizes) {
+        std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
+        total += kv.second;
+    }
+    
+    std::string note = "";
+    if (depth > 1) {
+        total -= std::min(sizes["Main dataset"], sizes["Rotation"]);
+        note = " (Main dataset and slices for rotation are not allocated at the same time.)";
+    }
+
+    std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << note << std::endl;
+}
+
+void SlowConverter::copyAndCalculate() {
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
-    allocate(cubeSize);
+    TIMER(timer.start("Allocate"););
+    standardCube = new float[cubeSize];
+    
+    statsXY = Stats(dims.statsXY);
+    
+    if (depth > 1) {
+        statsZ = Stats(dims.statsZ);
+        statsXYZ = Stats(dims.statsXYZ);
+    }
     
     auto sliceDataSpace = standardDataSet.getSpace();
                         
@@ -27,12 +70,14 @@ void SlowConverter::copy() {
     H5::DataSpace memspace(2, memDims);
     
     for (unsigned int s = 0; s < stokes; s++) {
-        std::cout << "Processing Stokes " << s << " dataset... " << std::endl;
+        DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         
         for (hsize_t c = 0; c < depth; c++) {
             // read one channel
-            long fpixel[] = {1, 1, (long)c + 1, s + 1};
-            readFits(fpixel, cubeSize);
+            DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
+            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            TIMER(timer.start("Read"););
+            readFits(c, s, cubeSize, standardCube);
             
             // Write the standard dataset
             if (N == 2) {
@@ -42,14 +87,15 @@ void SlowConverter::copy() {
             } else if (N == 4) {
                 start = {s, c, 0, 0};
             }
-
-            timer.write.start();
+            
+            DEBUG(std::cout << " Writing main dataset..." << std::flush;);
+            TIMER(timer.start("Write"););
             sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
             standardDataSet.write(standardCube, H5::PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
-            timer.write.stop();
             
-            timer.process1.start();
+            TIMER(timer.start("Statistics and mipmaps"););
             
+            DEBUG(std::cout << " Accumulating XY " << (depth > 1 ? "and Z " : "") << "stats and mipmaps..." << std::flush;);
             auto indexXY = s * depth + c;
             
             std::function<void(float)> minmax;
@@ -107,6 +153,7 @@ void SlowConverter::copy() {
                 }
             } // end of XY loop
             
+            DEBUG(std::cout << " Final XY stats..." << std::flush;);
             // TODO: see if this can be done in stats
             if (statsXY.nanCounts[indexXY] == (height * width)) {
                 statsXY.minVals[indexXY] = NAN;
@@ -114,8 +161,8 @@ void SlowConverter::copy() {
             }
             
             // Accumulate XYZ statistics
-            
             if (depth > 1) {
+                DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
                 if (!std::isnan(statsXY.sums[indexXY])) {
                     statsXYZ.sums[s] += statsXY.sums[indexXY];
                     statsXYZ.sumsSq[s] += statsXY.sumsSq[indexXY];
@@ -126,35 +173,33 @@ void SlowConverter::copy() {
             }
             
             // Final mipmap calculation
+            DEBUG(std::cout << " Final mipmaps..." << std::flush;);
             for (auto& mipMap : mipMaps) {
                 mipMap.calculate();
             }
             
-            timer.process1.stop();
-            
             // Write the mipmaps
             
-            timer.write.start();
-        
+            TIMER(timer.start("Write"););
+            DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
             for (auto& mipMap : mipMaps) {
                 // Start at current Stokes and channel
                 mipMap.write(s, c);
             }
             
-            timer.write.stop();
-            timer.process1.start();
+            TIMER(timer.start("Statistics and mipmaps"););
             
             // Reset mipmaps before next channel
+            DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
             for (auto& mipMap : mipMaps) {
                 mipMap.reset();
             }
             
-            timer.process1.stop();
-            
         } // end of first channel loop
         
         if (depth > 1) {
-            timer.process1.start();
+            TIMER(timer.start("Statistics and mipmaps"););
+            DEBUG(std::cout << "+ Final Z stats..." << std::flush;);
             
             // A final pass over all XY to fix the Z stats NaNs
             for (auto p = 0; p < width * height; p++) {
@@ -168,20 +213,19 @@ void SlowConverter::copy() {
             }
             
             // A final correction of the XYZ NaNs
+            DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
             
             if (statsXYZ.nanCounts[s] == depth * height * width) {
                 statsXYZ.minVals[s] = NAN;
                 statsXYZ.maxVals[s] = NAN;
             }
-            
-            timer.process1.stop();
         }
         
         // XY and XYZ histograms
         // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
         // We do the second pass backwards to take advantage of caching
-        
-        timer.process2.start();
+        DEBUG(std::cout << " Histograms..." << std::endl;);
+        TIMER(timer.start("Histograms"););
         
         bool cubeHist(0);
         double cubeMin;
@@ -195,13 +239,18 @@ void SlowConverter::copy() {
             cubeHist = !std::isnan(cubeMin) && !std::isnan(cubeMax) && cubeRange > 0;
         }
         
-        for (hsize_t c = depth; c-- > 0; ) {                
+        DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
+        
+        for (hsize_t c = depth; c-- > 0; ) {
+            DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             auto indexXY = s * depth + c;
                             
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
             bool chanHist(!std::isnan(chanMin) && !std::isnan(chanMax) && chanRange > 0);
+            
+            DEBUG(std::cout << " Will " << (chanHist ? "" : "not ") << "calculate channel histogram." << std::flush;);
             
             std::function<void(float)> channelHistogramFunc;
             std::function<void(float)> cubeHistogramFunc;
@@ -236,16 +285,13 @@ void SlowConverter::copy() {
             }
             
             // read one channel
-            long fpixel[] = {1, 1, (long)c + 1, s + 1};
+            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            TIMER(timer.start("Read"););
+            readFits(c, s, cubeSize, standardCube);
             
-            timer.process2.stop();
-            timer.read.start();
-            
-            readFits(fpixel, cubeSize);
-            
-            timer.read.stop();
-            timer.process2.start();
+            TIMER(timer.start("Histograms"););
 
+            DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             for (auto p = 0; p < width * height; p++) {
                 auto val = standardCube[p];
                     if (!std::isnan(val)) {
@@ -254,14 +300,17 @@ void SlowConverter::copy() {
                     }
             } // end of XY loop
         } // end of second channel loop (XY and XYZ histograms)
-        
-        timer.process2.stop();
-        
+    
     } // end of stokes
+    
+    // Free memory
+    TIMER(timer.start("Free"););
+    DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
+    delete[] standardCube;
             
     // Swizzle
     if (depth > 1) {
-        std::cout << "Performing slow, memory-saving rotation." << std::endl;
+        DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
         
         hsize_t sliceSize;
     
@@ -271,22 +320,22 @@ void SlowConverter::copy() {
             sliceSize = stokes * depth * TILE_SIZE * TILE_SIZE;
         }
         
-        std::cout << "Allocating " << sliceSize * 4 * 2 * 1e-9 << " GB of memory for main and rotated dataset slices... " << std::endl;
-        timer.alloc.start();
+        TIMER(timer.start("Allocate"););
         
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
 
-        timer.alloc.stop();
-        
         auto standardDataSpace = standardDataSet.getSpace();
         auto swizzledDataSpace = swizzledDataSet.getSpace();
         
         for (unsigned int s = 0; s < stokes; s++) {
+            DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
+                    
+                    DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
                     
                     std::vector<hsize_t> standardMemDims;
                     std::vector<hsize_t> swizzledMemDims;
@@ -315,15 +364,16 @@ void SlowConverter::copy() {
                     H5::DataSpace swizzledMemspace(swizzledMemDims.size(), swizzledMemDims.data());
                     
                     // read tile slice
-                    timer.read.start();
+                    DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+                    TIMER(timer.start("Read"););
                     
                     standardDataSpace.selectHyperslab(H5S_SELECT_SET, standardCount.data(), standardOffset.data());
                     standardDataSet.read(standardSlice, H5::PredType::NATIVE_FLOAT, standardMemspace, standardDataSpace);
                     
-                    timer.read.stop();
-                    timer.process3.start();
+                    TIMER(timer.start("Rotation"););
                     
                     // rotate tile slice
+                    DEBUG(std::cout << " Calculating rotation..." << std::flush;);
                     for (auto i = 0; i < depth; i++) {
                         for (auto j = 0; j < ySize; j++) {
                             for (auto k = 0; k < xSize; k++) {
@@ -334,19 +384,18 @@ void SlowConverter::copy() {
                         }
                     }
                     
-                    timer.process3.stop();
-                    timer.write.start();
+                    TIMER(timer.start("Write"););
                             
                     // write tile slice
+                    DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
                     swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), swizzledOffset.data());
                     swizzledDataSet.write(rotatedSlice, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
-                    
-                    timer.write.stop();
                 }
             }
         }
         
-        std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;
+        TIMER(timer.start("Free"););
+        DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
         delete[] standardSlice;
         delete[] rotatedSlice;
     }

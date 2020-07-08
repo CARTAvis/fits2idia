@@ -2,12 +2,15 @@
 
 Converter::Converter(std::string inputFileName, std::string outputFileName) :
     status(0),
+    timer(),
     strType(H5::PredType::C_S1, 256),
     boolType(H5::PredType::NATIVE_HBOOL), 
     doubleType(H5::PredType::NATIVE_DOUBLE),
     floatType(H5::PredType::NATIVE_FLOAT),
     intType(H5::PredType::NATIVE_INT64)
 {
+    TIMER(timer.start("Setup"););
+    
     fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
     
     if (status != 0) {
@@ -68,6 +71,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
 }
 
 Converter::~Converter() {
+    // TODO this is probably unnecessary; the file object destructor should close the file properly.
     outputFile.close();
 }
 
@@ -79,7 +83,26 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
-void Converter::createOutputFile() {
+void Converter::readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination) {
+    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
+    fits_read_pix(inputFilePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
+    
+    if (status != 0) {
+        throw "Could not read image data";
+    }
+}
+
+void Converter::copyAndCalculate() {
+    // implemented in subclasses
+}
+
+void Converter::reportMemoryUsage() {
+    // implemented in subclasses
+}
+
+void Converter::convert() {
+    // CREATE OUTPUT FILE
+    
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
     
@@ -89,8 +112,14 @@ void Converter::createOutputFile() {
     }
     auto standardDataSpace = H5::DataSpace(N, dims.standard.data());
     standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
+    
+    auto statsGroup = outputGroup.createGroup("Statistics");    
+    auto statsXYGroup = statsGroup.createGroup("XY");
 
     if (depth > 1) {
+        auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
+        auto statsZGroup = statsGroup.createGroup("Z");
+        
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
@@ -106,9 +135,11 @@ void Converter::createOutputFile() {
             mipMap.createDataset(mipMapGroup, floatType, dims);
         }
     }
-}
-
-void Converter::copyHeaders() {
+    
+    // COPY HEADERS
+    
+    TIMER(timer.start("Headers"););
+    
     H5::DataSpace attributeDataSpace(H5S_SCALAR);
     
     H5::Attribute attribute = outputGroup.createAttribute("SCHEMA_VERSION", strType, attributeDataSpace);
@@ -213,84 +244,27 @@ void Converter::copyHeaders() {
             }
         }
     }
-}
-
-void Converter::allocate(hsize_t cubeSize) {
-    std::cout << "Allocating " << cubeSize * 4 * 1e-9 << " GB of memory for main dataset... " << std::endl;
-    timer.alloc.start();
-
-    standardCube = new float[cubeSize];
     
-    statsXY = Stats(dims.statsXY);
+    // MAIN CONVERSION AND CALCULATION FUNCTION
+
+    copyAndCalculate();
     
-    if (depth > 1) {
-        statsZ = Stats(dims.statsZ);
-        statsXYZ = Stats(dims.statsXYZ);
-    }
-
-    timer.alloc.stop();
-}
-
-void Converter::allocateSwizzled(hsize_t rotatedSize) {
-    if (depth > 1) {
-        std::cout << "Allocating " << rotatedSize * 4 * 1e-9 << " GB of memory for rotated dataset... " << std::endl;
-        timer.alloc.start();
-        rotatedCube = new float[rotatedSize];
-        timer.alloc.stop();
-    }
-}
-
-void Converter::freeSwizzled() {
-    if (depth > 1) {
-        std::cout << "Freeing memory from rotated dataset... " << std::endl;
-        delete[] rotatedCube;
-    }
-}
-
-void Converter::readFits(long* fpixel, hsize_t cubeSize) {
-    timer.read.start();
-    fits_read_pix(inputFilePtr, TFLOAT, fpixel, cubeSize, NULL, standardCube, NULL, &status);
-    timer.read.stop();
+    // WRITE STATISTICS
     
-    if (status != 0) {
-        throw "Could not read image data";
-    }
-}
-
-void Converter::copy() {
-    // implemented in subclasses
-}
-
-void Converter::writeStats() {
-    // Write statistics
-    timer.write.start();
-    auto statsGroup = outputGroup.createGroup("Statistics");
+    // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
     
-    auto statsXYGroup = statsGroup.createGroup("XY");
+    TIMER(timer.start("Write"););
+
     statsXY.write(statsXYGroup, floatType, intType);
-
     if (depth > 1) {
-        auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
-        auto statsZGroup = statsGroup.createGroup("Z"); 
+        auto statsXYZGroup = statsGroup.openGroup("XYZ"); 
+        auto statsZGroup = statsGroup.openGroup("Z");
+        
         statsXYZ.write(statsXYZGroup, floatType, intType);
         statsZ.write(statsZGroup, floatType, intType);
     }
-    timer.write.stop();
-}
-
-void Converter::convert() {
-    createOutputFile();
-    copyHeaders();
-    copy();
-    writeStats();
-    
-    // Free memory
-    std::cout << "Freeing memory from main dataset... " << std::endl;
-    delete[] standardCube;
-    
-    // Rotated cube is freed elsewhere
             
-    timer.print();
+    TIMER(timer.print(stokes * depth * height * width););
     
     // Rename from temp file
     rename(tempOutputFileName.c_str(), outputFileName.c_str());

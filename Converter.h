@@ -15,16 +15,11 @@ public:
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow);
     void convert();
+    virtual void reportMemoryUsage();
     
 protected:
-    void createOutputFile();
-    void copyHeaders();
-    void allocate(hsize_t cubeSize);
-    void allocateSwizzled(hsize_t rotatedSize);
-    void freeSwizzled();
-    void readFits(long* fpixel, hsize_t cubeSize);
-    virtual void copy();
-    void writeStats();
+    void readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
+    virtual void copyAndCalculate();
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -70,18 +65,20 @@ protected:
 class FastConverter : public Converter {
 public:
     FastConverter(std::string inputFileName, std::string outputFileName);
+    void reportMemoryUsage() override;
     
 protected:
-    void copy() override;
+    void copyAndCalculate() override;
 };
 
 
 class SlowConverter : public Converter {
 public:
     SlowConverter(std::string inputFileName, std::string outputFileName);
+    void reportMemoryUsage() override;
     
 protected:
-    void copy() override;
+    void copyAndCalculate() override;
 };
 
 #endif

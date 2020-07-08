@@ -94,6 +94,18 @@ struct MipMap {
         }
     }
     
+    static hsize_t size(hsize_t width, hsize_t height, hsize_t depth) {
+        hsize_t size = 0;
+        int divisor = 1;
+        while (width > MIN_MIPMAP_SIZE || height > MIN_MIPMAP_SIZE) {
+            divisor *= 2;
+            width = (width + 1) / 2;
+            height = (height + 1) / 2;
+            size += (sizeof(double) + sizeof(int)) * width * height * depth;
+        }
+        return size;
+    }
+    
     int N;
     int divisor;
     hsize_t channelSize;
@@ -102,7 +114,7 @@ struct MipMap {
     hsize_t depth;
     
     std::vector<double> vals;
-    std::vector<hsize_t> count;
+    std::vector<int> count;
     
     H5::DataSet dataSet;
 };

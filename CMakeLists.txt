@@ -12,6 +12,14 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
+if (Verbose)
+    ADD_DEFINITIONS(-D_VERBOSE_)
+endif()
+
+if (Timer)
+    ADD_DEFINITIONS(-D_TIMER_)
+endif()
+
 set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 
 set(SOURCE_FILES
