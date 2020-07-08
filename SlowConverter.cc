@@ -77,7 +77,7 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFits(c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
             
             // Write the standard dataset
             if (N == 2) {
@@ -287,7 +287,7 @@ void SlowConverter::copyAndCalculate() {
             // read one channel
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFits(c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
             
             TIMER(timer.start("Histograms"););
 

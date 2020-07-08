@@ -1,5 +1,5 @@
-#ifndef __DIMS_H
-#define __DIMS_H
+#ifndef __BUFFER_H
+#define __BUFFER_H
 
 #include "common.h"
 
@@ -32,7 +32,7 @@ struct Buffer {
     }
     
     void write(H5::DataSet destination, hsize_t offset) {
-        // TODO how to determine types?
+        // TODO how to determine types? Overloading?
     }
     
     hsize_t size;

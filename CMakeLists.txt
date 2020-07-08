@@ -27,7 +27,8 @@ set(SOURCE_FILES
     main.cc
     Converter.cc
     FastConverter.cc
-    SlowConverter.cc)
+    SlowConverter.cc
+    Util.cc)
 
 add_executable(hdf_convert ${SOURCE_FILES})
 target_link_libraries(hdf_convert ${LINK_LIBS})

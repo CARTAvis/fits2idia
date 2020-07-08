@@ -54,7 +54,7 @@ void FastConverter::copyAndCalculate() {
         // Read data into memory space
         TIMER(timer.start("Read"););
         DEBUG(std::cout << "+ Reading main dataset..." << std::flush;);
-        readFits(0, currentStokes, cubeSize, standardCube);
+        readFitsData(inputFilePtr, 0, currentStokes, cubeSize, standardCube);
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
         if (depth > 1) {

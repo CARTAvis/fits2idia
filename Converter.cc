@@ -11,39 +11,11 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
 {
     TIMER(timer.start("Setup"););
     
-    fits_open_file(&inputFilePtr, inputFileName.c_str(), READONLY, &status);
-    
-    if (status != 0) {
-        throw "Could not open FITS file";
-    }
-    
-    int bitpix;
-    fits_get_img_type(inputFilePtr, &bitpix, &status);
-    
-    if (status != 0) {
-        throw "Could not read image type";
-    }
-
-    if (bitpix != -32) {
-        throw "Currently only supports FP32 files";
-    }
-    
-    fits_get_img_dim(inputFilePtr, &N, &status);
-    
-    if (status != 0) {
-        throw "Could not read image dimensions";
-    }
-
-    if (N < 2 || N > 4) {
-        throw "Currently only supports 2D, 3D and 4D cubes";
-    }
+    openFitsFile(&inputFilePtr, inputFileName);
     
     long dims[4];
-    fits_get_img_size(inputFilePtr, 4, dims, &status);
     
-    if (status != 0) {
-        throw "Could not read image size";
-    }
+    getFitsDims(inputFilePtr, N, dims);
         
     stokes = N == 4 ? dims[3] : 1;
     depth = N >= 3 ? dims[2] : 1;
@@ -57,7 +29,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
     floatType.setOrder(H5T_ORDER_LE);
     intType.setOrder(H5T_ORDER_LE);
     
-    // Dimensions of various datasets
+    // Dimensions of various datasets -- TODO remove this
     this->dims = Dims::makeDims(N, dims);
     
     numBinsXY = this->dims.statsXY.numBins;        
@@ -83,15 +55,6 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
-void Converter::readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination) {
-    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
-    fits_read_pix(inputFilePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
-    
-    if (status != 0) {
-        throw "Could not read image data";
-    }
-}
-
 void Converter::copyAndCalculate() {
     // implemented in subclasses
 }
@@ -100,44 +63,24 @@ void Converter::reportMemoryUsage() {
     // implemented in subclasses
 }
 
-void createDataset(H5::H5File outputFile, std::vector<std::string> path, H5DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims = std::vector<hsize_t>()) {
-    auto name = path.back();
-    path.pop_back();
-    
-    H5::Group group = outputFile;
-    
-    for (auto& groupname : path) {
-        if (!group.exists(groupname)) {
-            group = group.createGroup(groupname);
-        } else {
-            group = group.openGroup(groupname);
-        }
-    }
-    
-    H5::DSetCreatPropList propList;
-    if (chunkDims) {
-        propList.setChunk(chunkDims.size(), chunkDims.data());
-    }
-    
-    auto dataSpace = H5::DataSpace(dims.size(), dims.data());
-    auto dataset = group.createDataset(name, dataType, dataSpace, propList);
-}
-
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
     // TODO helper functions for all of these
+    // TODO dataset variables should be local and passed into the copy function
+    // TODO eliminate dims struct; it was a bad idea
     
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
     
-    H5::DSetCreatPropList standardCreatePlist;
+    std::vector<hsize_t> chunkDims;
     if (dims.useChunks()) {
-        standardCreatePlist.setChunk(N, dims.tileDims.data());
+        chunkDims = dims.tileDims;
     }
-    auto standardDataSpace = H5::DataSpace(N, dims.standard.data());
-    standardDataSet = outputGroup.createDataSet("DATA", floatType, standardDataSpace, standardCreatePlist);
     
+    createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, dims.standard, chunkDims);
+    
+    // TODO decouple stats datasets from buffers
     auto statsGroup = outputGroup.createGroup("Statistics");    
     auto statsXYGroup = statsGroup.createGroup("XY");
 
@@ -148,8 +91,7 @@ void Converter::convert() {
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
-        auto swizzledDataSpace = H5::DataSpace(N, dims.swizzled.data());
-        swizzledDataSet = swizzledGroup.createDataSet(swizzledName, floatType, swizzledDataSpace);
+        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, dims.swizzled);
     }
     
     if (mipMaps.size()) {
@@ -165,34 +107,18 @@ void Converter::convert() {
     
     TIMER(timer.start("Headers"););
     
-    H5::DataSpace attributeDataSpace(H5S_SCALAR);
-    
-    H5::Attribute attribute = outputGroup.createAttribute("SCHEMA_VERSION", strType, attributeDataSpace);
-    attribute.write(strType, SCHEMA_VERSION);
-    attribute = outputGroup.createAttribute("HDF5_CONVERTER", strType, attributeDataSpace);
-    attribute.write(strType, HDF5_CONVERTER);
-    attribute = outputGroup.createAttribute("HDF5_CONVERTER_VERSION", strType, attributeDataSpace);
-    attribute.write(strType, HDF5_CONVERTER_VERSION);
+    writeHdf5Attribute(outputGroup, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
+    writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
+    writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
 
-    int numHeaders;
-    fits_get_hdrspace(inputFilePtr, &numHeaders, NULL, &status);
+    int numAttributes;
+    readFitsHeader(inputFilePtr, numAttributes);
     
-    if (status != 0) {
-        throw "Could not read image header";
-    }
-    
-    char keyTmp[255];
-    char valueTmp[255];
-    
-    // This is 1-indexed!
-    for (auto i = 1; i <= numHeaders; i++) {
-        fits_read_keyn(inputFilePtr, i, keyTmp, valueTmp, NULL, &status);
-    
-        if (status != 0) {
-            throw "Could not read attribute from header";
-        }
-        std::string attributeName(keyTmp);
-        std::string attributeValue(valueTmp);
+    // IMPORTANT: This is 1-indexed!
+    for (int i = 1; i <= numAttributes; i++) {        
+        std::string attributeName;
+        std::string attributeValue;
+        readFitsAttribute(inputFilePtr, i, attributeName, attributeValue);
         
         if (attributeName.empty() || attributeName.find("COMMENT") == 0 || attributeName.find("HISTORY") == 0) {
             // TODO we should actually do something about these
@@ -205,37 +131,26 @@ void Converter::convert() {
                 if (attributeValue.length() >= 2 && attributeValue.find('\'') == 0 &&
                     attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
                     // STRING
-                    int strLen;
-                    char strValueTmp[255];
-                    fits_read_string_key(inputFilePtr, attributeName.c_str(), 1, 255, strValueTmp, &strLen, NULL, &status);
-    
-                    if (status != 0) {
-                        throw "Could not read string attribute";
-                    }
-                    
-                    std::string attributeValueStr(strValueTmp);
-
-                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                    attribute.write(strType, attributeValueStr);
+                    std::string attributeValueStr;
+                    readFitsStringAttribute(inputFilePtr, attributeName, attributeValueStr);
+                    writeHdf5Attribute(outputGroup, attributeName, attributeValueStr);
                 } else if (attributeValue == "T" || attributeValue == "F") {
                     // BOOLEAN
                     bool attributeValueBool = (attributeValue == "T");
-                    attribute = outputGroup.createAttribute(attributeName, boolType, attributeDataSpace);
-                    attribute.write(boolType, &attributeValueBool);
+                    writeHdf5Attribute(outputGroup, attributeName, attributeValueBool);
                 } else if (attributeValue.find('.') != std::string::npos) {
                     // TRY TO PARSE AS DOUBLE
                     try {
                         double attributeValueDouble = std::stod(attributeValue);
-                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
-                        attribute.write(doubleType, &attributeValueDouble);
+                        writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: could not parse attribute '" << attributeName << "' as a float." << std::endl;
                         parsingFailure = true;
                     } catch (const std::out_of_range& e) {
+                        // Special handling for subnormal numbers
                         long double attributeValueLongDouble = std::stold(attributeValue);
                         double attributeValueDouble = (double) attributeValueLongDouble;
-                        attribute = outputGroup.createAttribute(attributeName, doubleType, attributeDataSpace);
-                        attribute.write(doubleType, &attributeValueDouble);
+                        writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
                         
                         std::ostringstream ostream;
                         ostream.precision(13);
@@ -253,8 +168,7 @@ void Converter::convert() {
                     // TRY TO PARSE AS INTEGER
                     try {
                         int64_t attributeValueInt = std::stoi(attributeValue);
-                        attribute = outputGroup.createAttribute(attributeName, intType, attributeDataSpace);
-                        attribute.write(intType, &attributeValueInt);
+                        writeHdf5Attribute(outputGroup, attributeName, attributeValueInt);
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: could not parse attribute '" << attributeName << "' as an integer." << std::endl;
                         parsingFailure = true;
@@ -263,8 +177,7 @@ void Converter::convert() {
                 
                 if (parsingFailure) {
                     // FALL BACK TO STRING
-                    attribute = outputGroup.createAttribute(attributeName, strType, attributeDataSpace);
-                    attribute.write(strType, attributeValue);
+                    writeHdf5Attribute(outputGroup, attributeName, attributeValue);
                 }
             }
         }

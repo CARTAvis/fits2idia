@@ -6,6 +6,7 @@
 #include "Stats.h"
 #include "MipMap.h"
 #include "Timer.h"
+#include "Util.h"
 
 class Converter {
 public:
@@ -18,8 +19,6 @@ public:
     virtual void reportMemoryUsage();
     
 protected:
-    void readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
-    void createDataset(H5::H5File outputFile, std::vector<std::string> path, H5DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims = std::vector<hsize_t>());
     virtual void copyAndCalculate();
     
     std::string tempOutputFileName;
