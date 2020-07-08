@@ -123,7 +123,7 @@ void SlowConverter::copyAndCalculate() {
                     
                     auto val = standardCube[pos];
                                         
-                    if (!std::isnan(val)) {
+                    if (std::isfinite(val)) {
                         // XY statistics
                         // TODO: check if indexing stats arrays inside loop is slow or is optimised away
                         minmax(val);
@@ -163,7 +163,7 @@ void SlowConverter::copyAndCalculate() {
             // Accumulate XYZ statistics
             if (depth > 1) {
                 DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
-                if (!std::isnan(statsXY.sums[indexXY])) {
+                if (std::isfinite(statsXY.maxVals[indexXY])) {
                     statsXYZ.sums[s] += statsXY.sums[indexXY];
                     statsXYZ.sumsSq[s] += statsXY.sumsSq[indexXY];
                     statsXYZ.minVals[s] = fmin(statsXYZ.minVals[s], statsXY.minVals[indexXY]);
@@ -236,7 +236,7 @@ void SlowConverter::copyAndCalculate() {
             cubeMin = statsXYZ.minVals[s];
             cubeMax = statsXYZ.maxVals[s];
             cubeRange = cubeMax - cubeMin;
-            cubeHist = !std::isnan(cubeMin) && !std::isnan(cubeMax) && cubeRange > 0;
+            cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
@@ -248,7 +248,7 @@ void SlowConverter::copyAndCalculate() {
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
-            bool chanHist(!std::isnan(chanMin) && !std::isnan(chanMax) && chanRange > 0);
+            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
             
             DEBUG(std::cout << " Will " << (chanHist ? "" : "not ") << "calculate channel histogram." << std::flush;);
             
@@ -294,7 +294,7 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             for (auto p = 0; p < width * height; p++) {
                 auto val = standardCube[p];
-                    if (!std::isnan(val)) {
+                    if (std::isfinite(val)) {
                         channelHistogramFunc(val);
                         cubeHistogramFunc(val);
                     }
