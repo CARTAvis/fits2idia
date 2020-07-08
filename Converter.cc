@@ -100,8 +100,33 @@ void Converter::reportMemoryUsage() {
     // implemented in subclasses
 }
 
+void createDataset(H5::H5File outputFile, std::vector<std::string> path, H5DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims = std::vector<hsize_t>()) {
+    auto name = path.back();
+    path.pop_back();
+    
+    H5::Group group = outputFile;
+    
+    for (auto& groupname : path) {
+        if (!group.exists(groupname)) {
+            group = group.createGroup(groupname);
+        } else {
+            group = group.openGroup(groupname);
+        }
+    }
+    
+    H5::DSetCreatPropList propList;
+    if (chunkDims) {
+        propList.setChunk(chunkDims.size(), chunkDims.data());
+    }
+    
+    auto dataSpace = H5::DataSpace(dims.size(), dims.data());
+    auto dataset = group.createDataset(name, dataType, dataSpace, propList);
+}
+
 void Converter::convert() {
     // CREATE OUTPUT FILE
+    
+    // TODO helper functions for all of these
     
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
