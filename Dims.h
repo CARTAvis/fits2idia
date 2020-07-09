@@ -3,6 +3,11 @@
 
 #include "common.h"
 
+// TODO all of this needs to be either eliminated or refactored
+// TODO use local variables when constructing stats, mipmap objects, etc.
+// Store individual values on stats, mipmap objects
+// trimAxes utility function
+
 struct StatsDims {
     StatsDims() {}
     
@@ -37,7 +42,7 @@ struct Dims {
         N(2),
         width(width), height(height), depth(1), stokes(1),
         standard({height, width}),
-        mipMapExtra({}),
+        mipMapExtra({}), // replace this with something else?
         tileDims({TILE_SIZE, TILE_SIZE}),
         statsXY({}, depth * stokes, defaultBins()) // dims, size, bins
     {}
@@ -74,7 +79,7 @@ struct Dims {
         return TILE_SIZE <= width && TILE_SIZE <= height;
     }
     
-    static Dims makeDims(int N, long* dims) {
+    static Dims makeDims(int N, long* dims) { // replace this with direct calls to constructors?
         if (N == 2) {
             return Dims(dims[0], dims[1]);
         } else if (N == 3) {

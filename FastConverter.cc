@@ -39,13 +39,15 @@ void FastConverter::reportMemoryUsage() {
 void FastConverter::copyAndCalculate() {
     hsize_t cubeSize = depth * height * width;
     TIMER(timer.start("Allocate"););
+    // TODO this will be a Buffer object
     standardCube = new float[cubeSize];
     
-    statsXY = Stats(dims.statsXY);
+    // TODO these sizes will be different when we don't store all the stats at once
+    statsXY.createBuffers(dims.statsXY.statsSize, dims.statsXY.histSize);
     
     if (depth > 1) {
-        statsZ = Stats(dims.statsZ);
-        statsXYZ = Stats(dims.statsXYZ);
+        statsZ.createBuffers(dims.statsZ.statsSize);
+        statsXYZ.createBuffers(dims.statsXYZ.statsSize, dims.statsXYZ.histSize, dims.statsXYZ.partialHistSize);
     }
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {

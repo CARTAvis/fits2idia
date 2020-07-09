@@ -37,6 +37,13 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
         numBinsXYZ = this->dims.statsXYZ.numBins;
     }
     
+    statsXY = Stats(this->dims.statsXY);
+    
+    if (depth > 1) {
+        statsZ = Stats(this->dims.statsZ);
+        statsXYZ = Stats(this->dims.statsXYZ);
+    }
+    
     // Prepare output file
     this->outputFileName = outputFileName;
     tempOutputFileName = outputFileName + ".tmp";        
@@ -80,13 +87,11 @@ void Converter::convert() {
     
     createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, dims.standard, chunkDims);
     
-    // TODO decouple stats datasets from buffers
-    auto statsGroup = outputGroup.createGroup("Statistics");    
-    auto statsXYGroup = statsGroup.createGroup("XY");
+    statsXY.createDatasets(outputGroup, "XY");
 
     if (depth > 1) {
-        auto statsXYZGroup = statsGroup.createGroup("XYZ"); 
-        auto statsZGroup = statsGroup.createGroup("Z");
+        statsXYZ.createDatasets(outputGroup, "XYZ");
+        statsZ.createDatasets(outputGroup, "Z");
         
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
@@ -192,14 +197,18 @@ void Converter::convert() {
     // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
     
     TIMER(timer.start("Write"););
+    
+    // TODO TODO TODO we need the memory dimensions and file count and start
+    // Initially the full stats; eventually this will be in the subclasses and the dimensions and offsets will differ
 
-    statsXY.write(statsXYGroup, floatType, intType);
+    statsXY.writeBasic(dims.statsXY.statsDims);
+    statsXY.writeHistogram(dims.statsXY.histDims);
+    
     if (depth > 1) {
-        auto statsXYZGroup = statsGroup.openGroup("XYZ"); 
-        auto statsZGroup = statsGroup.openGroup("Z");
-        
-        statsXYZ.write(statsXYZGroup, floatType, intType);
-        statsZ.write(statsZGroup, floatType, intType);
+        statsXYZ.writeBasic(dims.statsXYZ.statsDims);
+        statsXYZ.writeHistogram(dims.statsXYZ.histDims);
+    
+        statsZ.writeBasic(dims.statsZ.statsDims);
     }
             
     TIMER(timer.print(stokes * depth * height * width););

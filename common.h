@@ -33,4 +33,6 @@
     #define TIMER(x) do {} while (0)
 #endif
 
+#define EMPTY_DIMS std::vector<hsize_t>()
+
 #endif
