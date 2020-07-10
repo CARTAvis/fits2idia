@@ -1,13 +1,7 @@
 #include "Converter.h"
 
 Converter::Converter(std::string inputFileName, std::string outputFileName) :
-    status(0),
-    timer(),
-    strType(H5::PredType::C_S1, 256),
-    boolType(H5::PredType::NATIVE_HBOOL), 
-    doubleType(H5::PredType::NATIVE_DOUBLE),
-    floatType(H5::PredType::NATIVE_FLOAT),
-    intType(H5::PredType::NATIVE_INT64)
+    timer()
 {
     TIMER(timer.start("Setup"););
     
@@ -24,24 +18,21 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
     
     swizzledName = N == 3 ? "ZYX" : "ZYXW";
     
-    // Customise types
-    doubleType.setOrder(H5T_ORDER_LE);
-    floatType.setOrder(H5T_ORDER_LE);
-    intType.setOrder(H5T_ORDER_LE);
+    standardDims = trimAxes({stokes, depth, height, width}, N);
+    tileDims = trimAxes({1, 1, TILE_SIZE, TILE_SIZE}, N);
     
-    // Dimensions of various datasets -- TODO remove this
-    this->dims = Dims::makeDims(N, dims);
+    numBins = int(std::max(std::sqrt(width * height), 2.0));
     
-    numBinsXY = this->dims.statsXY.numBins;        
-    if (depth > 1) {
-        numBinsXYZ = this->dims.statsXYZ.numBins;
-    }
-    
-    statsXY = Stats(this->dims.statsXY);
+    // STATS OBJECTS
+
+    auto statsXYDims = trimAxes({stokes, depth}, N - 2);
+    statsXY = Stats(statsXYDims, extend(statsXYDims, {numBins}));
     
     if (depth > 1) {
-        statsZ = Stats(this->dims.statsZ);
-        statsXYZ = Stats(this->dims.statsXYZ);
+        swizzledDims = trimAxes({stokes, width, height, depth}, N);
+        statsZ = Stats(trimAxes({stokes, height, width}, N - 1));
+        auto statsXYZDims = trimAxes({stokes}, N - 3);
+        statsXYZ = Stats(statsXYZDims, extend(statsXYZDims, {numBins}));
     }
     
     // Prepare output file
@@ -73,19 +64,19 @@ void Converter::reportMemoryUsage() {
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
-    // TODO helper functions for all of these
-    // TODO dataset variables should be local and passed into the copy function
-    // TODO eliminate dims struct; it was a bad idea
+    // TODO dataset variables should be local and passed into the copy function?
     
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
     
     std::vector<hsize_t> chunkDims;
-    if (dims.useChunks()) {
-        chunkDims = dims.tileDims;
+    if (useChunks(width, height)) {
+        chunkDims = tileDims;
     }
     
-    createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, dims.standard, chunkDims);
+    H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
+    floatType.setOrder(H5T_ORDER_LE);
+    createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, standardDims, chunkDims);
     
     statsXY.createDatasets(outputGroup, "XY");
 
@@ -96,16 +87,11 @@ void Converter::convert() {
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
-        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, dims.swizzled);
+        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
     }
     
-    if (mipMaps.size()) {
-        // I don't know if this naming convention still makes sense, but I'm replicating the schema for now
-        auto mipMapGroup = outputGroup.createGroup("MipMaps").createGroup("DATA");
-        
-        for (auto& mipMap : mipMaps) {
-            mipMap.createDataset(mipMapGroup, floatType, dims);
-        }
+    for (auto & mipmap : mipMaps) {
+        mipmap.createDataset(outputGroup, chunkDims);
     }
     
     // COPY HEADERS
@@ -198,17 +184,16 @@ void Converter::convert() {
     
     TIMER(timer.start("Write"););
     
-    // TODO TODO TODO we need the memory dimensions and file count and start
-    // Initially the full stats; eventually this will be in the subclasses and the dimensions and offsets will differ
+    // TODO Initially the full stats; eventually this will be in the subclasses and the dimensions and offsets will differ
 
-    statsXY.writeBasic(dims.statsXY.statsDims);
-    statsXY.writeHistogram(dims.statsXY.histDims);
+    statsXY.writeBasic(statsXY.statsDims);
+    statsXY.writeHistogram(statsXY.histDims);
     
     if (depth > 1) {
-        statsXYZ.writeBasic(dims.statsXYZ.statsDims);
-        statsXYZ.writeHistogram(dims.statsXYZ.histDims);
+        statsXYZ.writeBasic(statsXYZ.statsDims);
+        statsXYZ.writeHistogram(statsXYZ.histDims);
     
-        statsZ.writeBasic(dims.statsZ.statsDims);
+        statsZ.writeBasic(statsZ.statsDims);
     }
             
     TIMER(timer.print(stokes * depth * height * width););

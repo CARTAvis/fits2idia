@@ -2,7 +2,7 @@
 
 FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
     TIMER(timer.start("Mipmaps"););
-    MipMap::initialise(mipMaps, N, width, height, depth);
+    MipMap::initialise(mipMaps, standardDims, width, height, depth);
 }
 
 void FastConverter::reportMemoryUsage() {
@@ -10,12 +10,12 @@ void FastConverter::reportMemoryUsage() {
 
     sizes["Main dataset"] = depth * height * width * sizeof(float);
     sizes["Mipmaps"] = MipMap::size(width, height, depth);
-    sizes["XY stats"] = Stats::size(dims.statsXY);
+    sizes["XY stats"] = Stats::size(depth * stokes, numBins);
     
     if (depth > 1) {
         sizes["Rotation"] = sizes["Main dataset"];
-        sizes["XYZ stats"] = Stats::size(dims.statsXYZ);
-        sizes["Z stats"] = Stats::size(dims.statsZ);
+        sizes["XYZ stats"] = Stats::size(stokes, numBins, depth);
+        sizes["Z stats"] = Stats::size(width * height * stokes);
     }
     
     hsize_t total(0);
@@ -43,12 +43,19 @@ void FastConverter::copyAndCalculate() {
     standardCube = new float[cubeSize];
     
     // TODO these sizes will be different when we don't store all the stats at once
-    statsXY.createBuffers(dims.statsXY.statsSize, dims.statsXY.histSize);
+    statsXY.createBuffers(depth * stokes, numBins);
     
     if (depth > 1) {
-        statsZ.createBuffers(dims.statsZ.statsSize);
-        statsXYZ.createBuffers(dims.statsXYZ.statsSize, dims.statsXYZ.histSize, dims.statsXYZ.partialHistSize);
+        statsXYZ.createBuffers(stokes, numBins, depth);
+        statsZ.createBuffers(width * height * stokes);
     }
+    
+    for (auto & mipmap : mipMaps) {
+        mipmap.createBuffers();
+    }
+    
+    hsize_t& numBinsXY(numBins);
+    hsize_t& numBinsXYZ(numBins);
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
@@ -239,13 +246,13 @@ void FastConverter::copyAndCalculate() {
             
             auto doChannelHistogram = [&] (float val) {
                 // XY Histogram
-                int binIndex = std::min(numBinsXY - 1, (int)(numBinsXY * (val - sliceMin) / range));
+                int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - sliceMin) / range));
                 statsXY.histograms[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ Partial histogram
-                int binIndexXYZ = std::min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                int binIndexXYZ = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
                 statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
             };
             
@@ -385,7 +392,7 @@ void FastConverter::copyAndCalculate() {
         TIMER(timer.start("Mipmaps"););
         
         for (auto& mipMap : mipMaps) {
-            mipMap.reset();
+            mipMap.resetBuffers();
         }
     
     } // end of Stokes loop

@@ -10,6 +10,29 @@ std::vector<std::string> split(const std::string &str, char separator) {
     return result;
 }
 
+std::vector<hsize_t> trimAxes(const std::vector<hsize_t>& dims, int N) {
+    auto trimmed = dims;
+    while (trimmed.size() > N) {
+        trimmed.erase(trimmed.begin());
+    }
+    return trimmed;
+}
+
+std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<hsize_t>& right) {
+    std::vector<hsize_t> result;
+    result.insert(result.end(), left.begin(), left.end());
+    result.insert(result.end(), right.begin(), right.end());
+    return result;
+}
+
+hsize_t product(const std::vector<hsize_t>& dims) {
+    return std::accumulate(begin(dims), end(dims), 1, std::multiplies<hsize_t>());
+}
+
+bool useChunks(hsize_t width, hsize_t height) {
+    return TILE_SIZE <= width && TILE_SIZE <= height;
+}
+
 void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName) {
     int status(0);
     

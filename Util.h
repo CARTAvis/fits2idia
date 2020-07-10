@@ -4,6 +4,10 @@
 #include "common.h"
 
 std::vector<std::string> split(const std::string &str, char separator);
+std::vector<hsize_t> trimAxes(const std::vector<hsize_t>& dims, int N);
+std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<hsize_t>& right);
+hsize_t product(const std::vector<hsize_t>& dims);
+bool useChunks(hsize_t width, hsize_t height);
 
 void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName);
 void getFitsDims(fitsfile* filePtr, int& N, long* dims);

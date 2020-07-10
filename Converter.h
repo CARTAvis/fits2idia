@@ -2,7 +2,6 @@
 #define __IMAGE_H
 
 #include "common.h"
-#include "Dims.h"
 #include "Stats.h"
 #include "MipMap.h"
 #include "Timer.h"
@@ -31,7 +30,7 @@ protected:
     H5::DataSet standardDataSet;
     H5::DataSet swizzledDataSet;
     
-    // Data objects
+    // Data objects -- TODO replace with buffers
     float* standardCube;
     float* rotatedCube;
     
@@ -43,22 +42,19 @@ protected:
     // MipMaps
     std::vector<MipMap> mipMaps;
     
-    int status;
     Timer timer;
     
     int N;
     hsize_t stokes, depth, height, width;
-    Dims dims;
-    int numBinsXY;
-    int numBinsXYZ;
-    std::string swizzledName;
+    hsize_t numBins;
     
-    // Types
-    H5::StrType strType;
-    H5::IntType boolType;
-    H5::FloatType doubleType;
-    H5::FloatType floatType;
-    H5::IntType intType;
+    // Dataset dimensions
+    
+    std::vector<hsize_t> standardDims;
+    std::vector<hsize_t> swizzledDims;
+    std::vector<hsize_t> tileDims;
+    
+    std::string swizzledName;
 };
 
 

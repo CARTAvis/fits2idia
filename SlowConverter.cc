@@ -2,7 +2,7 @@
 
 SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
     TIMER(timer.start("Mipmaps"););
-    MipMap::initialise(mipMaps, N, width, height, 1);
+    MipMap::initialise(mipMaps, standardDims, width, height, 1);
 }
 
 void SlowConverter::reportMemoryUsage() {
@@ -10,7 +10,7 @@ void SlowConverter::reportMemoryUsage() {
 
     sizes["Main dataset"] = height * width * sizeof(float);
     sizes["Mipmaps"] = MipMap::size(width, height, 1);
-    sizes["XY stats"] = Stats::size(dims.statsXY);
+    sizes["XY stats"] = Stats::size(depth * stokes, numBins);
     
     if (depth > 1) {
         if (N == 3) {
@@ -18,8 +18,8 @@ void SlowConverter::reportMemoryUsage() {
         } else if (N == 4) {
             sizes["Rotation"] = 2 * stokes * depth * TILE_SIZE * TILE_SIZE;
         }
-        sizes["XYZ stats"] = Stats::size(dims.statsXYZ);
-        sizes["Z stats"] = Stats::size(dims.statsZ);
+        sizes["XYZ stats"] = Stats::size(stokes, numBins, depth);
+        sizes["Z stats"] = Stats::size(width * height * stokes);
     }
     
     hsize_t total(0);
@@ -47,26 +47,25 @@ void SlowConverter::copyAndCalculate() {
     standardCube = new float[cubeSize];
     
     // TODO these sizes will be different when we don't store all the stats at once
-    statsXY.createBuffers(dims.statsXY.statsSize, dims.statsXY.histSize);
+    statsXY.createBuffers(depth * stokes, numBins);
     
     if (depth > 1) {
-        statsZ.createBuffers(dims.statsZ.statsSize);
-        statsXYZ.createBuffers(dims.statsXYZ.statsSize, dims.statsXYZ.histSize, dims.statsXYZ.partialHistSize);
+        statsXYZ.createBuffers(stokes, numBins, depth);
+        statsZ.createBuffers(width * height * stokes);
     }
     
+    for (auto & mipmap : mipMaps) {
+        mipmap.createBuffers();
+    }
+    
+    hsize_t& numBinsXY(numBins);
+    hsize_t& numBinsXYZ(numBins);
+    
+    // TODO this will all go away when all the buffers are converted to Buffer objects
     auto sliceDataSpace = standardDataSet.getSpace();
                         
-    std::vector<hsize_t> count;
-    std::vector<hsize_t> start;
-    
-    if (N == 2) {
-        count = {height, width};
-    } else if (N == 3) {
-        count = {1, height, width};
-    } else if (N == 4) {
-        count = {1, 1, height, width};
-    }
-    
+    std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
+
     hsize_t memDims[] = {height, width};
     H5::DataSpace memspace(2, memDims);
     
@@ -81,13 +80,8 @@ void SlowConverter::copyAndCalculate() {
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
             
             // Write the standard dataset
-            if (N == 2) {
-                start = {0, 0};
-            } else if (N == 3) {
-                start = {c, 0, 0};
-            } else if (N == 4) {
-                start = {s, c, 0, 0};
-            }
+            
+            std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
             TIMER(timer.start("Write"););
@@ -193,7 +187,7 @@ void SlowConverter::copyAndCalculate() {
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
             for (auto& mipMap : mipMaps) {
-                mipMap.reset();
+                mipMap.resetBuffers();
             }
             
         } // end of first channel loop
@@ -258,13 +252,13 @@ void SlowConverter::copyAndCalculate() {
             
             auto doChannelHistogram = [&] (float val) {
                 // XY Histogram
-                int binIndex = std::min(numBinsXY - 1, (int)(numBinsXY * (val - chanMin) / chanRange));
+                int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - chanMin) / chanRange));
                 statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ histogram
-                int binIndex = std::min(numBinsXYZ - 1, (int)(numBinsXYZ * (val - cubeMin) / cubeRange));
+                int binIndex = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
                 statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
             };
             

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <limits>
 #include <memory>
+#include <numeric>
 
 #include <H5Cpp.h>
 #include <fitsio.h>

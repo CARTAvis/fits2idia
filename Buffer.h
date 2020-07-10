@@ -31,10 +31,6 @@ struct Buffer {
         }
     }
     
-    void write(H5::DataSet destination, hsize_t offset) {
-        // TODO how to determine types? Overloading?
-    }
-    
     hsize_t size;
     T* data;
 };
