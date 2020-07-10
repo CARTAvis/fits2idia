@@ -64,7 +64,7 @@ struct MipMap {
         int N = datasetDims.size();
         std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
         std::vector<hsize_t> start = trimAxes({stokesOffset, channelOffset, 0, 0}, N);
-        writeHdf5Data(dataset, vals, dims, count, start);
+        writeHdf5Data(dataset, vals.data(), dims, count, start);
     }
     
     static void initialise(std::vector<MipMap>& mipMaps, std::vector<hsize_t> dims, hsize_t width, hsize_t height, hsize_t depth) {

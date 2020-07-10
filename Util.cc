@@ -182,30 +182,38 @@ void writeHdf5Attribute(H5::Group group, std::string name, bool value) {
     attribute.write(boolType, &value);
 }
 
-// TODO this will eventually use buffers and be usable for all datasets
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<float>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
     H5::DataSpace memSpace(dims.size(), dims.data());
     auto fileSpace = dataset.getSpace();
     if (!count.empty() && !start.empty()) {
         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
     }
-    dataset.write(vals.data(), H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
+    dataset.write(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
 }
 
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<double>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
     H5::DataSpace memSpace(dims.size(), dims.data());
     auto fileSpace = dataset.getSpace();
     if (!count.empty() && !start.empty()) {
         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
     }
-    dataset.write(vals.data(), H5::PredType::NATIVE_DOUBLE, memSpace, fileSpace);
+    dataset.write(data, H5::PredType::NATIVE_DOUBLE, memSpace, fileSpace);
 }
 
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<int64_t>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
     H5::DataSpace memSpace(dims.size(), dims.data());
     auto fileSpace = dataset.getSpace();
     if (!count.empty() && !start.empty()) {
         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
     }
-    dataset.write(vals.data(), H5::PredType::NATIVE_INT64, memSpace, fileSpace);
+    dataset.write(data, H5::PredType::NATIVE_INT64, memSpace, fileSpace);
+}
+
+void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+    H5::DataSpace memSpace(dims.size(), dims.data());
+    auto fileSpace = dataset.getSpace();
+    if (!count.empty() && !start.empty()) {
+        fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+    }
+    dataset.read(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
 }

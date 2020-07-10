@@ -23,8 +23,11 @@ void writeHdf5Attribute(H5::Group group, std::string name, std::string value);
 void writeHdf5Attribute(H5::Group group, std::string name, int64_t value);
 void writeHdf5Attribute(H5::Group group, std::string name, double value);
 void writeHdf5Attribute(H5::Group group, std::string name, bool value);
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<float>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<double>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-void writeHdf5Data(H5::DataSet& dataset, const std::vector<int64_t>& vals, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+
+void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+
+void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
 #endif

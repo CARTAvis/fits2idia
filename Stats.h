@@ -28,7 +28,6 @@ struct Stats {
     }
     
     void createBuffers(hsize_t statsSize, int numBins = 0, hsize_t partialHistMultiplier = 0) {
-        // TODO this will be replaced with buffer code
         minVals.resize(statsSize, std::numeric_limits<double>::max());
         maxVals.resize(statsSize, -std::numeric_limits<double>::max());
         sums.resize(statsSize);
@@ -40,7 +39,6 @@ struct Stats {
     }
     
     void resetBuffers() {
-        // TODO this will be replaced with buffer code
         std::fill(minVals.begin(), minVals.end(), std::numeric_limits<double>::max());
         std::fill(maxVals.begin(), maxVals.end(), -std::numeric_limits<double>::max());
         std::fill(sums.begin(), sums.end(), 0);
@@ -54,15 +52,15 @@ struct Stats {
     // TODO eventually add helper write functions for translating tile / swizzled slice offsets to count and start
     
     void writeBasic(const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
-        writeHdf5Data(minDset, minVals, dims, count, start);
-        writeHdf5Data(maxDset, maxVals, dims, count, start);
-        writeHdf5Data(sumDset, sums, dims, count, start);
-        writeHdf5Data(ssqDset, sumsSq, dims, count, start);
-        writeHdf5Data(nanDset, nanCounts, dims, count, start);
+        writeHdf5Data(minDset, minVals.data(), dims, count, start);
+        writeHdf5Data(maxDset, maxVals.data(), dims, count, start);
+        writeHdf5Data(sumDset, sums.data(), dims, count, start);
+        writeHdf5Data(ssqDset, sumsSq.data(), dims, count, start);
+        writeHdf5Data(nanDset, nanCounts.data(), dims, count, start);
     }
     
     void writeHistogram(const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
-        writeHdf5Data(histDset, histograms, dims, count, start);
+        writeHdf5Data(histDset, histograms.data(), dims, count, start);
     }
     
     static hsize_t size(hsize_t statsSize, int numBins = 0, hsize_t partialHistMultiplier = 0) {
@@ -82,7 +80,7 @@ struct Stats {
     
     H5::DataSet histDset;
 
-    // Buffers -- TODO replace with buffer objects
+    // Buffers -- TODO replace with arrays
     std::vector<double> minVals;
     std::vector<double> maxVals;
     std::vector<double> sums;

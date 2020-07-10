@@ -30,7 +30,6 @@ protected:
     H5::DataSet standardDataSet;
     H5::DataSet swizzledDataSet;
     
-    // Data objects -- TODO replace with buffers
     float* standardCube;
     float* rotatedCube;
     

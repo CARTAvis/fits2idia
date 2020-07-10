@@ -39,7 +39,7 @@ void FastConverter::reportMemoryUsage() {
 void FastConverter::copyAndCalculate() {
     hsize_t cubeSize = depth * height * width;
     TIMER(timer.start("Allocate"););
-    // TODO this will be a Buffer object
+
     standardCube = new float[cubeSize];
     
     // TODO these sizes will be different when we don't store all the stats at once
@@ -141,10 +141,10 @@ void FastConverter::copyAndCalculate() {
         double xyzMax;
 
         if (depth > 1) {
-            TIMER(timer.start("XYZ and Z statistics"););
-            
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
+            TIMER(timer.start("XYZ and Z statistics"););
+            
             double xyzSum = 0;
             double xyzSumSq = 0;
             int64_t xyzNanCount = 0;
@@ -174,8 +174,9 @@ void FastConverter::copyAndCalculate() {
                 statsXYZ.maxVals[currentStokes] = NAN;
             }
 
-            DEBUG(std::cout << " Z statistics... " << std::flush;);
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
+            
+            DEBUG(std::cout << " Z statistics... " << std::flush;);
             
 #pragma omp parallel for
             for (auto j = 0; j < height; j++) {
@@ -300,60 +301,30 @@ void FastConverter::copyAndCalculate() {
         DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
         TIMER(timer.start("Write"););
                     
-        std::vector<hsize_t> count;
-        std::vector<hsize_t> start;
-        
-        if (N == 2) {
-            count = {height, width};
-            start = {0, 0};
-        } else if (N == 3) {
-            count = {depth, height, width};
-            start = {0, 0, 0};
-        } else if (N == 4) {
-            count = {1, depth, height, width};
-            start = {currentStokes, 0, 0, 0};
-        }
-        
-        hsize_t memDims[] = {depth, height, width};
-        H5::DataSpace memspace(3, memDims);
-
-        auto sliceDataSpace = standardDataSet.getSpace();
-        sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-
-        standardDataSet.write(standardCube, H5::PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
+        std::vector<hsize_t> memDims = {depth, height, width};
+        std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
+        std::vector<hsize_t> start = trimAxes({currentStokes, 0, 0, 0}, N);
+        writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
         
         if (depth > 1) {
             // This all technically worked if we reused the standard filespace and memspace
             // But it's probably not a good idea to rely on two incorrect values cancelling each other out
-            std::vector<hsize_t> swizzledCount;
-            
-            if (N == 3) {
-                swizzledCount = {width, height, depth};
-            } else if (N == 4) {
-                swizzledCount = {1, width, height, depth};
-            }
-            
-            hsize_t swizzledMemDims[] = {width, height, depth};
-            H5::DataSpace swizzledMemspace(3, swizzledMemDims);
-            
-            auto swizzledDataSpace = swizzledDataSet.getSpace();
-            swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), start.data());
-            
-            swizzledDataSet.write(rotatedCube, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
+            std::vector<hsize_t> swizzledCount = trimAxes({1, width, height, depth}, N);
+            std::vector<hsize_t> swizzledMemDims = {width, height, depth};
+            writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);
         }
 
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
-        
         if (depth > 1) {
             DEBUG(std::cout << " Freeing memory from rotated dataset..." << std::flush;);
             TIMER(timer.start("Free"););
+            
             delete[] rotatedCube;
         }
         
         // Fourth loop handles mipmaps
         
         // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
-        
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
         TIMER(timer.start("Mipmaps"););
         
@@ -373,7 +344,6 @@ void FastConverter::copyAndCalculate() {
         } // end of mipmap loop
         
         // Final mipmap calculation
-        
         for (auto& mipMap : mipMaps) {
             mipMap.calculate();
         }
@@ -381,14 +351,12 @@ void FastConverter::copyAndCalculate() {
         TIMER(timer.start("Write"););
         
         // Write the mipmaps
-        
         for (auto& mipMap : mipMaps) {
             // Start at current Stokes and channel 0
             mipMap.write(currentStokes, 0);
         }
         
         // Clear the mipmaps before the next Stokes
-        
         TIMER(timer.start("Mipmaps"););
         
         for (auto& mipMap : mipMaps) {
@@ -398,7 +366,8 @@ void FastConverter::copyAndCalculate() {
     } // end of Stokes loop
     
     // Free memory
-    TIMER(timer.start("Free"););
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
+    TIMER(timer.start("Free"););
+    
     delete[] standardCube;
 }

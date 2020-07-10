@@ -13,11 +13,7 @@ void SlowConverter::reportMemoryUsage() {
     sizes["XY stats"] = Stats::size(depth * stokes, numBins);
     
     if (depth > 1) {
-        if (N == 3) {
-            sizes["Rotation"] = 2 * depth * TILE_SIZE * TILE_SIZE;
-        } else if (N == 4) {
-            sizes["Rotation"] = 2 * stokes * depth * TILE_SIZE * TILE_SIZE;
-        }
+        sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         sizes["XYZ stats"] = Stats::size(stokes, numBins, depth);
         sizes["Z stats"] = Stats::size(width * height * stokes);
     }
@@ -60,14 +56,10 @@ void SlowConverter::copyAndCalculate() {
     
     hsize_t& numBinsXY(numBins);
     hsize_t& numBinsXYZ(numBins);
-    
-    // TODO this will all go away when all the buffers are converted to Buffer objects
-    auto sliceDataSpace = standardDataSet.getSpace();
+
                         
     std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
-
-    hsize_t memDims[] = {height, width};
-    H5::DataSpace memspace(2, memDims);
+    std::vector<hsize_t> memDims = {height, width};
     
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
@@ -81,16 +73,15 @@ void SlowConverter::copyAndCalculate() {
             
             // Write the standard dataset
             
-            std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
-            
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
             TIMER(timer.start("Write"););
-            sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-            standardDataSet.write(standardCube, H5::PredType::NATIVE_FLOAT, memspace, sliceDataSpace);
             
-            TIMER(timer.start("Statistics and mipmaps"););
+            std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
+            writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             
             DEBUG(std::cout << " Accumulating XY " << (depth > 1 ? "and Z " : "") << "stats and mipmaps..." << std::flush;);
+            TIMER(timer.start("Statistics and mipmaps"););
+
             auto indexXY = s * depth + c;
             
             std::function<void(float)> minmax;
@@ -174,18 +165,18 @@ void SlowConverter::copyAndCalculate() {
             }
             
             // Write the mipmaps
-            
-            TIMER(timer.start("Write"););
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
+            TIMER(timer.start("Write"););
+            
             for (auto& mipMap : mipMaps) {
                 // Start at current Stokes and channel
                 mipMap.write(s, c);
             }
             
-            TIMER(timer.start("Statistics and mipmaps"););
-            
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
+            TIMER(timer.start("Statistics and mipmaps"););
+            
             for (auto& mipMap : mipMaps) {
                 mipMap.resetBuffers();
             }
@@ -193,8 +184,8 @@ void SlowConverter::copyAndCalculate() {
         } // end of first channel loop
         
         if (depth > 1) {
-            TIMER(timer.start("Statistics and mipmaps"););
             DEBUG(std::cout << "+ Final Z stats..." << std::flush;);
+            TIMER(timer.start("Statistics and mipmaps"););
             
             // A final pass over all XY to fix the Z stats NaNs
             for (auto p = 0; p < width * height; p++) {
@@ -282,11 +273,12 @@ void SlowConverter::copyAndCalculate() {
             // read one channel
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
             
-            TIMER(timer.start("Histograms"););
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
+            TIMER(timer.start("Histograms"););
+            
             for (auto p = 0; p < width * height; p++) {
                 auto val = standardCube[p];
                     if (std::isfinite(val)) {
@@ -299,29 +291,19 @@ void SlowConverter::copyAndCalculate() {
     } // end of stokes
     
     // Free memory
-    TIMER(timer.start("Free"););
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
+    TIMER(timer.start("Free"););
+    
     delete[] standardCube;
             
     // Swizzle
     if (depth > 1) {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
-        
-        hsize_t sliceSize;
-    
-        if (N == 3) {
-            sliceSize = depth * TILE_SIZE * TILE_SIZE;
-        } else if (N == 4) {
-            sliceSize = stokes * depth * TILE_SIZE * TILE_SIZE;
-        }
-        
         TIMER(timer.start("Allocate"););
         
+        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
-
-        auto standardDataSpace = standardDataSet.getSpace();
-        auto swizzledDataSpace = swizzledDataSet.getSpace();
         
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
@@ -332,43 +314,25 @@ void SlowConverter::copyAndCalculate() {
                     
                     DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
                     
-                    std::vector<hsize_t> standardMemDims;
-                    std::vector<hsize_t> swizzledMemDims;
-                    std::vector<hsize_t> standardOffset;
-                    std::vector<hsize_t> standardCount;
-                    std::vector<hsize_t> swizzledOffset;
-                    std::vector<hsize_t> swizzledCount;
+                    std::vector<hsize_t> standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
+                    std::vector<hsize_t> swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
                     
-                    if (N == 3) {
-                        standardMemDims = {depth, ySize, xSize};
-                        swizzledMemDims = {xSize, ySize, depth};
-                        standardOffset = {0, yOffset, xOffset};
-                        standardCount = {depth, ySize, xSize};
-                        swizzledOffset = {xOffset, yOffset, 0};
-                        swizzledCount = {xSize, ySize, depth};
-                    } else if (N == 4) {
-                        standardMemDims = {1, depth, ySize, xSize};
-                        swizzledMemDims = {1, xSize, ySize, depth};
-                        standardOffset = {s, 0, yOffset, xOffset};
-                        standardCount = {1, depth, ySize, xSize};
-                        swizzledOffset = {s, xOffset, yOffset, 0};
-                        swizzledCount = {1, xSize, ySize, depth};
-                    }
+                    std::vector<hsize_t> standardCount = trimAxes({1, depth, ySize, xSize}, N);
+                    std::vector<hsize_t> swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     
-                    H5::DataSpace standardMemspace(standardMemDims.size(), standardMemDims.data());
-                    H5::DataSpace swizzledMemspace(swizzledMemDims.size(), swizzledMemDims.data());
+                    std::vector<hsize_t> standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
+                    std::vector<hsize_t> swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
                     // read tile slice
                     DEBUG(std::cout << " Reading main dataset..." << std::flush;);
                     TIMER(timer.start("Read"););
                     
-                    standardDataSpace.selectHyperslab(H5S_SELECT_SET, standardCount.data(), standardOffset.data());
-                    standardDataSet.read(standardSlice, H5::PredType::NATIVE_FLOAT, standardMemspace, standardDataSpace);
-                    
-                    TIMER(timer.start("Rotation"););
+                    readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+                    TIMER(timer.start("Rotation"););
+                    
                     for (auto i = 0; i < depth; i++) {
                         for (auto j = 0; j < ySize; j++) {
                             for (auto k = 0; k < xSize; k++) {
@@ -379,12 +343,11 @@ void SlowConverter::copyAndCalculate() {
                         }
                     }
                     
-                    TIMER(timer.start("Write"););
-                            
                     // write tile slice
                     DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
-                    swizzledDataSpace.selectHyperslab(H5S_SELECT_SET, swizzledCount.data(), swizzledOffset.data());
-                    swizzledDataSet.write(rotatedSlice, H5::PredType::NATIVE_FLOAT, swizzledMemspace, swizzledDataSpace);
+                    TIMER(timer.start("Write"););
+                    
+                    writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
                 }
             }
         }
