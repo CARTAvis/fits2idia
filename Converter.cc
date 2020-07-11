@@ -177,26 +177,8 @@ void Converter::convert() {
     // MAIN CONVERSION AND CALCULATION FUNCTION
 
     copyAndCalculate();
-    
-    // WRITE STATISTICS
-    
-    // TODO only store stats for one stokes at a time; stats don't span multiple stokes.
-    
-    TIMER(timer.start("Write"););
-    
-    // TODO Initially the full stats; eventually this will be in the subclasses and the dimensions and offsets will differ
-
-    statsXY.writeBasic(statsXY.statsDims);
-    statsXY.writeHistogram(statsXY.histDims);
-    
-    if (depth > 1) {
-        statsXYZ.writeBasic(statsXYZ.statsDims);
-        statsXYZ.writeHistogram(statsXYZ.histDims);
-    
-        statsZ.writeBasic(statsZ.statsDims);
-    }
             
-    TIMER(timer.print(stokes * depth * height * width););
+    TIMER(timer.print(product(standardDims)););
     
     // Rename from temp file
     rename(tempOutputFileName.c_str(), outputFileName.c_str());

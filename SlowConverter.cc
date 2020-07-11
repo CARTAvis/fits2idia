@@ -10,12 +10,12 @@ void SlowConverter::reportMemoryUsage() {
 
     sizes["Main dataset"] = height * width * sizeof(float);
     sizes["Mipmaps"] = MipMap::size(width, height, 1);
-    sizes["XY stats"] = Stats::size(depth * stokes, numBins);
+    sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
         sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
-        sizes["XYZ stats"] = Stats::size(stokes, numBins, depth);
-        sizes["Z stats"] = Stats::size(width * height * stokes);
+        sizes["XYZ stats"] = Stats::size({}, numBins, depth);
+        sizes["Z stats"] = Stats::size({height, width});
     }
     
     hsize_t total(0);
@@ -42,12 +42,13 @@ void SlowConverter::copyAndCalculate() {
     TIMER(timer.start("Allocate"););
     standardCube = new float[cubeSize];
     
-    // TODO these sizes will be different when we don't store all the stats at once
-    statsXY.createBuffers(depth * stokes, numBins);
+    // Allocate one stokes of stats at a time
+    // TODO TODO TODO try moving the Z stats to the tiled swizzle loop
+    statsXY.createBuffers({depth}, numBins);
     
     if (depth > 1) {
-        statsXYZ.createBuffers(stokes, numBins, depth);
-        statsZ.createBuffers(width * height * stokes);
+        statsXYZ.createBuffers({}, numBins, depth);
+        statsZ.createBuffers({height, width});
     }
     
     for (auto & mipmap : mipMaps) {
@@ -82,7 +83,7 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Accumulating XY " << (depth > 1 ? "and Z " : "") << "stats and mipmaps..." << std::flush;);
             TIMER(timer.start("Statistics and mipmaps"););
 
-            auto indexXY = s * depth + c;
+            auto indexXY = c;
             
             std::function<void(float)> minmax;
             
@@ -105,7 +106,7 @@ void SlowConverter::copyAndCalculate() {
             for (auto y = 0; y < height; y++) {
                 for (auto x = 0; x < width; x++) {
                     auto pos = y * width + x; // relative to channel slice
-                    auto indexZ = s * width * height + pos; // relative to whole image
+                    auto indexZ = pos; // relative to whole image
                     
                     auto val = standardCube[pos];
                                         
@@ -150,12 +151,12 @@ void SlowConverter::copyAndCalculate() {
             if (depth > 1) {
                 DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
                 if (std::isfinite(statsXY.maxVals[indexXY])) {
-                    statsXYZ.sums[s] += statsXY.sums[indexXY];
-                    statsXYZ.sumsSq[s] += statsXY.sumsSq[indexXY];
-                    statsXYZ.minVals[s] = fmin(statsXYZ.minVals[s], statsXY.minVals[indexXY]);
-                    statsXYZ.maxVals[s] = fmax(statsXYZ.maxVals[s], statsXY.maxVals[indexXY]);
+                    statsXYZ.sums[0] += statsXY.sums[indexXY];
+                    statsXYZ.sumsSq[0] += statsXY.sumsSq[indexXY];
+                    statsXYZ.minVals[0] = fmin(statsXYZ.minVals[0], statsXY.minVals[indexXY]);
+                    statsXYZ.maxVals[0] = fmax(statsXYZ.maxVals[0], statsXY.maxVals[indexXY]);
                 }
-                statsXYZ.nanCounts[s] += statsXY.nanCounts[indexXY];
+                statsXYZ.nanCounts[0] += statsXY.nanCounts[indexXY];
             }
             
             // Final mipmap calculation
@@ -189,7 +190,7 @@ void SlowConverter::copyAndCalculate() {
             
             // A final pass over all XY to fix the Z stats NaNs
             for (auto p = 0; p < width * height; p++) {
-                auto indexZ = s * width * height + p;
+                auto indexZ = p;
                                         
                 // TODO can we do this in stats?
                 if (statsZ.nanCounts[indexZ] == depth) {
@@ -201,9 +202,9 @@ void SlowConverter::copyAndCalculate() {
             // A final correction of the XYZ NaNs
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
             
-            if (statsXYZ.nanCounts[s] == depth * height * width) {
-                statsXYZ.minVals[s] = NAN;
-                statsXYZ.maxVals[s] = NAN;
+            if (statsXYZ.nanCounts[0] == depth * height * width) {
+                statsXYZ.minVals[0] = NAN;
+                statsXYZ.maxVals[0] = NAN;
             }
         }
         
@@ -219,8 +220,8 @@ void SlowConverter::copyAndCalculate() {
         double cubeRange;
         
         if (depth > 1) {
-            cubeMin = statsXYZ.minVals[s];
-            cubeMax = statsXYZ.maxVals[s];
+            cubeMin = statsXYZ.minVals[0];
+            cubeMax = statsXYZ.maxVals[0];
             cubeRange = cubeMax - cubeMin;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
@@ -229,7 +230,7 @@ void SlowConverter::copyAndCalculate() {
         
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
-            auto indexXY = s * depth + c;
+            auto indexXY = c;
                             
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
@@ -244,13 +245,13 @@ void SlowConverter::copyAndCalculate() {
             auto doChannelHistogram = [&] (float val) {
                 // XY Histogram
                 int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - chanMin) / chanRange));
-                statsXY.histograms[s * depth * numBinsXY + c * numBinsXY + binIndex]++;
+                statsXY.histograms[c * numBinsXY + binIndex]++;
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ histogram
                 int binIndex = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                statsXYZ.histograms[s * numBinsXYZ + binIndex]++;
+                statsXYZ.histograms[binIndex]++;
             };
             
             auto doNothing = [&] (float val) {};
@@ -287,6 +288,28 @@ void SlowConverter::copyAndCalculate() {
                     }
             } // end of XY loop
         } // end of second channel loop (XY and XYZ histograms)
+        
+        // Write the statistics
+        TIMER(timer.start("Write"););
+                
+        statsXY.write({1, depth}, {s, 0});
+        
+        if (depth > 1) {
+            statsXYZ.write({1}, {s});
+            statsZ.write({1, height, width}, {s, 0, 0});
+        }
+        
+        // Clear the stats before the next Stokes
+        TIMER(timer.start(first_loop_label););
+        
+        statsXY.resetBuffers();
+        
+        TIMER(timer.start("XYZ and Z statistics"););
+        
+        if (depth > 1) {
+            statsXYZ.resetBuffers();
+            statsZ.resetBuffers();
+        }
     
     } // end of stokes
     

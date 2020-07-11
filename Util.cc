@@ -13,6 +13,7 @@ std::vector<std::string> split(const std::string &str, char separator) {
 std::vector<hsize_t> trimAxes(const std::vector<hsize_t>& dims, int N) {
     auto trimmed = dims;
     while (trimmed.size() > N) {
+        
         trimmed.erase(trimmed.begin());
     }
     return trimmed;

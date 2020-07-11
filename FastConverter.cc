@@ -10,12 +10,12 @@ void FastConverter::reportMemoryUsage() {
 
     sizes["Main dataset"] = depth * height * width * sizeof(float);
     sizes["Mipmaps"] = MipMap::size(width, height, depth);
-    sizes["XY stats"] = Stats::size(depth * stokes, numBins);
+    sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
         sizes["Rotation"] = sizes["Main dataset"];
-        sizes["XYZ stats"] = Stats::size(stokes, numBins, depth);
-        sizes["Z stats"] = Stats::size(width * height * stokes);
+        sizes["XYZ stats"] = Stats::size({}, numBins, depth);
+        sizes["Z stats"] = Stats::size({height, width});
     }
     
     hsize_t total(0);
@@ -37,19 +37,20 @@ void FastConverter::reportMemoryUsage() {
 }
 
 void FastConverter::copyAndCalculate() {
-    hsize_t cubeSize = depth * height * width;
     TIMER(timer.start("Allocate"););
-
+    
+    // Process one stokes at a time
+    hsize_t cubeSize = depth * height * width;
     standardCube = new float[cubeSize];
     
-    // TODO these sizes will be different when we don't store all the stats at once
-    statsXY.createBuffers(depth * stokes, numBins);
+    statsXY.createBuffers({depth}, numBins);
     
     if (depth > 1) {
-        statsXYZ.createBuffers(stokes, numBins, depth);
-        statsZ.createBuffers(width * height * stokes);
+        statsXYZ.createBuffers({}, numBins, depth);
+        statsZ.createBuffers({height, width});
     }
     
+    // TODO we should pass parameters in here explicitly
     for (auto & mipmap : mipMaps) {
         mipmap.createBuffers();
     }
@@ -122,7 +123,7 @@ void FastConverter::copyAndCalculate() {
                 }
             }
 
-            auto indexXY = currentStokes * depth + i;
+            auto& indexXY = i;
             
             statsXY.nanCounts[indexXY] = nanCount;
             statsXY.sums[indexXY] = sum;
@@ -148,11 +149,11 @@ void FastConverter::copyAndCalculate() {
             double xyzSum = 0;
             double xyzSumSq = 0;
             int64_t xyzNanCount = 0;
-            xyzMin = statsXY.minVals[currentStokes * depth];
-            xyzMax = statsXY.maxVals[currentStokes * depth];
+            xyzMin = statsXY.minVals[0];
+            xyzMax = statsXY.maxVals[0];
 
             for (auto i = 0; i < depth; i++) {
-                auto indexXY = currentStokes * depth + i;
+                auto indexXY = i;
                 if (std::isfinite(statsXY.maxVals[indexXY])) {
                     xyzSum += statsXY.sums[indexXY];
                     xyzSumSq += statsXY.sumsSq[indexXY];
@@ -162,16 +163,16 @@ void FastConverter::copyAndCalculate() {
                 xyzNanCount += statsXY.nanCounts[indexXY];
             }
 
-            statsXYZ.nanCounts[currentStokes] = xyzNanCount;
-            statsXYZ.sums[currentStokes] = xyzSum;
-            statsXYZ.sumsSq[currentStokes] = xyzSumSq;
+            statsXYZ.nanCounts[0] = xyzNanCount;
+            statsXYZ.sums[0] = xyzSum;
+            statsXYZ.sumsSq[0] = xyzSumSq;
             
             if (xyzNanCount != depth * height * width) {
-                statsXYZ.minVals[currentStokes] = xyzMin;
-                statsXYZ.maxVals[currentStokes] = xyzMax;
+                statsXYZ.minVals[0] = xyzMin;
+                statsXYZ.maxVals[0] = xyzMax;
             } else {
-                statsXYZ.minVals[currentStokes] = NAN;
-                statsXYZ.maxVals[currentStokes] = NAN;
+                statsXYZ.minVals[0] = NAN;
+                statsXYZ.maxVals[0] = NAN;
             }
 
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
@@ -202,7 +203,7 @@ void FastConverter::copyAndCalculate() {
                         }
                     }
                     
-                    auto indexZ = currentStokes * width * height + k + j * width;
+                    auto indexZ = k + j * width;
                     
                     statsZ.nanCounts[indexZ] = nanCount;
                     statsZ.sums[indexZ] = sum;
@@ -237,7 +238,7 @@ void FastConverter::copyAndCalculate() {
 
 #pragma omp parallel for
         for (auto i = 0; i < depth; i++) {
-            auto indexXY = currentStokes * depth + i;
+            auto indexXY = i;
             double sliceMin = statsXY.minVals[indexXY];
             double sliceMax = statsXY.maxVals[indexXY];
             double range = sliceMax - sliceMin;
@@ -248,13 +249,13 @@ void FastConverter::copyAndCalculate() {
             auto doChannelHistogram = [&] (float val) {
                 // XY Histogram
                 int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - sliceMin) / range));
-                statsXY.histograms[currentStokes * depth * numBinsXY + i * numBinsXY + binIndex]++;
+                statsXY.histograms[i * numBinsXY + binIndex]++;
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ Partial histogram
                 int binIndexXYZ = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + binIndexXYZ]++;
+                statsXYZ.partialHistograms[i * numBinsXYZ + binIndexXYZ]++;
             };
             
             auto doNothing = [&] (float val) {};
@@ -292,8 +293,8 @@ void FastConverter::copyAndCalculate() {
             // Consolidate partial XYZ histograms into final histogram
             for (auto i = 0; i < depth; i++) {
                 for (auto j = 0; j < numBinsXYZ; j++) {
-                    statsXYZ.histograms[currentStokes * numBinsXYZ + j] +=
-                        statsXYZ.partialHistograms[currentStokes * depth * numBinsXYZ + i * numBinsXYZ + j];
+                    statsXYZ.histograms[j] +=
+                        statsXYZ.partialHistograms[i * numBinsXYZ + j];
                 }
             }
         }
@@ -362,7 +363,29 @@ void FastConverter::copyAndCalculate() {
         for (auto& mipMap : mipMaps) {
             mipMap.resetBuffers();
         }
-    
+        
+        // Write the statistics
+        TIMER(timer.start("Write"););
+                
+        statsXY.write({1, depth}, {currentStokes, 0});
+        
+        if (depth > 1) {
+            statsXYZ.write({1}, {currentStokes});
+            statsZ.write({1, height, width}, {currentStokes, 0, 0});
+        }
+        
+        // Clear the stats before the next Stokes
+        TIMER(timer.start(first_loop_label););
+        
+        statsXY.resetBuffers();
+        
+        TIMER(timer.start("XYZ and Z statistics"););
+        
+        if (depth > 1) {
+            statsXYZ.resetBuffers();
+            statsZ.resetBuffers();
+        }
+        
     } // end of Stokes loop
     
     // Free memory
