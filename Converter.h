@@ -39,7 +39,7 @@ protected:
     Stats statsXYZ;
     
     // MipMaps
-    std::vector<MipMap> mipMaps;
+    MipMaps mipMaps;
     
     Timer timer;
     

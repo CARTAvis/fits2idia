@@ -1,15 +1,13 @@
 #include "Converter.h"
 
-FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
-    TIMER(timer.start("Mipmaps"););
-    MipMap::initialise(mipMaps, standardDims, width, height, depth);
-}
+// TODO do we need these?
+FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {}
 
 void FastConverter::reportMemoryUsage() {
     std::unordered_map<std::string, hsize_t> sizes;
 
     sizes["Main dataset"] = depth * height * width * sizeof(float);
-    sizes["Mipmaps"] = MipMap::size(width, height, depth);
+    sizes["Mipmaps"] = MipMaps::size(standardDims, {depth, height, width});
     sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
@@ -50,10 +48,7 @@ void FastConverter::copyAndCalculate() {
         statsZ.createBuffers({height, width});
     }
     
-    // TODO we should pass parameters in here explicitly
-    for (auto & mipmap : mipMaps) {
-        mipmap.createBuffers();
-    }
+    mipMaps.createBuffers({depth, height, width});
     
     hsize_t& numBinsXY(numBins);
     hsize_t& numBinsXYZ(numBins);
@@ -338,37 +333,21 @@ void FastConverter::copyAndCalculate() {
                     auto sourceIndex = x + width * y + (height * width) * c;
                     auto& val = standardCube[sourceIndex];
                     if (std::isfinite(val)) {
-                        for (auto& mipMap : mipMaps) {
-                            mipMap.accumulate(val, x, y, c);
-                        }
+                        mipMaps.accumulate(val, x, y, c);
                     }
                 }
             }
         } // end of mipmap loop
         
         // Final mipmap calculation
-        for (auto& mipMap : mipMaps) {
-            mipMap.calculate();
-        }
+        mipMaps.calculate();
         
         TIMER(timer.start("Write"););
         
         // Write the mipmaps
-        for (auto& mipMap : mipMaps) {
-            // Start at current Stokes and channel 0
-            mipMap.write(currentStokes, 0);
-        }
+        mipMaps.write(currentStokes, 0);
         
-        // Clear the mipmaps before the next Stokes
-        TIMER(timer.start("Mipmaps"););
-        
-        for (auto& mipMap : mipMaps) {
-            mipMap.resetBuffers();
-        }
-        
-        // Write the statistics
-        TIMER(timer.start("Write"););
-                
+        // Write the statistics                
         statsXY.write({1, depth}, {currentStokes, 0});
         
         if (depth > 1) {
@@ -387,6 +366,10 @@ void FastConverter::copyAndCalculate() {
             statsXYZ.resetBuffers();
             statsZ.resetBuffers();
         }
+                
+        // Clear the mipmaps before the next Stokes
+        TIMER(timer.start("Mipmaps"););
+        mipMaps.resetBuffers();
         
     } // end of Stokes loop
     

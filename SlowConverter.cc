@@ -1,15 +1,12 @@
 #include "Converter.h"
 
-SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {
-    TIMER(timer.start("Mipmaps"););
-    MipMap::initialise(mipMaps, standardDims, width, height, 1);
-}
+SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {}
 
 void SlowConverter::reportMemoryUsage() {
     std::unordered_map<std::string, hsize_t> sizes;
 
     sizes["Main dataset"] = height * width * sizeof(float);
-    sizes["Mipmaps"] = MipMap::size(width, height, 1);
+    sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width});
     sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
@@ -49,9 +46,7 @@ void SlowConverter::copyAndCalculate() {
         statsXYZ.createBuffers({}, depth);
     }
     
-    for (auto & mipmap : mipMaps) {
-        mipmap.createBuffers();
-    }
+    mipMaps.createBuffers({1, height, width});
     
     hsize_t& numBinsXY(numBins);
     hsize_t& numBinsXYZ(numBins);
@@ -116,9 +111,7 @@ void SlowConverter::copyAndCalculate() {
                         statsXY.sumsSq[indexXY] += val * val;
                         
                         // Accumulate mipmaps
-                        for (auto& mipMap : mipMaps) {
-                            mipMap.accumulate(val, x, y, 0);
-                        }
+                        mipMaps.accumulate(val, x, y, 0);
                         
                     } else {
                         statsXY.nanCounts[indexXY] += 1;
@@ -147,26 +140,21 @@ void SlowConverter::copyAndCalculate() {
             
             // Final mipmap calculation
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
-            for (auto& mipMap : mipMaps) {
-                mipMap.calculate();
-            }
+            
+            mipMaps.calculate();
+            
             
             // Write the mipmaps
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
             TIMER(timer.start("Write"););
             
-            for (auto& mipMap : mipMaps) {
-                // Start at current Stokes and channel
-                mipMap.write(s, c);
-            }
+            mipMaps.write(s, c);
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
             TIMER(timer.start(timerLabelStatsMipmaps););
             
-            for (auto& mipMap : mipMaps) {
-                mipMap.resetBuffers();
-            }
+            mipMaps.resetBuffers();
             
         } // end of first channel loop
         

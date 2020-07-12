@@ -35,6 +35,9 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
         statsXYZ = Stats(statsXYZDims, numBins);
     }
     
+    // MIPMAPS
+    mipMaps = MipMaps(standardDims, tileDims);
+    
     // Prepare output file
     this->outputFileName = outputFileName;
     tempOutputFileName = outputFileName + ".tmp";        
@@ -70,7 +73,7 @@ void Converter::convert() {
     outputGroup = outputFile.createGroup("0");
     
     std::vector<hsize_t> chunkDims;
-    if (useChunks(width, height)) {
+    if (useChunks(standardDims)) {
         chunkDims = tileDims;
     }
     
@@ -90,9 +93,7 @@ void Converter::convert() {
         createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
     }
     
-    for (auto & mipmap : mipMaps) {
-        mipmap.createDataset(outputGroup, chunkDims);
-    }
+    mipMaps.createDatasets(outputGroup);
     
     // COPY HEADERS
     

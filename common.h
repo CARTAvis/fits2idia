@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <iterator>
 
 #include <H5Cpp.h>
 #include <fitsio.h>

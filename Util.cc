@@ -26,12 +26,31 @@ std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<
     return result;
 }
 
+std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mip) {
+    int N = dims.size();
+    auto mipDims = dims;
+    
+    for (auto i = std::max(0, N - 2); i < N; i++) {
+        mipDims[i] = std::ceil((float)mipDims[i] / mip);
+    }
+    
+    return mipDims;
+}
+
 hsize_t product(const std::vector<hsize_t>& dims) {
     return std::accumulate(begin(dims), end(dims), 1, std::multiplies<hsize_t>());
 }
 
-bool useChunks(hsize_t width, hsize_t height) {
-    return TILE_SIZE <= width && TILE_SIZE <= height;
+bool useChunks(const std::vector<hsize_t>& dims) {    
+    int N = dims.size();
+    
+    for (auto i = std::max(0, N - 2); i < N; i++) {
+        if (dims[i] < TILE_SIZE) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName) {

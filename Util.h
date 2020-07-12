@@ -6,8 +6,20 @@
 std::vector<std::string> split(const std::string &str, char separator);
 std::vector<hsize_t> trimAxes(const std::vector<hsize_t>& dims, int N);
 std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<hsize_t>& right);
+std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mip);
 hsize_t product(const std::vector<hsize_t>& dims);
-bool useChunks(hsize_t width, hsize_t height);
+
+template <typename T>
+std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
+  if ( !v.empty() ) {
+    out << '(';
+    std::copy (v.begin(), v.end(), std::ostream_iterator<T>(out, ", "));
+    out << "\b\b)";
+  }
+  return out;
+}
+
+bool useChunks(const std::vector<hsize_t>& dims);
 
 void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName);
 void getFitsDims(fitsfile* filePtr, int& N, long* dims);
