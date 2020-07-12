@@ -31,7 +31,7 @@ struct MipMap {
     }
     
     void calculate() {
-        for (int mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
+        for (hsize_t mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
             if (count[mipIndex]) {
                 vals[mipIndex] /= count[mipIndex];
             } else {

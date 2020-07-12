@@ -43,10 +43,10 @@ void FastConverter::copyAndCalculate() {
     hsize_t cubeSize = depth * height * width;
     standardCube = new float[cubeSize];
     
-    statsXY.createBuffers({depth}, numBins);
+    statsXY.createBuffers({depth});
     
     if (depth > 1) {
-        statsXYZ.createBuffers({}, numBins, depth);
+        statsXYZ.createBuffers({}, depth);
         statsZ.createBuffers({height, width});
     }
     
@@ -57,6 +57,7 @@ void FastConverter::copyAndCalculate() {
     
     hsize_t& numBinsXY(numBins);
     hsize_t& numBinsXYZ(numBins);
+    std::string timerLabelXYRotation = depth > 1 ? "XY statistics and rotation" : "XY statistics";
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
@@ -72,13 +73,12 @@ void FastConverter::copyAndCalculate() {
             rotatedCube = new float[cubeSize];
         }
         
-        std::string first_loop_label = depth > 1 ? "XY statistics and rotation" : "XY statistics";
-        DEBUG(std::cout << " " << first_loop_label <<  "..." << std::flush;);
-        TIMER(timer.start(first_loop_label););
+        DEBUG(std::cout << " " << timerLabelXYRotation <<  "..." << std::flush;);
+        TIMER(timer.start(timerLabelXYRotation););
 
         // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
-        for (auto i = 0; i < depth; i++) {
+        for (hsize_t i = 0; i < depth; i++) {
             float minVal = std::numeric_limits<float>::max();
             float maxVal = -std::numeric_limits<float>::max();
             double sum = 0;
@@ -103,11 +103,11 @@ void FastConverter::copyAndCalculate() {
             
             minmax = first_minmax;
             
-            for (auto j = 0; j < height; j++) {
-                for (auto k = 0; k < width; k++) {
+            for (hsize_t j = 0; j < height; j++) {
+                for (hsize_t k = 0; k < width; k++) {
                     auto sourceIndex = k + width * j + (height * width) * i;
                     auto destIndex = i + depth * j + (height * depth) * k;
-                    auto val = standardCube[sourceIndex];
+                    auto& val = standardCube[sourceIndex];
                     
                     if (depth > 1) {
                         rotatedCube[destIndex] = val;
@@ -129,7 +129,7 @@ void FastConverter::copyAndCalculate() {
             statsXY.sums[indexXY] = sum;
             statsXY.sumsSq[indexXY] = sumSq;
             
-            if (nanCount != (height * width)) {
+            if ((hsize_t)nanCount != (height * width)) {
                 statsXY.minVals[indexXY] = minVal;
                 statsXY.maxVals[indexXY] = maxVal;
             } else {
@@ -152,8 +152,8 @@ void FastConverter::copyAndCalculate() {
             xyzMin = statsXY.minVals[0];
             xyzMax = statsXY.maxVals[0];
 
-            for (auto i = 0; i < depth; i++) {
-                auto indexXY = i;
+            for (hsize_t i = 0; i < depth; i++) {
+                auto& indexXY = i;
                 if (std::isfinite(statsXY.maxVals[indexXY])) {
                     xyzSum += statsXY.sums[indexXY];
                     xyzSumSq += statsXY.sumsSq[indexXY];
@@ -167,7 +167,7 @@ void FastConverter::copyAndCalculate() {
             statsXYZ.sums[0] = xyzSum;
             statsXYZ.sumsSq[0] = xyzSumSq;
             
-            if (xyzNanCount != depth * height * width) {
+            if ((hsize_t)xyzNanCount != depth * height * width) {
                 statsXYZ.minVals[0] = xyzMin;
                 statsXYZ.maxVals[0] = xyzMax;
             } else {
@@ -180,17 +180,17 @@ void FastConverter::copyAndCalculate() {
             DEBUG(std::cout << " Z statistics... " << std::flush;);
             
 #pragma omp parallel for
-            for (auto j = 0; j < height; j++) {
-                for (auto k = 0; k < width; k++) {
+            for (hsize_t j = 0; j < height; j++) {
+                for (hsize_t k = 0; k < width; k++) {
                     float minVal = std::numeric_limits<float>::max();
                     float maxVal = -std::numeric_limits<float>::max();
                     double sum = 0;
                     double sumSq = 0;
                     int64_t nanCount = 0;
                     
-                    for (auto i = 0; i < depth; i++) {
+                    for (hsize_t i = 0; i < depth; i++) {
                         auto sourceIndex = k + width * j + (height * width) * i;
-                        auto val = standardCube[sourceIndex];
+                        auto& val = standardCube[sourceIndex];
 
                         if (std::isfinite(val)) {
                             // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
@@ -209,7 +209,7 @@ void FastConverter::copyAndCalculate() {
                     statsZ.sums[indexZ] = sum;
                     statsZ.sumsSq[indexZ] = sumSq;
                     
-                    if (nanCount != depth) {
+                    if ((hsize_t)nanCount != depth) {
                         statsZ.minVals[indexZ] = minVal;
                         statsZ.maxVals[indexZ] = maxVal;
                     } else {
@@ -237,8 +237,8 @@ void FastConverter::copyAndCalculate() {
         }
 
 #pragma omp parallel for
-        for (auto i = 0; i < depth; i++) {
-            auto indexXY = i;
+        for (hsize_t i = 0; i < depth; i++) {
+            auto& indexXY = i;
             double sliceMin = statsXY.minVals[indexXY];
             double sliceMax = statsXY.maxVals[indexXY];
             double range = sliceMax - sliceMin;
@@ -258,7 +258,9 @@ void FastConverter::copyAndCalculate() {
                 statsXYZ.partialHistograms[i * numBinsXYZ + binIndexXYZ]++;
             };
             
-            auto doNothing = [&] (float val) {};
+            auto doNothing = [&] (float val) {
+                UNUSED(val);
+            };
             
             channelHistogramFunc = doChannelHistogram;
             cubeHistogramFunc = doCubeHistogram;
@@ -279,8 +281,8 @@ void FastConverter::copyAndCalculate() {
                 continue; // skip the loop entirely
             }
 
-            for (auto j = 0; j < width * height; j++) {
-                auto val = standardCube[i * width * height + j];
+            for (hsize_t j = 0; j < width * height; j++) {
+                auto& val = standardCube[i * width * height + j];
 
                 if (std::isfinite(val)) {
                     channelHistogramFunc(val);
@@ -291,8 +293,8 @@ void FastConverter::copyAndCalculate() {
         
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
-            for (auto i = 0; i < depth; i++) {
-                for (auto j = 0; j < numBinsXYZ; j++) {
+            for (hsize_t i = 0; i < depth; i++) {
+                for (hsize_t j = 0; j < numBinsXYZ; j++) {
                     statsXYZ.histograms[j] +=
                         statsXYZ.partialHistograms[i * numBinsXYZ + j];
                 }
@@ -330,11 +332,11 @@ void FastConverter::copyAndCalculate() {
         TIMER(timer.start("Mipmaps"););
         
 #pragma omp parallel for
-        for (auto c = 0; c < depth; c++) {
-            for (auto y = 0; y < height; y++) {
-                for (auto x = 0; x < width; x++) {
+        for (hsize_t c = 0; c < depth; c++) {
+            for (hsize_t y = 0; y < height; y++) {
+                for (hsize_t x = 0; x < width; x++) {
                     auto sourceIndex = x + width * y + (height * width) * c;
-                    auto val = standardCube[sourceIndex];
+                    auto& val = standardCube[sourceIndex];
                     if (std::isfinite(val)) {
                         for (auto& mipMap : mipMaps) {
                             mipMap.accumulate(val, x, y, c);
@@ -375,7 +377,7 @@ void FastConverter::copyAndCalculate() {
         }
         
         // Clear the stats before the next Stokes
-        TIMER(timer.start(first_loop_label););
+        TIMER(timer.start(timerLabelXYRotation););
         
         statsXY.resetBuffers();
         

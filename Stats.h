@@ -4,10 +4,12 @@
 #include "common.h"
 #include "Util.h"
 
+// TODO move the accumulation and histogram functionality in here and get it out of the converter code
+
 struct Stats {
     Stats() {}
     
-    Stats(const std::vector<hsize_t>& statsDatasetDims, const std::vector<hsize_t>& histDatasetDims = EMPTY_DIMS) : statsDatasetDims(statsDatasetDims), histDatasetDims(histDatasetDims) {}
+    Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0) : basicDatasetDims(basicDatasetDims), numBins(numBins) {}
     
     void createDatasets(H5::Group group, std::string name) {
         H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
@@ -16,21 +18,19 @@ struct Stats {
         H5::IntType intType(H5::PredType::NATIVE_INT64);
         intType.setOrder(H5T_ORDER_LE);
         
-        createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, statsDatasetDims);
-        createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, statsDatasetDims);
-        createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, statsDatasetDims);
-        createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, statsDatasetDims);
-        createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, statsDatasetDims);
+        createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, basicDatasetDims);
+        createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, basicDatasetDims);
+        createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, basicDatasetDims);
+        createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, basicDatasetDims);
+        createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, basicDatasetDims);
         
-        if (!histDatasetDims.empty()) {
-            createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, histDatasetDims);
+        if (numBins) {
+            createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}));
         }
     }
     
-    void createBuffers(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0) {
-        statsBufferDims = dims;
-        histBufferDims = extend(dims, {numBins});
-        
+    void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0) {
+        fullBasicBufferDims = dims;
         auto statsSize = product(dims);
         
         minVals.resize(statsSize, std::numeric_limits<double>::max());
@@ -39,8 +39,10 @@ struct Stats {
         sumsSq.resize(statsSize);
         nanCounts.resize(statsSize);
         
-        histograms.resize(statsSize * numBins);
-        partialHistograms.resize(statsSize * numBins * partialHistMultiplier);
+        if (numBins) {
+            histograms.resize(statsSize * numBins);
+            partialHistograms.resize(statsSize * numBins * partialHistMultiplier);
+        }
     }
     
     void resetBuffers() {
@@ -50,40 +52,44 @@ struct Stats {
         std::fill(sumsSq.begin(), sumsSq.end(), 0);
         std::fill(nanCounts.begin(), nanCounts.end(), 0);
         
-        std::fill(histograms.begin(), histograms.end(), 0);
-        std::fill(partialHistograms.begin(), partialHistograms.end(), 0);
+        if (numBins) {
+            std::fill(histograms.begin(), histograms.end(), 0);
+            std::fill(partialHistograms.begin(), partialHistograms.end(), 0);
+        }
     }
     
     void write() {
-        writeBasic();
+        writeBasic(fullBasicBufferDims);
         
-        if (!histDatasetDims.empty()) {
-            writeHistogram();
+        if (numBins) {
+            writeHistogram(fullBasicBufferDims);
         }
     }
     
     void write(const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-        auto basicN = statsDatasetDims.size();
-        auto histN = histDatasetDims.size();
+        write(fullBasicBufferDims, count, start);
+    }
+    
+    void write(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+        auto basicN = basicDatasetDims.size();
+        writeBasic(basicBufferDims, trimAxes(count, basicN), trimAxes(start, basicN));
         
-        writeBasic(trimAxes(count, basicN), trimAxes(start, basicN));
-        
-        if (!histDatasetDims.empty()) {
-            auto numBins = histDatasetDims.back();
-            writeHistogram(trimAxes(extend(count, {numBins}), histN), trimAxes(extend(start, {0}), histN));
+        if (numBins) {
+            auto histN = basicN + 1;
+            writeHistogram(basicBufferDims, trimAxes(extend(count, {numBins}), histN), trimAxes(extend(start, {0}), histN));
         }
     }
         
-    void writeBasic(const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
-        writeHdf5Data(minDset, minVals.data(), statsBufferDims, count, start);
-        writeHdf5Data(maxDset, maxVals.data(), statsBufferDims, count, start);
-        writeHdf5Data(sumDset, sums.data(), statsBufferDims, count, start);
-        writeHdf5Data(ssqDset, sumsSq.data(), statsBufferDims, count, start);
-        writeHdf5Data(nanDset, nanCounts.data(), statsBufferDims, count, start);
+    void writeBasic(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
+        writeHdf5Data(minDset, minVals.data(), basicBufferDims, count, start);
+        writeHdf5Data(maxDset, maxVals.data(), basicBufferDims, count, start);
+        writeHdf5Data(sumDset, sums.data(), basicBufferDims, count, start);
+        writeHdf5Data(ssqDset, sumsSq.data(), basicBufferDims, count, start);
+        writeHdf5Data(nanDset, nanCounts.data(), basicBufferDims, count, start);
     }
     
-    void writeHistogram(const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
-        writeHdf5Data(histDset, histograms.data(), histBufferDims, count, start);
+    void writeHistogram(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS) {
+        writeHdf5Data(histDset, histograms.data(), extend(basicBufferDims, {numBins}), count, start);
     }
     
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0) {
@@ -92,8 +98,8 @@ struct Stats {
     }
     
     // Dataset dimensions
-    std::vector<hsize_t> statsDatasetDims;
-    std::vector<hsize_t> histDatasetDims;
+    std::vector<hsize_t> basicDatasetDims;
+    hsize_t numBins;
     
     // Datasets
     H5::DataSet minDset;
@@ -106,8 +112,7 @@ struct Stats {
     
     // Buffer dimensions
     
-    std::vector<hsize_t> statsBufferDims;
-    std::vector<hsize_t> histBufferDims;
+    std::vector<hsize_t> fullBasicBufferDims;
 
     // Buffers -- TODO replace with arrays
     std::vector<double> minVals;

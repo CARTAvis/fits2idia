@@ -36,4 +36,6 @@
 
 #define EMPTY_DIMS std::vector<hsize_t>()
 
+#define UNUSED(x) (void)(x)
+
 #endif

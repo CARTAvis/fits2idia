@@ -15,7 +15,7 @@ void SlowConverter::reportMemoryUsage() {
     if (depth > 1) {
         sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         sizes["XYZ stats"] = Stats::size({}, numBins, depth);
-        sizes["Z stats"] = Stats::size({height, width});
+        sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
     }
     
     hsize_t total(0);
@@ -29,8 +29,8 @@ void SlowConverter::reportMemoryUsage() {
     
     std::string note = "";
     if (depth > 1) {
-        total -= std::min(sizes["Main dataset"], sizes["Rotation"]);
-        note = " (Main dataset and slices for rotation are not allocated at the same time.)";
+        total -= std::min(sizes["Main dataset"], sizes["Rotation"] + sizes["Z stats"]);
+        note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
     }
 
     std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << note << std::endl;
@@ -43,12 +43,10 @@ void SlowConverter::copyAndCalculate() {
     standardCube = new float[cubeSize];
     
     // Allocate one stokes of stats at a time
-    // TODO TODO TODO try moving the Z stats to the tiled swizzle loop
-    statsXY.createBuffers({depth}, numBins);
+    statsXY.createBuffers({depth});
     
     if (depth > 1) {
-        statsXYZ.createBuffers({}, numBins, depth);
-        statsZ.createBuffers({height, width});
+        statsXYZ.createBuffers({}, depth);
     }
     
     for (auto & mipmap : mipMaps) {
@@ -58,9 +56,11 @@ void SlowConverter::copyAndCalculate() {
     hsize_t& numBinsXY(numBins);
     hsize_t& numBinsXYZ(numBins);
 
-                        
     std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
     std::vector<hsize_t> memDims = {height, width};
+    
+    std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
+
     
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
@@ -80,8 +80,8 @@ void SlowConverter::copyAndCalculate() {
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             
-            DEBUG(std::cout << " Accumulating XY " << (depth > 1 ? "and Z " : "") << "stats and mipmaps..." << std::flush;);
-            TIMER(timer.start("Statistics and mipmaps"););
+            DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
+            TIMER(timer.start(timerLabelStatsMipmaps););
 
             auto indexXY = c;
             
@@ -103,12 +103,10 @@ void SlowConverter::copyAndCalculate() {
             
             minmax = first_minmax;
             
-            for (auto y = 0; y < height; y++) {
-                for (auto x = 0; x < width; x++) {
+            for (hsize_t y = 0; y < height; y++) {
+                for (hsize_t x = 0; x < width; x++) {
                     auto pos = y * width + x; // relative to channel slice
-                    auto indexZ = pos; // relative to whole image
-                    
-                    auto val = standardCube[pos];
+                    auto& val = standardCube[pos];
                                         
                     if (std::isfinite(val)) {
                         // XY statistics
@@ -117,15 +115,6 @@ void SlowConverter::copyAndCalculate() {
                         statsXY.sums[indexXY] += val;
                         statsXY.sumsSq[indexXY] += val * val;
                         
-                        if (depth > 1) {
-                            // Accumulate Z statistics
-                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                            statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
-                            statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
-                            statsZ.sums[indexZ] += val;
-                            statsZ.sumsSq[indexZ] += val * val;
-                        }
-                        
                         // Accumulate mipmaps
                         for (auto& mipMap : mipMaps) {
                             mipMap.accumulate(val, x, y, 0);
@@ -133,16 +122,13 @@ void SlowConverter::copyAndCalculate() {
                         
                     } else {
                         statsXY.nanCounts[indexXY] += 1;
-                        if (depth > 1) {
-                            statsZ.nanCounts[indexZ] += 1;
-                        }
                     }
                 }
             } // end of XY loop
             
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
             // TODO: see if this can be done in stats
-            if (statsXY.nanCounts[indexXY] == (height * width)) {
+            if ((hsize_t)statsXY.nanCounts[indexXY] == (height * width)) {
                 statsXY.minVals[indexXY] = NAN;
                 statsXY.maxVals[indexXY] = NAN;
             }
@@ -176,7 +162,7 @@ void SlowConverter::copyAndCalculate() {
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
-            TIMER(timer.start("Statistics and mipmaps"););
+            TIMER(timer.start(timerLabelStatsMipmaps););
             
             for (auto& mipMap : mipMaps) {
                 mipMap.resetBuffers();
@@ -185,24 +171,11 @@ void SlowConverter::copyAndCalculate() {
         } // end of first channel loop
         
         if (depth > 1) {
-            DEBUG(std::cout << "+ Final Z stats..." << std::flush;);
-            TIMER(timer.start("Statistics and mipmaps"););
-            
-            // A final pass over all XY to fix the Z stats NaNs
-            for (auto p = 0; p < width * height; p++) {
-                auto indexZ = p;
-                                        
-                // TODO can we do this in stats?
-                if (statsZ.nanCounts[indexZ] == depth) {
-                    statsZ.minVals[indexZ] = NAN;
-                    statsZ.maxVals[indexZ] = NAN;
-                }
-            }
-            
             // A final correction of the XYZ NaNs
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
+            TIMER(timer.start(timerLabelStatsMipmaps););
             
-            if (statsXYZ.nanCounts[0] == depth * height * width) {
+            if ((hsize_t)statsXYZ.nanCounts[0] == depth * height * width) {
                 statsXYZ.minVals[0] = NAN;
                 statsXYZ.maxVals[0] = NAN;
             }
@@ -254,7 +227,9 @@ void SlowConverter::copyAndCalculate() {
                 statsXYZ.histograms[binIndex]++;
             };
             
-            auto doNothing = [&] (float val) {};
+            auto doNothing = [&] (float val) {
+                UNUSED(val);
+            };
             
             channelHistogramFunc = doChannelHistogram;
             cubeHistogramFunc = doCubeHistogram;
@@ -280,8 +255,8 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
-            for (auto p = 0; p < width * height; p++) {
-                auto val = standardCube[p];
+            for (hsize_t p = 0; p < width * height; p++) {
+                auto& val = standardCube[p];
                     if (std::isfinite(val)) {
                         channelHistogramFunc(val);
                         cubeHistogramFunc(val);
@@ -296,7 +271,6 @@ void SlowConverter::copyAndCalculate() {
         
         if (depth > 1) {
             statsXYZ.write({1}, {s});
-            statsZ.write({1, height, width}, {s, 0, 0});
         }
         
         // Clear the stats before the next Stokes
@@ -304,11 +278,10 @@ void SlowConverter::copyAndCalculate() {
         
         statsXY.resetBuffers();
         
-        TIMER(timer.start("XYZ and Z statistics"););
+        TIMER(timer.start(timerLabelStatsMipmaps););
         
         if (depth > 1) {
             statsXYZ.resetBuffers();
-            statsZ.resetBuffers();
         }
     
     } // end of stokes
@@ -327,6 +300,8 @@ void SlowConverter::copyAndCalculate() {
         hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
+        
+        statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
@@ -353,16 +328,46 @@ void SlowConverter::copyAndCalculate() {
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                     
                     // rotate tile slice
-                    DEBUG(std::cout << " Calculating rotation..." << std::flush;);
-                    TIMER(timer.start("Rotation"););
+                    DEBUG(std::cout << " Calculating rotation and Z statistics..." << std::flush;);
+                    TIMER(timer.start("Rotation and Z statistics"););
                     
-                    for (auto i = 0; i < depth; i++) {
-                        for (auto j = 0; j < ySize; j++) {
-                            for (auto k = 0; k < xSize; k++) {
+                    for (hsize_t i = 0; i < depth; i++) {
+                        for (hsize_t j = 0; j < ySize; j++) {
+                            for (hsize_t k = 0; k < xSize; k++) {
                                 auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
                                 auto destIndex = i + depth * j + (ySize * depth) * k;
-                                rotatedSlice[destIndex] = standardSlice[sourceIndex];
+                                
+                                auto& val = standardSlice[sourceIndex];
+                                
+                                // rotation
+                                rotatedSlice[destIndex] = val;
+                                
+                                // Z stats                                
+                                auto indexZ = k + xSize * j;
+                                
+                                if (std::isfinite(val)) {
+                                    // Accumulate Z statistics
+                                    // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
+                                    statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
+                                    statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
+                                    statsZ.sums[indexZ] += val;
+                                    statsZ.sumsSq[indexZ] += val * val;
+                                } else {
+                                    statsZ.nanCounts[indexZ] += 1;
+                                }
                             }
+                        }
+                    }
+                    
+                    DEBUG(std::cout << " Final Z stats..." << std::flush;);
+                    // A final pass over all XY to fix the Z stats NaNs
+                    for (hsize_t p = 0; p < width * height; p++) {
+                        auto indexZ = p;
+                                                
+                        // TODO can we do this in stats?
+                        if ((hsize_t)statsZ.nanCounts[indexZ] == depth) {
+                            statsZ.minVals[indexZ] = NAN;
+                            statsZ.maxVals[indexZ] = NAN;
                         }
                     }
                     
@@ -371,6 +376,13 @@ void SlowConverter::copyAndCalculate() {
                     TIMER(timer.start("Write"););
                     
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                    
+                    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+                    // write Z statistics
+                    statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                    
+                    // reset Z statistics buffers before the next slice
+                    statsZ.resetBuffers();
                 }
             }
         }

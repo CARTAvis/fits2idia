@@ -26,13 +26,13 @@ Converter::Converter(std::string inputFileName, std::string outputFileName) :
     // STATS OBJECTS
 
     auto statsXYDims = trimAxes({stokes, depth}, N - 2);
-    statsXY = Stats(statsXYDims, extend(statsXYDims, {numBins}));
+    statsXY = Stats(statsXYDims, numBins);
     
     if (depth > 1) {
         swizzledDims = trimAxes({stokes, width, height, depth}, N);
         statsZ = Stats(trimAxes({stokes, height, width}, N - 1));
         auto statsXYZDims = trimAxes({stokes}, N - 3);
-        statsXYZ = Stats(statsXYZDims, extend(statsXYZDims, {numBins}));
+        statsXYZ = Stats(statsXYZDims, numBins);
     }
     
     // Prepare output file
