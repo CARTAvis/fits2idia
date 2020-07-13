@@ -157,8 +157,11 @@ def test_random_image(dims, nans, nan_density):
                     
     subprocess.run(params)
     
-    subprocess.run(["hdf_convert", "-q", "-o", "FAST.hdf5", "test.fits"])
-    subprocess.run(["hdf_convert", "-q", "-s", "-o", "SLOW.hdf5", "test.fits"])
+    fast = subprocess.run(["hdf_convert", "-q", "-o", "FAST.hdf5", "test.fits"])
+    assert fast.returncode == 0, "Fast conversion failed."
+    
+    slow = subprocess.run(["hdf_convert", "-q", "-s", "-o", "SLOW.hdf5", "test.fits"])
+    assert slow.returncode == 0, "Slow conversion failed."
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)

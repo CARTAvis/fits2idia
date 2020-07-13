@@ -306,8 +306,9 @@ void SlowConverter::copyAndCalculate() {
                     
                     DEBUG(std::cout << " Final Z stats..." << std::flush;);
                     // A final pass over all XY to fix the Z stats NaNs
-                    for (hsize_t p = 0; p < width * height; p++) {
-                        auto indexZ = p;
+                    
+                    for (hsize_t p = 0; p < xSize * ySize; p++) {
+                        auto& indexZ = p;
                         
                         statsZ.finalMinMax(indexZ, depth);
                     }
