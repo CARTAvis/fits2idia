@@ -5,6 +5,7 @@
 #include "Util.h"
 
 // TODO move the accumulation and histogram functionality in here and get it out of the converter code
+// TODO split this and mipmaps into header and implementation
 
 struct Stats {
     Stats() {}
@@ -42,6 +43,70 @@ struct Stats {
         if (numBins) {
             histograms.resize(statsSize * numBins);
             partialHistograms.resize(statsSize * numBins * partialHistMultiplier);
+        }
+    }
+    
+    void accumulateFinite(hsize_t index, float val) {
+        minVals[index] = fmin(minVals[index], val);
+        maxVals[index] = fmax(maxVals[index], val);
+        sums[index] += val;
+        sumsSq[index] += val * val;
+    }
+    
+    void accumulateFiniteLazy(hsize_t index, float val) {
+        if (val < minVals[index]) {
+            minVals[index] = val;
+        } else if (val > maxVals[index]) {
+            maxVals[index] = val;
+        }
+        sums[index] += val;
+        sumsSq[index] += val * val;
+    }
+    
+    void accumulateFiniteLazyFirst(hsize_t index, float val) {
+        minVals[index] = val;
+        maxVals[index] = val;
+        sums[index] += val;
+        sumsSq[index] += val * val;
+    }
+    
+    void accumulateNonFinite(hsize_t index) {
+        nanCounts[index]++;
+    }
+    
+    void accumulateStats(Stats other, hsize_t index, hsize_t otherIndex) {
+        if (std::isfinite(other.maxVals[otherIndex])) {
+            sums[index] += other.sums[otherIndex];
+            sumsSq[index] += other.sumsSq[otherIndex];
+            minVals[index] = fmin(minVals[index], other.minVals[otherIndex]);
+            maxVals[index] = fmax(maxVals[index], other.maxVals[otherIndex]);
+        }
+        nanCounts[index] += other.nanCounts[otherIndex];
+    }
+    
+    void finalMinMax(hsize_t index, hsize_t totalVals) {
+        if ((hsize_t)nanCounts[index] == totalVals) {
+            minVals[index] = NAN;
+            maxVals[index] = NAN;
+        }
+    }
+    
+    void accumulateHistogram(float val, double min, double range, hsize_t offset) {
+        int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
+        histograms[offset * numBins + binIndex]++;
+    }
+    
+    void accumulatePartialHistogram(float val, double min, double range, hsize_t offset) {
+        int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
+        partialHistograms[offset * numBins + binIndex]++;
+    }
+    
+    void consolidatePartialHistogram() {
+        auto multiplier = partialHistograms.size() / histograms.size();
+        for (hsize_t offset = 0; offset < multiplier; offset++) {
+            for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
+                histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
+            }
         }
     }
     

@@ -50,8 +50,6 @@ void FastConverter::copyAndCalculate() {
     
     mipMaps.createBuffers({depth, height, width});
     
-    hsize_t& numBinsXY(numBins);
-    hsize_t& numBinsXYZ(numBins);
     std::string timerLabelXYRotation = depth > 1 ? "XY statistics and rotation" : "XY statistics";
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
@@ -74,29 +72,19 @@ void FastConverter::copyAndCalculate() {
         // First loop calculates stats for each XY slice and rotates the dataset
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
-            float minVal = std::numeric_limits<float>::max();
-            float maxVal = -std::numeric_limits<float>::max();
-            double sum = 0;
-            double sumSq = 0;
-            int64_t nanCount = 0;
+            auto& indexXY = i;
+            std::function<void(float)> accumulate;
             
-            std::function<void(float)> minmax;
-            
-            auto lazy_minmax = [&] (float val) {
-                if (val < minVal) {
-                    minVal = val;
-                } else if (val > maxVal) {
-                    maxVal = val;
-                }
+            auto lazy_accumulate = [&] (float val) {
+                statsXY.accumulateFiniteLazy(indexXY, val);
             };
             
-            auto first_minmax = [&] (float val) {
-                minVal = val;
-                maxVal = val;
-                minmax = lazy_minmax;
+            auto first_accumulate = [&] (float val) {
+                statsXY.accumulateFiniteLazyFirst(indexXY, val);
+                accumulate = lazy_accumulate;
             };
             
-            minmax = first_minmax;
+            accumulate = first_accumulate;
             
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
@@ -108,67 +96,30 @@ void FastConverter::copyAndCalculate() {
                         rotatedCube[destIndex] = val;
                     }
                     
+                    // Accumulate XY stats
                     if (std::isfinite(val)) {
-                        minmax(val);
-                        sum += val;
-                        sumSq += val * val;
+                        accumulate(val);
                     } else {
-                        nanCount += 1;
+                        statsXY.accumulateNonFinite(indexXY);
                     }
                 }
             }
-
-            auto& indexXY = i;
             
-            statsXY.nanCounts[indexXY] = nanCount;
-            statsXY.sums[indexXY] = sum;
-            statsXY.sumsSq[indexXY] = sumSq;
-            
-            if ((hsize_t)nanCount != (height * width)) {
-                statsXY.minVals[indexXY] = minVal;
-                statsXY.maxVals[indexXY] = maxVal;
-            } else {
-                statsXY.minVals[indexXY] = NAN;
-                statsXY.maxVals[indexXY] = NAN;
-            }
+            // Final correction of XY min and max
+            statsXY.finalMinMax(indexXY, height * width);
         }
-        
-        double xyzMin;
-        double xyzMax;
 
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
             TIMER(timer.start("XYZ and Z statistics"););
-            
-            double xyzSum = 0;
-            double xyzSumSq = 0;
-            int64_t xyzNanCount = 0;
-            xyzMin = statsXY.minVals[0];
-            xyzMax = statsXY.maxVals[0];
 
             for (hsize_t i = 0; i < depth; i++) {
                 auto& indexXY = i;
-                if (std::isfinite(statsXY.maxVals[indexXY])) {
-                    xyzSum += statsXY.sums[indexXY];
-                    xyzSumSq += statsXY.sumsSq[indexXY];
-                    xyzMin = fmin(xyzMin, statsXY.minVals[indexXY]);
-                    xyzMax = fmax(xyzMax, statsXY.maxVals[indexXY]);
-                }
-                xyzNanCount += statsXY.nanCounts[indexXY];
+                statsXYZ.accumulateStats(statsXY, 0, indexXY);
             }
 
-            statsXYZ.nanCounts[0] = xyzNanCount;
-            statsXYZ.sums[0] = xyzSum;
-            statsXYZ.sumsSq[0] = xyzSumSq;
-            
-            if ((hsize_t)xyzNanCount != depth * height * width) {
-                statsXYZ.minVals[0] = xyzMin;
-                statsXYZ.maxVals[0] = xyzMax;
-            } else {
-                statsXYZ.minVals[0] = NAN;
-                statsXYZ.maxVals[0] = NAN;
-            }
+            statsXYZ.finalMinMax(0, depth * height * width);
 
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
@@ -177,40 +128,21 @@ void FastConverter::copyAndCalculate() {
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
-                    float minVal = std::numeric_limits<float>::max();
-                    float maxVal = -std::numeric_limits<float>::max();
-                    double sum = 0;
-                    double sumSq = 0;
-                    int64_t nanCount = 0;
+                    auto indexZ = k + j * width;
                     
                     for (hsize_t i = 0; i < depth; i++) {
                         auto sourceIndex = k + width * j + (height * width) * i;
                         auto& val = standardCube[sourceIndex];
 
                         if (std::isfinite(val)) {
-                            // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                            minVal = fmin(minVal, val);
-                            maxVal = fmax(maxVal, val);
-                            sum += val;
-                            sumSq += val * val;
+                            // Not lazy; too much risk of encountering an ascending / descending sequence.
+                            statsZ.accumulateFinite(indexZ, val);
                         } else {
-                            nanCount += 1;
+                            statsZ.accumulateNonFinite(indexZ);
                         }
                     }
                     
-                    auto indexZ = k + j * width;
-                    
-                    statsZ.nanCounts[indexZ] = nanCount;
-                    statsZ.sums[indexZ] = sum;
-                    statsZ.sumsSq[indexZ] = sumSq;
-                    
-                    if ((hsize_t)nanCount != depth) {
-                        statsZ.minVals[indexZ] = minVal;
-                        statsZ.maxVals[indexZ] = maxVal;
-                    } else {
-                        statsZ.minVals[indexZ] = NAN;
-                        statsZ.maxVals[indexZ] = NAN;
-                    }
+                    statsZ.finalMinMax(indexZ, depth);
                 }
             }
         
@@ -224,56 +156,51 @@ void FastConverter::copyAndCalculate() {
         double cubeMin;
         double cubeMax;
         double cubeRange;
+        bool cubeHist(false);
                     
         if (depth > 1) {
-            cubeMin = xyzMin;
-            cubeMax = xyzMax;
+            cubeMin = statsXYZ.minVals[0];
+            cubeMax = statsXYZ.maxVals[0];
             cubeRange = cubeMax - cubeMin;
+            cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
             auto& indexXY = i;
-            double sliceMin = statsXY.minVals[indexXY];
-            double sliceMax = statsXY.maxVals[indexXY];
-            double range = sliceMax - sliceMin;
+            double chanMin = statsXY.minVals[indexXY];
+            double chanMax = statsXY.maxVals[indexXY];
+            double chanRange = chanMax - chanMin;
             
-            std::function<void(float)> channelHistogramFunc;
-            std::function<void(float)> cubeHistogramFunc;
+            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
+            
+            if (!chanHist && !cubeHist) {
+                continue; // skip the loop entirely
+            }
             
             auto doChannelHistogram = [&] (float val) {
-                // XY Histogram
-                int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - sliceMin) / range));
-                statsXY.histograms[i * numBinsXY + binIndex]++;
+                // XY histogram
+                statsXY.accumulateHistogram(val, chanMin, chanRange, i);
             };
             
             auto doCubeHistogram = [&] (float val) {
-                // XYZ Partial histogram
-                int binIndexXYZ = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                statsXYZ.partialHistograms[i * numBinsXYZ + binIndexXYZ]++;
+                // Partial XYZ histogram
+                statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, i);
             };
             
             auto doNothing = [&] (float val) {
                 UNUSED(val);
             };
             
-            channelHistogramFunc = doChannelHistogram;
-            cubeHistogramFunc = doCubeHistogram;
-            bool chanHist(true);
-            bool cubeHist(true);
-            
-            if (!std::isfinite(sliceMin) || !std::isfinite(sliceMax) || range == 0) {
+            std::function<void(float)> channelHistogramFunc = doChannelHistogram;
+            std::function<void(float)> cubeHistogramFunc = doCubeHistogram;
+                        
+            if (!chanHist) {
                 channelHistogramFunc = doNothing;
-                chanHist = false;
             }
             
-            if (depth <= 1) {
+            if (!cubeHist) {
                 cubeHistogramFunc = doNothing;
-                cubeHist = false;
-            }
-            
-            if (!chanHist && !cubeHist) {
-                continue; // skip the loop entirely
             }
 
             for (hsize_t j = 0; j < width * height; j++) {
@@ -288,12 +215,7 @@ void FastConverter::copyAndCalculate() {
         
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
-            for (hsize_t i = 0; i < depth; i++) {
-                for (hsize_t j = 0; j < numBinsXYZ; j++) {
-                    statsXYZ.histograms[j] +=
-                        statsXYZ.partialHistograms[i * numBinsXYZ + j];
-                }
-            }
+            statsXYZ.consolidatePartialHistogram();
         }
 
         DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);

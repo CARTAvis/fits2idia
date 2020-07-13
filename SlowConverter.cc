@@ -47,9 +47,6 @@ void SlowConverter::copyAndCalculate() {
     }
     
     mipMaps.createBuffers({1, height, width});
-    
-    hsize_t& numBinsXY(numBins);
-    hsize_t& numBinsXYZ(numBins);
 
     std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
     std::vector<hsize_t> memDims = {height, width};
@@ -79,24 +76,18 @@ void SlowConverter::copyAndCalculate() {
             TIMER(timer.start(timerLabelStatsMipmaps););
 
             auto indexXY = c;
+            std::function<void(float)> accumulate;
             
-            std::function<void(float)> minmax;
-            
-            auto lazy_minmax = [&] (float val) {
-                if (val < statsXY.minVals[indexXY]) {
-                    statsXY.minVals[indexXY] = val;
-                } else if (val > statsXY.maxVals[indexXY]) {
-                    statsXY.maxVals[indexXY] = val;
-                }
+            auto lazy_accumulate = [&] (float val) {
+                statsXY.accumulateFiniteLazy(indexXY, val);
             };
             
-            auto first_minmax = [&] (float val) {
-                statsXY.minVals[indexXY] = val;
-                statsXY.maxVals[indexXY] = val;
-                minmax = lazy_minmax;
+            auto first_accumulate = [&] (float val) {
+                statsXY.accumulateFiniteLazyFirst(indexXY, val);
+                accumulate = lazy_accumulate;
             };
             
-            minmax = first_minmax;
+            accumulate = first_accumulate;
             
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
@@ -105,68 +96,49 @@ void SlowConverter::copyAndCalculate() {
                                         
                     if (std::isfinite(val)) {
                         // XY statistics
-                        // TODO: check if indexing stats arrays inside loop is slow or is optimised away
-                        minmax(val);
-                        statsXY.sums[indexXY] += val;
-                        statsXY.sumsSq[indexXY] += val * val;
+                        accumulate(val);
                         
                         // Accumulate mipmaps
                         mipMaps.accumulate(val, x, y, 0);
                         
                     } else {
-                        statsXY.nanCounts[indexXY] += 1;
+                        statsXY.accumulateNonFinite(indexXY);
                     }
                 }
             } // end of XY loop
             
+            // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
-            // TODO: see if this can be done in stats
-            if ((hsize_t)statsXY.nanCounts[indexXY] == (height * width)) {
-                statsXY.minVals[indexXY] = NAN;
-                statsXY.maxVals[indexXY] = NAN;
-            }
+            statsXY.finalMinMax(indexXY, height * width);
             
             // Accumulate XYZ statistics
             if (depth > 1) {
                 DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
-                if (std::isfinite(statsXY.maxVals[indexXY])) {
-                    statsXYZ.sums[0] += statsXY.sums[indexXY];
-                    statsXYZ.sumsSq[0] += statsXY.sumsSq[indexXY];
-                    statsXYZ.minVals[0] = fmin(statsXYZ.minVals[0], statsXY.minVals[indexXY]);
-                    statsXYZ.maxVals[0] = fmax(statsXYZ.maxVals[0], statsXY.maxVals[indexXY]);
-                }
-                statsXYZ.nanCounts[0] += statsXY.nanCounts[indexXY];
+                statsXYZ.accumulateStats(statsXY, 0, indexXY);
             }
             
             // Final mipmap calculation
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
-            
             mipMaps.calculate();
             
             
             // Write the mipmaps
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
             TIMER(timer.start("Write"););
-            
             mipMaps.write(s, c);
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
             TIMER(timer.start(timerLabelStatsMipmaps););
-            
             mipMaps.resetBuffers();
             
         } // end of first channel loop
         
         if (depth > 1) {
-            // A final correction of the XYZ NaNs
+            // Final correction of XYZ min and max
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
-            
-            if ((hsize_t)statsXYZ.nanCounts[0] == depth * height * width) {
-                statsXYZ.minVals[0] = NAN;
-                statsXYZ.maxVals[0] = NAN;
-            }
+            statsXYZ.finalMinMax(0, depth * height * width);
         }
         
         // XY and XYZ histograms
@@ -175,10 +147,10 @@ void SlowConverter::copyAndCalculate() {
         DEBUG(std::cout << " Histograms..." << std::endl;);
         TIMER(timer.start("Histograms"););
         
-        bool cubeHist(0);
         double cubeMin;
         double cubeMax;
         double cubeRange;
+        bool cubeHist(false);
         
         if (depth > 1) {
             cubeMin = statsXYZ.minVals[0];
@@ -196,31 +168,30 @@ void SlowConverter::copyAndCalculate() {
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
-            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
             
+            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
             DEBUG(std::cout << " Will " << (chanHist ? "" : "not ") << "calculate channel histogram." << std::flush;);
             
-            std::function<void(float)> channelHistogramFunc;
-            std::function<void(float)> cubeHistogramFunc;
+            if (!chanHist && !cubeHist) {
+                continue;
+            }
             
             auto doChannelHistogram = [&] (float val) {
-                // XY Histogram
-                int binIndex = std::min(numBinsXY - 1, (hsize_t)(numBinsXY * (val - chanMin) / chanRange));
-                statsXY.histograms[c * numBinsXY + binIndex]++;
+                // XY histogram
+                statsXY.accumulateHistogram(val, chanMin, chanRange, c);
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ histogram
-                int binIndex = std::min(numBinsXYZ - 1, (hsize_t)(numBinsXYZ * (val - cubeMin) / cubeRange));
-                statsXYZ.histograms[binIndex]++;
+                statsXYZ.accumulateHistogram(val, cubeMin, cubeRange, 0);
             };
             
             auto doNothing = [&] (float val) {
                 UNUSED(val);
             };
             
-            channelHistogramFunc = doChannelHistogram;
-            cubeHistogramFunc = doCubeHistogram;
+            std::function<void(float)> channelHistogramFunc = doChannelHistogram;
+            std::function<void(float)> cubeHistogramFunc = doCubeHistogram;
             
             if (!chanHist) {
                 channelHistogramFunc = doNothing;
@@ -228,10 +199,6 @@ void SlowConverter::copyAndCalculate() {
             
             if (!cubeHist) {
                 cubeHistogramFunc = doNothing;
-            }
-            
-            if (!chanHist && !cubeHist) {
-                continue;
             }
             
             // read one channel
@@ -300,18 +267,13 @@ void SlowConverter::copyAndCalculate() {
                     
                     DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
                     
-                    std::vector<hsize_t> standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
-                    std::vector<hsize_t> swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
-                    
-                    std::vector<hsize_t> standardCount = trimAxes({1, depth, ySize, xSize}, N);
-                    std::vector<hsize_t> swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
-                    
-                    std::vector<hsize_t> standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
-                    std::vector<hsize_t> swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
-                    
                     // read tile slice
                     DEBUG(std::cout << " Reading main dataset..." << std::flush;);
                     TIMER(timer.start("Read"););
+                    
+                    auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
+                    auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
+                    auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
                     
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                     
@@ -323,25 +285,20 @@ void SlowConverter::copyAndCalculate() {
                         for (hsize_t j = 0; j < ySize; j++) {
                             for (hsize_t k = 0; k < xSize; k++) {
                                 auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto destIndex = i + depth * j + (ySize * depth) * k;
-                                
                                 auto& val = standardSlice[sourceIndex];
                                 
                                 // rotation
+                                auto destIndex = i + depth * j + (ySize * depth) * k;
                                 rotatedSlice[destIndex] = val;
                                 
-                                // Z stats                                
+                                // Accumulate Z statistics                                
                                 auto indexZ = k + xSize * j;
                                 
                                 if (std::isfinite(val)) {
-                                    // Accumulate Z statistics
-                                    // Not replacing this with if/else; too much risk of encountering an ascending / descending sequence.
-                                    statsZ.minVals[indexZ] = fmin(statsZ.minVals[indexZ], val);
-                                    statsZ.maxVals[indexZ] = fmax(statsZ.maxVals[indexZ], val);
-                                    statsZ.sums[indexZ] += val;
-                                    statsZ.sumsSq[indexZ] += val * val;
+                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
+                                    statsZ.accumulateFinite(indexZ, val);
                                 } else {
-                                    statsZ.nanCounts[indexZ] += 1;
+                                    statsZ.accumulateNonFinite(indexZ);
                                 }
                             }
                         }
@@ -351,17 +308,17 @@ void SlowConverter::copyAndCalculate() {
                     // A final pass over all XY to fix the Z stats NaNs
                     for (hsize_t p = 0; p < width * height; p++) {
                         auto indexZ = p;
-                                                
-                        // TODO can we do this in stats?
-                        if ((hsize_t)statsZ.nanCounts[indexZ] == depth) {
-                            statsZ.minVals[indexZ] = NAN;
-                            statsZ.maxVals[indexZ] = NAN;
-                        }
+                        
+                        statsZ.finalMinMax(indexZ, depth);
                     }
                     
                     // write tile slice
                     DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
                     TIMER(timer.start("Write"););
+                    
+                    auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
+                    auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
+                    auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
                     
