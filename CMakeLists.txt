@@ -25,6 +25,8 @@ set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 set(SOURCE_FILES
     ${SOURCE_FILES}
     main.cc
+    Stats.cc
+    MipMap.cc
     Converter.cc
     FastConverter.cc
     SlowConverter.cc

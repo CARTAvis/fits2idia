@@ -1,8 +1,6 @@
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName) :
-    timer()
-{
+Converter::Converter(std::string inputFileName, std::string outputFileName) : timer() {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
