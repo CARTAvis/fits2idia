@@ -1,7 +1,7 @@
 #include "Converter.h"
 
 // TODO do we need these?
-FastConverter::FastConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {}
+FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
 
 void FastConverter::reportMemoryUsage() {
     std::unordered_map<std::string, hsize_t> sizes;
@@ -70,8 +70,11 @@ void FastConverter::copyAndCalculate() {
         TIMER(timer.start(timerLabelXYRotation););
 
         // First loop calculates stats for each XY slice and rotates the dataset
+        
+        
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
+            
             auto& indexXY = i;
             std::function<void(float)> accumulate;
             
@@ -108,6 +111,8 @@ void FastConverter::copyAndCalculate() {
             // Final correction of XY min and max
             statsXY.finalMinMax(indexXY, height * width);
         }
+        
+        
 
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
@@ -125,9 +130,12 @@ void FastConverter::copyAndCalculate() {
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
             
+            
+            
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
+                    
                     auto indexZ = k + j * width;
                     
                     for (hsize_t i = 0; i < depth; i++) {
@@ -145,13 +153,16 @@ void FastConverter::copyAndCalculate() {
                     statsZ.finalMinMax(indexZ, depth);
                 }
             }
-        
+            
+            
         }
 
         // Third loop handles histograms
         
         DEBUG(std::cout << " Histograms..." << std::flush;);
         TIMER(timer.start("Histograms"););
+        
+        
         
         double cubeMin;
         double cubeMax;
@@ -167,6 +178,7 @@ void FastConverter::copyAndCalculate() {
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
+            
             auto& indexXY = i;
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
@@ -213,6 +225,8 @@ void FastConverter::copyAndCalculate() {
             } // end of XY loop
         } // end of parallel Z loop
         
+        
+        
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             statsXYZ.consolidatePartialHistogram();
@@ -248,8 +262,11 @@ void FastConverter::copyAndCalculate() {
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
         TIMER(timer.start("Mipmaps"););
         
+        
+        
 #pragma omp parallel for
         for (hsize_t c = 0; c < depth; c++) {
+            
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
                     auto sourceIndex = x + width * y + (height * width) * c;
@@ -260,6 +277,7 @@ void FastConverter::copyAndCalculate() {
                 }
             }
         } // end of mipmap loop
+        
         
         // Final mipmap calculation
         mipMaps.calculate();

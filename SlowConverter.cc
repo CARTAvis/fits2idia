@@ -1,6 +1,6 @@
 #include "Converter.h"
 
-SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName) : Converter(inputFileName, outputFileName) {}
+SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
 
 void SlowConverter::reportMemoryUsage() {
     std::unordered_map<std::string, hsize_t> sizes;
@@ -229,7 +229,7 @@ void SlowConverter::copyAndCalculate() {
         }
         
         // Clear the stats before the next Stokes
-        TIMER(timer.start(first_loop_label););
+        TIMER(timer.start(timerLabelStatsMipmaps););
         
         statsXY.resetBuffers();
         

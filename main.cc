@@ -1,7 +1,7 @@
 #include <getopt.h>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& onlyReportMemory) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory) {
     extern int optind;
     extern char *optarg;
     
@@ -15,10 +15,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
-    << "-q\tSuppress all non-error output" << std::endl
+    << "-p\tPrint progress output (by default the program is silent)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl;
     
-    while ((opt = getopt(argc, argv, ":o:sqm")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:spqm")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -27,8 +27,8 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 // use slower but less memory-intensive method
                 slow = true;
                 break;
-            case 'q':
-                std::cout.rdbuf(nullptr);
+            case 'p':
+                progress = true;
                 break;
             case 'm':
                 // only print memory usage and exit
@@ -80,16 +80,17 @@ int main(int argc, char** argv) {
     std::string inputFileName;
     std::string outputFileName;
     bool slow(false);
+    bool progress(false);
     bool onlyReportMemory(false);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, onlyReportMemory)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory)) {
         return 1;
     }
     
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, progress);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();

@@ -35,6 +35,8 @@
     #define TIMER(x) do {} while (0)
 #endif
 
+#define PROGRESS(x) if (progress) std::cout << x
+
 #define EMPTY_DIMS std::vector<hsize_t>()
 
 #define UNUSED(x) (void)(x)

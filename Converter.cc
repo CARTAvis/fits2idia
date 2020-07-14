@@ -1,6 +1,6 @@
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName) : timer() {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress) : timer(), progress(progress) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -46,11 +46,11 @@ Converter::~Converter() {
     outputFile.close();
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress) {
     if (slow) {
-        return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName));
+        return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress));
     } else {
-        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName));
+        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress));
     }
 }
 

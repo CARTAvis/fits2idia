@@ -10,15 +10,18 @@
 class Converter {
 public:
     Converter() {}
-    Converter(std::string inputFileName, std::string outputFileName);
+    Converter(std::string inputFileName, std::string outputFileName, bool progress);
     ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
     void convert();
     virtual void reportMemoryUsage();
     
 protected:
     virtual void copyAndCalculate();
+    
+    Timer timer;
+    bool progress;
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -41,8 +44,6 @@ protected:
     // MipMaps
     MipMaps mipMaps;
     
-    Timer timer;
-    
     int N;
     hsize_t stokes, depth, height, width;
     hsize_t numBins;
@@ -59,7 +60,7 @@ protected:
 
 class FastConverter : public Converter {
 public:
-    FastConverter(std::string inputFileName, std::string outputFileName);
+    FastConverter(std::string inputFileName, std::string outputFileName, bool progress);
     void reportMemoryUsage() override;
     
 protected:
@@ -69,7 +70,7 @@ protected:
 
 class SlowConverter : public Converter {
 public:
-    SlowConverter(std::string inputFileName, std::string outputFileName);
+    SlowConverter(std::string inputFileName, std::string outputFileName, bool progress);
     void reportMemoryUsage() override;
     
 protected:
