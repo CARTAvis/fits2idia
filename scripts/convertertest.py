@@ -144,6 +144,44 @@ def compare_fits_hdf5(fitsname, hdf5name):
     fitsfile.close()
     hdf5file.close()
 
+def compare_hdf5_hdf5(file1, file2, fail_msg, ignore_converter_attrs=True):
+    h5diff = subprocess.run(["h5diff", file1, file2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if not ignore_converter_attrs:
+        assert h5diff.returncode == 0, fail_msg
+    else:
+        permitted_differences = [
+            "attribute: <SCHEMA_VERSION of </0>> and <SCHEMA_VERSION of </0>>",
+            "attribute: <HDF5_CONVERTER of </0>> and <HDF5_CONVERTER of </0>>",
+            "attribute: <HDF5_CONVERTER_VERSION of </0>> and <HDF5_CONVERTER_VERSION of </0>>",
+        ]
+        output = h5diff.stdout.decode('ascii')
+        lines = set(output.strip().split("\n"))
+        removed = 0
+        for d in permitted_differences:
+            if d in lines:
+                lines.remove(d)
+                removed += 1
+        if "%d differences found" % removed not in lines:
+            print(lines)
+            assert false
+    
+def convert_fast_slow(fitsfile):
+    fast = subprocess.run(["hdf_convert", "-q", "-o", "FAST.hdf5", fitsfile])
+    assert fast.returncode == 0, "Fast conversion failed."
+    
+    slow = subprocess.run(["hdf_convert", "-q", "-s", "-o", "SLOW.hdf5", fitsfile])
+    assert slow.returncode == 0, "Slow conversion failed."
+
+def test_conversion(fitsfile, compare_to_fits=True):
+    convert_fast_slow(fitsfile)
+    
+    if compare_to_fits:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            compare_fits_hdf5(fitsfile, "FAST.hdf5")
+    
+    compare_hdf5_hdf5("FAST.hdf5", "SLOW.hdf5", "Fast and slow versions differ.", False)
+
 def test_random_image(dims, nans, nan_density):
     print("Testing %r image" % (dims,), end="")
                 
@@ -157,18 +195,17 @@ def test_random_image(dims, nans, nan_density):
                     
     subprocess.run(params)
     
-    fast = subprocess.run(["hdf_convert", "-q", "-o", "FAST.hdf5", "test.fits"])
-    assert fast.returncode == 0, "Fast conversion failed."
+    test_conversion("test.fits")
     
-    slow = subprocess.run(["hdf_convert", "-q", "-s", "-o", "SLOW.hdf5", "test.fits"])
-    assert slow.returncode == 0, "Slow conversion failed."
+def test_specific_image(fitsfile, hdf5file=None):
+    print("Converting", fitsfile)
+    test_conversion(fitsfile, hdf5file is None)
     
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        compare_fits_hdf5("test.fits", "FAST.hdf5")
-    
-    h5diff = subprocess.run(["h5diff", "FAST.hdf5", "SLOW.hdf5"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert h5diff.returncode == 0, "Fast and slow versions differ."
+    if hdf5file:
+        print("Comparing to reference", hdf5file)
+        compare_hdf5_hdf5("FAST.hdf5", hdf5file, "Converted version differs from reference %r" % hdf5file, True)
+        
+    subprocess.run(["rm", "FAST.hdf5", "SLOW.hdf5"])
 
 def test_random_files():
     for N in (2, 3, 4):
@@ -191,19 +228,29 @@ def test_random_files():
                 
     subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
     
-def test_specific_files(args):
-    fitsfile = args.fitsfile or args.hdf5file.replace("fits", "hdf5")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        compare_fits_hdf5(fitsfile, args.hdf5file)
+def expand_list(globs):
+    if globs is None:
+        return []
+    expanded = []
+    for g in globs:
+        expanded.extend(glob.glob(g))
+    return expanded
 
+def split_path(path):
+    directory, filename = os.path.split(path)
+    basefilename, extension = os.path.splitext(filename)
+    return (directory, basefilename, extension)
+    
+def join_path(directory, basefilename, extension):
+    return "/".join(directory, ".".join(basefilename, extension))
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
-    parser.add_argument('-d', '--hdf5file', help='Converted HDF5 filename. If no file is given, a set of randomly generated files with different dimensions and different patterns of NaN values will be tested.')
-    parser.add_argument('-f', '--fitsfile', help="Original FITS filename. The default is the same name as the HDF5 file with the suffix replaced.")
+    parser.add_argument('--fits', help='A path to an input FITS file. If no HDF5 file is given, the FITS file will be converted and compared to the converted HDF5 file (THIS IS SLOW!). If an HDF5 file is given, the converted HDF5 file will be compared to the reference HDF5 file.', )
+    parser.add_argument('--hdf5', help='A path to an HDF5 reference file. Ignored if no FITS files is given.')
     args = parser.parse_args()
     
-    if args.hdf5file:
-        test_specific_files(args)
+    if "fits" in args:
+        test_specific_image(args.fits, args.hdf5) 
     else:
         test_random_files()
