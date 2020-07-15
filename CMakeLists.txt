@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(hdf_convert)
 
+set(default_build_type "Release")
+
 set(CMAKE_CXX_STANDARD 11)
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
