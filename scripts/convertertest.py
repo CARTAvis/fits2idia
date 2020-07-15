@@ -8,6 +8,8 @@ import warnings
 import random
 import re
 import argparse
+from collections import defaultdict
+from timeit import default_timer as timer
 
 from astropy.io import fits
 import h5py
@@ -146,8 +148,11 @@ def compare_fits_hdf5(fitsname, hdf5name):
 
 def compare_hdf5_hdf5(file1, file2, fail_msg, ignore_converter_attrs=True):
     h5diff = subprocess.run(["h5diff", file1, file2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if h5diff.returncode == 0:
+        return
+    
     if not ignore_converter_attrs:
-        assert h5diff.returncode == 0, fail_msg
+        assert False, fail_msg
     else:
         permitted_differences = [
             "attribute: <SCHEMA_VERSION of </0>> and <SCHEMA_VERSION of </0>>",
@@ -163,94 +168,168 @@ def compare_hdf5_hdf5(file1, file2, fail_msg, ignore_converter_attrs=True):
                 removed += 1
         if "%d differences found" % removed not in lines:
             print(lines)
-            assert false
-    
-def convert_fast_slow(fitsfile):
-    fast = subprocess.run(["hdf_convert", "-q", "-o", "FAST.hdf5", fitsfile])
-    assert fast.returncode == 0, "Fast conversion failed."
-    
-    slow = subprocess.run(["hdf_convert", "-q", "-s", "-o", "SLOW.hdf5", fitsfile])
-    assert slow.returncode == 0, "Slow conversion failed."
+            print("(Permitted converter version attributes have been ignored.)")
+            assert False, fail_msg
 
-def test_conversion(fitsfile, compare_to_fits=True):
-    convert_fast_slow(fitsfile)
+def make_image(outfile, *dims, **params):
+    cmd = ["make_image.py", "-o", outfile]
+    for name, values in params.items():
+        if values:
+            cmd.append(name)
+            try:
+                for value in values:
+                    cmd.append(str(value))
+            except:
+                cmd.append(str(values))
+    cmd.append("--")
+    cmd.extend(str(d) for d in dims)
     
-    if compare_to_fits:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            compare_fits_hdf5(fitsfile, "FAST.hdf5")
+    print(*cmd)
     
-    compare_hdf5_hdf5("FAST.hdf5", "SLOW.hdf5", "Fast and slow versions differ.", False)
+    result = subprocess.run(cmd)
+    assert result.returncode == 0, "Image generation failed."
+    
+def convert(infile, outfile, slow=False, executable="hdf_convert"):
+    cmd = [executable]
+    if slow:
+        cmd.append("-s")
+    cmd.extend(["-o", outfile, infile])
+    
+    print(*cmd)
+    
+    result = subprocess.run(cmd)
+    assert result.returncode == 0, "Conversion failed."
+    
+def time(infile, slow=False, executable="hdf_convert"):
+    os.system("sudo sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'")
+    
+    cmd = [executable]
+    if slow:
+        cmd.append("-s")
+    cmd.extend(["-o", "TIMED.hdf5", infile])
+    
+    print(*cmd)
+    
+    start = timer()
+    subprocess.run(cmd)
+    end = timer()
 
-def test_random_image(dims, nans, nan_density):
-    print("Testing %r image" % (dims,), end="")
-                
-    params = ["make_image.py", "-o", "test.fits"]
-    if nans:
-        params.extend(("--nans", *(str(n) for n in nans), "--nan-density", str(nan_density), "--"))
-        print(" with NaNs inserted in random %r with density %d" % (nans, nan_density), end="")
-    params.extend(str(d) for d in dims)
-    
-    print("...")
-                    
-    subprocess.run(params)
-    
-    test_conversion("test.fits")
-    
-def test_specific_image(fitsfile, hdf5file=None):
-    print("Converting", fitsfile)
-    test_conversion(fitsfile, hdf5file is None)
-    
-    if hdf5file:
-        print("Comparing to reference", hdf5file)
-        compare_hdf5_hdf5("FAST.hdf5", hdf5file, "Converted version differs from reference %r" % hdf5file, True)
+    subprocess.run(["rm", "test.fits", "TIMED.hdf5"])
         
-    subprocess.run(["rm", "FAST.hdf5", "SLOW.hdf5"])
+    return end - start
 
-def test_random_files():
+def test_converter_correctness(infile):
+    convert(infile, "FAST.hdf5")
+    convert(infile, "SLOW.hdf5", True)
+    
+    # Do this first so that we fail more quickly
+    compare_hdf5_hdf5("FAST.hdf5", "SLOW.hdf5", "Fast and slow versions differ.", False)
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        compare_fits_hdf5("test.fits", "FAST.hdf5")
+    
+    subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
+
+def test_new_old_converter(infile, old_converter):
+    convert(infile, "OLD.hdf5", executable=old_converter)
+    convert(infile, "NEW.hdf5")
+    
+    compare_hdf5_hdf5("OLD.hdf5", "NEW.hdf5", "Old and new versions differ.", True)
+
+def small_nans_image_set():
+    image_set = []
+    
     for N in (2, 3, 4):
         for nans in itertools.chain((None, ("image",)), itertools.chain.from_iterable(itertools.combinations(("pixel", "row", "column", "channel", "stokes"), n) for n in range(1, 5+1))):
             for nan_density in (0, 33, 66, 100):
-                
                 dims = [random.randint(10, 50), random.randint(10, 50)]
                 if N > 2:
                     dims.append(random.randint(50, 100))
                 if N > 3:
                     dims.append(random.randint(1, 4))
+                    
+                params = {
+                    "--nans": nans,
+                    "--nan-density": nan_density
+                }
                 
-                test_random_image(dims, nans, nan_density)
+                image_set.append((dims, params))
+    return image_set
+
+def large_image_set():
+    image_set = []
     
     # A few bigger images to test multiple mipmaps
     for dims in ((5000, 200), (5000, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
             for nan_density in (50,):
-                test_random_image(dims, nans, nan_density)
+                params = {
+                    "--nans": nans,
+                    "--nan-density": nan_density
+                }
                 
-    subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
-    
-def expand_list(globs):
-    if globs is None:
-        return []
-    expanded = []
-    for g in globs:
-        expanded.extend(glob.glob(g))
-    return expanded
+                image_set.append((dims, params))
+    return image_set
 
-def split_path(path):
-    directory, filename = os.path.split(path)
-    basefilename, extension = os.path.splitext(filename)
-    return (directory, basefilename, extension)
+def timer_image_set():
+    image_set = []
     
-def join_path(directory, basefilename, extension):
-    return "/".join(directory, ".".join(basefilename, extension))
+    # square images; no fancy parameters; one stokes
+    for x in (100, 500, 1000, 5000, 10000):
+        for z in (100, 500, 1000, 5000, 10000):
+                if x * x * z * 4 * 1e-9 > 1:
+                    continue # don't exceed 1GB(ish)
+                image_set.append(((x, x, z), {}))
     
+    return image_set
+
+def test_correctness(*image_sets):
+    for image_set in image_sets:
+        for dims, params in image_set:
+            make_image("test.fits", *dims, **params)
+            test_converter_correctness("test.fits")
+        
+def test_consistency(old_converter, *image_sets):
+    for image_set in image_sets:
+        for dims, params in image_set:
+            make_image("test.fits", *dims, **params)
+            test_new_old_converter("test.fits", old_converter)
+            
+def test_speed(*image_sets, **kwargs):
+    executables = ["hdf_convert"]
+    if "compare" in kwargs:
+        executables.append(kwargs["compare"])
+    
+    times = defaultdict(lambda: defaultdict(list))
+    
+    for i in range(5):
+        for executable in executables:
+            for image_set in image_sets:
+                for dims, _ in image_set: # we only care about the dimensions
+                    make_image("test.fits", *dims)
+                    t = time("test.fits", executable=executable)
+                    times[dims][executable].append(t)
+                
+    print("dims", *executables)
+    
+    for dims in sorted(times):
+        best = [np.min(times[dims][e]) for e in executables]
+        print(dims, *best)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
-    parser.add_argument('--fits', help='A path to an input FITS file. If no HDF5 file is given, the FITS file will be converted and compared to the converted HDF5 file (THIS IS SLOW!). If an HDF5 file is given, the converted HDF5 file will be compared to the reference HDF5 file.', )
-    parser.add_argument('--hdf5', help='A path to an HDF5 reference file. Ignored if no FITS files is given.')
+    parser.add_argument('-c', '--compare', help='A path to another converter executable to use as a reference. If a reference converter is given, random files converted using the fast algorithm with both converters will be compared to each other. If none is given, the output of the converter at the default path will be checked for correctness (THIS IS SLOW), and its fast and slow algorithm outputs will be compared for consistency.')
+    parser.add_argument('-t', '--time', action='store_true', help='Time the converter(s) instead of checking the output.')
     args = parser.parse_args()
     
-    if "fits" in args:
-        test_specific_image(args.fits, args.hdf5) 
+    if args.time:
+        if args.compare:
+            test_speed(timer_image_set(), compare=args.compare)
+        else:
+            test_speed(timer_image_set())
     else:
-        test_random_files()
+        if args.compare:
+            test_consistency(args.compare, small_nans_image_set(), large_image_set())
+        else:
+            test_correctness(small_nans_image_set(), large_image_set())
