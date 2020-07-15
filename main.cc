@@ -11,12 +11,13 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     std::ostringstream usage;
     usage << "IDIA FITS to HDF5 converter version " << HDF5_CONVERTER_VERSION 
     << " using IDIA schema version " << SCHEMA_VERSION << std::endl
-    << "Usage: hdf_convert [-o output_filename] [-s] [-q] input_filename" << std::endl << std::endl
+    << "Usage: hdf_convert [-o output_filename] [-s] [-p] [-m] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-p\tPrint progress output (by default the program is silent)" << std::endl
-    << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl;
+    << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
+    << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl;
     
     while ((opt = getopt(argc, argv, ":o:spqm")) != -1) {
         switch (opt) {
@@ -29,6 +30,9 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 break;
             case 'p':
                 progress = true;
+                break;
+            case 'q':
+                std::cerr << "The -q flag is deprecated. The converter is quiet by default." << std::endl;
                 break;
             case 'm':
                 // only print memory usage and exit
