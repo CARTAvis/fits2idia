@@ -4,9 +4,6 @@
 #include "common.h"
 #include "Util.h"
 
-// TODO move the accumulation and histogram functionality in here and get it out of the converter code
-// TODO split this and mipmaps into header and implementation
-
 struct Stats {
     Stats() {}
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
@@ -56,9 +53,9 @@ struct Stats {
     
     std::vector<hsize_t> fullBasicBufferDims;
 
-    // Buffers -- TODO replace with arrays
-    std::vector<double> minVals;
-    std::vector<double> maxVals;
+    // Buffers
+    std::vector<float> minVals;
+    std::vector<float> maxVals;
     std::vector<double> sums;
     std::vector<double> sumsSq;
     std::vector<int64_t> nanCounts;

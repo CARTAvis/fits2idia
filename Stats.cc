@@ -4,7 +4,7 @@ Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : ba
 
 hsize_t Stats::size(std::vector<hsize_t> dims, hsize_t numBins, hsize_t partialHistMultiplier) {
     auto statsSize = product(dims);
-    return (4 * sizeof(double) + sizeof(int64_t)) * statsSize + sizeof(int64_t) * (statsSize * numBins + statsSize * numBins * partialHistMultiplier);
+    return (2 * sizeof(float) + 2 * sizeof(double) + sizeof(int64_t)) * statsSize + sizeof(int64_t) * (statsSize * numBins + statsSize * numBins * partialHistMultiplier);
 }
 
 void Stats::createDatasets(H5::Group group, std::string name) {
@@ -29,8 +29,8 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     fullBasicBufferDims = dims;
     auto statsSize = product(dims);
     
-    minVals.resize(statsSize, std::numeric_limits<double>::max());
-    maxVals.resize(statsSize, -std::numeric_limits<double>::max());
+    minVals.resize(statsSize, std::numeric_limits<float>::max());
+    maxVals.resize(statsSize, -std::numeric_limits<float>::max());
     sums.resize(statsSize);
     sumsSq.resize(statsSize);
     nanCounts.resize(statsSize);
@@ -140,8 +140,8 @@ void Stats::writeHistogram(const std::vector<hsize_t>& basicBufferDims, const st
 }
 
 void Stats::resetBuffers() {
-    std::fill(minVals.begin(), minVals.end(), std::numeric_limits<double>::max());
-    std::fill(maxVals.begin(), maxVals.end(), -std::numeric_limits<double>::max());
+    std::fill(minVals.begin(), minVals.end(), std::numeric_limits<float>::max());
+    std::fill(maxVals.begin(), maxVals.end(), -std::numeric_limits<float>::max());
     std::fill(sums.begin(), sums.end(), 0);
     std::fill(sumsSq.begin(), sumsSq.end(), 0);
     std::fill(nanCounts.begin(), nanCounts.end(), 0);
