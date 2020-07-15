@@ -71,19 +71,19 @@ void FastConverter::copyAndCalculate() {
 
         // First loop calculates stats for each XY slice and rotates the dataset
         
-        
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
+            StatsCounter counterXY;
             
             auto& indexXY = i;
             std::function<void(float)> accumulate;
             
             auto lazy_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazy(indexXY, val);
+                counterXY.accumulateFiniteLazy(val);
             };
             
             auto first_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazyFirst(indexXY, val);
+                counterXY.accumulateFiniteLazyFirst(val);
                 accumulate = lazy_accumulate;
             };
             
@@ -103,39 +103,37 @@ void FastConverter::copyAndCalculate() {
                     if (std::isfinite(val)) {
                         accumulate(val);
                     } else {
-                        statsXY.accumulateNonFinite(indexXY);
+                        counterXY.accumulateNonFinite();
                     }
                 }
             }
             
             // Final correction of XY min and max
-            statsXY.finalMinMax(indexXY, height * width);
+            statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
-        
-        
 
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
             TIMER(timer.start("XYZ and Z statistics"););
+            
+            StatsCounter counterXYZ;
 
             for (hsize_t i = 0; i < depth; i++) {
                 auto& indexXY = i;
-                statsXYZ.accumulateStats(statsXY, 0, indexXY);
+                counterXYZ.accumulateStats(statsXY, indexXY);
             }
 
-            statsXYZ.finalMinMax(0, depth * height * width);
+            statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);
 
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
             
-            
-            
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
-                    
+                    StatsCounter counterZ;
                     auto indexZ = k + j * width;
                     
                     for (hsize_t i = 0; i < depth; i++) {
@@ -144,25 +142,21 @@ void FastConverter::copyAndCalculate() {
 
                         if (std::isfinite(val)) {
                             // Not lazy; too much risk of encountering an ascending / descending sequence.
-                            statsZ.accumulateFinite(indexZ, val);
+                            counterZ.accumulateFinite(val);
                         } else {
-                            statsZ.accumulateNonFinite(indexZ);
+                            counterZ.accumulateNonFinite();
                         }
                     }
                     
-                    statsZ.finalMinMax(indexZ, depth);
+                    statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                 }
             }
-            
-            
         }
 
         // Third loop handles histograms
         
         DEBUG(std::cout << " Histograms..." << std::flush;);
         TIMER(timer.start("Histograms"););
-        
-        
         
         double cubeMin;
         double cubeMax;

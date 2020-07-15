@@ -4,8 +4,23 @@
 #include "common.h"
 #include "Util.h"
 
-// TODO move the accumulation and histogram functionality in here and get it out of the converter code
-// TODO split this and mipmaps into header and implementation
+struct Stats;
+
+struct StatsCounter {
+    StatsCounter();
+    
+    void accumulateFinite(float val);
+    void accumulateFiniteLazy(float val);
+    void accumulateFiniteLazyFirst(float val);
+    void accumulateNonFinite();
+    void accumulateStats(Stats stats, hsize_t index);
+
+    float minVal;
+    float maxVal;
+    double sum;
+    double sumSq;
+    int64_t nanCount;
+};
 
 struct Stats {
     Stats() {}
@@ -18,12 +33,7 @@ struct Stats {
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
     
     // Basic stats
-    void accumulateFinite(hsize_t index, float val);
-    void accumulateFiniteLazy(hsize_t index, float val);
-    void accumulateFiniteLazyFirst(hsize_t index, float val);
-    void accumulateNonFinite(hsize_t index);
-    void accumulateStats(Stats other, hsize_t index, hsize_t otherIndex);
-    void finalMinMax(hsize_t index, hsize_t totalVals);
+    void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter);
     
     // Histograms
     void accumulateHistogram(float val, double min, double range, hsize_t offset);
@@ -56,9 +66,9 @@ struct Stats {
     
     std::vector<hsize_t> fullBasicBufferDims;
 
-    // Buffers -- TODO replace with arrays
-    std::vector<double> minVals;
-    std::vector<double> maxVals;
+    // Buffers
+    std::vector<float> minVals;
+    std::vector<float> maxVals;
     std::vector<double> sums;
     std::vector<double> sumsSq;
     std::vector<int64_t> nanCounts;

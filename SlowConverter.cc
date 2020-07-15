@@ -57,6 +57,8 @@ void SlowConverter::copyAndCalculate() {
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         
+        StatsCounter counterXYZ;
+        
         for (hsize_t c = 0; c < depth; c++) {
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
@@ -75,15 +77,16 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
 
+            StatsCounter counterXY;
             auto indexXY = c;
             std::function<void(float)> accumulate;
             
             auto lazy_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazy(indexXY, val);
+                counterXY.accumulateFiniteLazy(val);
             };
             
             auto first_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazyFirst(indexXY, val);
+                counterXY.accumulateFiniteLazyFirst(val);
                 accumulate = lazy_accumulate;
             };
             
@@ -102,19 +105,19 @@ void SlowConverter::copyAndCalculate() {
                         mipMaps.accumulate(val, x, y, 0);
                         
                     } else {
-                        statsXY.accumulateNonFinite(indexXY);
+                        counterXY.accumulateNonFinite();
                     }
                 }
             } // end of XY loop
             
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
-            statsXY.finalMinMax(indexXY, height * width);
+            statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
             
             // Accumulate XYZ statistics
             if (depth > 1) {
                 DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
-                statsXYZ.accumulateStats(statsXY, 0, indexXY);
+                counterXYZ.accumulateStats(statsXY, indexXY);
             }
             
             // Final mipmap calculation
@@ -138,7 +141,7 @@ void SlowConverter::copyAndCalculate() {
             // Final correction of XYZ min and max
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
-            statsXYZ.finalMinMax(0, depth * height * width);
+            statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);
         }
         
         // XY and XYZ histograms
@@ -278,8 +281,8 @@ void SlowConverter::copyAndCalculate() {
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                     
                     // rotate tile slice
-                    DEBUG(std::cout << " Calculating rotation and Z statistics..." << std::flush;);
-                    TIMER(timer.start("Rotation and Z statistics"););
+                    DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+                    TIMER(timer.start("Rotation"););
                     
                     for (hsize_t i = 0; i < depth; i++) {
                         for (hsize_t j = 0; j < ySize; j++) {
@@ -290,27 +293,33 @@ void SlowConverter::copyAndCalculate() {
                                 // rotation
                                 auto destIndex = i + depth * j + (ySize * depth) * k;
                                 rotatedSlice[destIndex] = val;
-                                
-                                // Accumulate Z statistics                                
-                                auto indexZ = k + xSize * j;
-                                
-                                if (std::isfinite(val)) {
-                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
-                                    statsZ.accumulateFinite(indexZ, val);
-                                } else {
-                                    statsZ.accumulateNonFinite(indexZ);
-                                }
                             }
                         }
                     }
                     
-                    DEBUG(std::cout << " Final Z stats..." << std::flush;);
-                    // A final pass over all XY to fix the Z stats NaNs
+                    // A separate pass over the same slice depth-last 
+                    DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
+                    TIMER(timer.start("Z statistics"););
                     
-                    for (hsize_t p = 0; p < xSize * ySize; p++) {
-                        auto& indexZ = p;
-                        
-                        statsZ.finalMinMax(indexZ, depth);
+                    for (hsize_t j = 0; j < ySize; j++) {
+                        for (hsize_t k = 0; k < xSize; k++) {
+                            StatsCounter counterZ;
+                            auto indexZ = k + xSize * j;
+                            
+                            for (hsize_t i = 0; i < depth; i++) {
+                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                                auto& val = standardSlice[sourceIndex];
+                                
+                                if (std::isfinite(val)) {
+                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
+                                    counterZ.accumulateFinite(val);
+                                } else {
+                                    counterZ.accumulateNonFinite();
+                                }
+                            }
+                            
+                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
+                        }
                     }
                     
                     // write tile slice
