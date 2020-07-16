@@ -11,8 +11,23 @@ struct MipMap {
     
     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
-    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset = 0);
-    void calculate();
+    
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
+        hsize_t mipIndex = totalChannelOffset * width * height + (y / mip) * width + (x / mip);
+        vals[mipIndex] += val;
+        count[mipIndex]++;
+    }
+
+    void calculate() {
+        for (hsize_t mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
+            if (count[mipIndex]) {
+                vals[mipIndex] /= count[mipIndex];
+            } else {
+                vals[mipIndex] = NAN;
+            }
+        }
+    }
+    
     void write(hsize_t stokesOffset, hsize_t channelOffset);
     void resetBuffers();
     
@@ -41,8 +56,19 @@ struct MipMaps {
     
     void createDatasets(H5::Group group);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
-    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset = 0);
-    void calculate();
+    
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
+        for (auto& mipMap : mipMaps) {
+            mipMap.accumulate(val, x, y, totalChannelOffset);
+        }
+    }
+
+    void calculate() {
+        for (auto& mipMap : mipMaps) {
+            mipMap.calculate();
+        }
+    }
+    
     // TODO if we ever want a tiled mipmap calculation
     // we'll need to implement options to pass in custom buffer dims
     // and additional x and y offsets

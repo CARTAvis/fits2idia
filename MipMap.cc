@@ -31,22 +31,6 @@ void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     stokes = N > 3 ? bufferDims[N - 4] : 1;        
 }
 
-void MipMap::accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
-    hsize_t mipIndex = totalChannelOffset * width * height + (y / mip) * width + (x / mip);
-    vals[mipIndex] += val;
-    count[mipIndex]++;
-}
-
-void MipMap::calculate() {
-    for (hsize_t mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
-        if (count[mipIndex]) {
-            vals[mipIndex] /= count[mipIndex];
-        } else {
-            vals[mipIndex] = NAN;
-        }
-    }
-}
-
 void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
     int N = datasetDims.size();
     std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
@@ -103,18 +87,6 @@ void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {
     for (auto& mipMap : mipMaps) {
         auto dims = mipDims(standardBufferDims, mipMap.mip);
         mipMap.createBuffers(dims);
-    }
-}
-
-void MipMaps::accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
-    for (auto& mipMap : mipMaps) {
-        mipMap.accumulate(val, x, y, totalChannelOffset);
-    }
-}
-
-void MipMaps::calculate() {
-    for (auto& mipMap : mipMaps) {
-        mipMap.calculate();
     }
 }
 
