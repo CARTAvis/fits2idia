@@ -4,16 +4,37 @@
 #include "common.h"
 #include "Util.h"
 
-struct Stats;
-
 struct StatsCounter {
-    StatsCounter();
-    
-    void accumulateFinite(float val);
-    void accumulateFiniteLazy(float val);
-    void accumulateFiniteLazyFirst(float val);
-    void accumulateNonFinite();
-    void accumulateStats(const Stats& stats, hsize_t index);
+    StatsCounter() : minVal(std::numeric_limits<float>::max()), maxVal(-std::numeric_limits<float>::max()), sum(0), sumSq(0), nanCount(0) {
+    }
+        
+    void accumulateFinite(float val) {
+        minVal = fmin(minVal, val);
+        maxVal = fmax(maxVal, val);
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateFiniteLazy(float val) {
+        if (val < minVal) {
+            minVal = val;
+        } else if (val > maxVal) {
+            maxVal = val;
+        }
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateFiniteLazyFirst(float val) {
+        minVal = val;
+        maxVal = val;
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateNonFinite() {
+        nanCount++;
+    }
 
     float minVal;
     float maxVal;
@@ -34,12 +55,49 @@ struct Stats {
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
     
     // Basic stats
-    void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter);
     
+    void accumulateStatsToCounter(StatsCounter& counter, hsize_t index) {
+        if (std::isfinite(maxVals[index])) {
+            counter.sum += sums[index];
+            counter.sumSq += sumsSq[index];
+            counter.minVal = fmin(counter.minVal, minVals[index]);
+            counter.maxVal = fmax(counter.maxVal, maxVals[index]);
+        }
+        counter.nanCount += nanCounts[index];
+    }
+    
+    void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
+        if ((hsize_t)counter.nanCount == totalVals) {
+            minVals[index] = NAN;
+            maxVals[index] = NAN;
+        } else {
+            minVals[index] = counter.minVal;
+            maxVals[index] = counter.maxVal;
+        }
+        sums[index] = counter.sum;
+        sumsSq[index] = counter.sumSq;
+        nanCounts[index] = counter.nanCount;
+    }
+
     // Histograms
-    void accumulateHistogram(float val, double min, double range, hsize_t offset);
-    void accumulatePartialHistogram(float val, double min, double range, hsize_t offset);
-    void consolidatePartialHistogram();
+
+    void accumulateHistogram(float val, double min, double range, hsize_t offset) {
+        int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
+        histograms[offset * numBins + binIndex]++;
+    }
+
+    void accumulatePartialHistogram(float val, double min, double range, hsize_t offset) {
+        int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
+        partialHistograms[offset * numBins + binIndex]++;
+    }
+
+    void consolidatePartialHistogram() {
+        for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
+            for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
+                histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
+            }
+        }
+    }
     
     // Writing
     void write();

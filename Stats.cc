@@ -1,46 +1,5 @@
 #include "Stats.h"
 
-StatsCounter::StatsCounter() : minVal(std::numeric_limits<float>::max()), maxVal(-std::numeric_limits<float>::max()), sum(0), sumSq(0), nanCount(0) {
-}
-
-void StatsCounter::accumulateFinite(float val) {
-    minVal = fmin(minVal, val);
-    maxVal = fmax(maxVal, val);
-    sum += val;
-    sumSq += val * val;
-}
-
-void StatsCounter::accumulateFiniteLazy(float val) {
-    if (val < minVal) {
-        minVal = val;
-    } else if (val > maxVal) {
-        maxVal = val;
-    }
-    sum += val;
-    sumSq += val * val;
-}
-
-void StatsCounter::accumulateFiniteLazyFirst(float val) {
-    minVal = val;
-    maxVal = val;
-    sum += val;
-    sumSq += val * val;
-}
-
-void StatsCounter::accumulateNonFinite() {
-    nanCount++;
-}
-
-void StatsCounter::accumulateStats(const Stats& stats, hsize_t index) {
-    if (std::isfinite(stats.maxVals[index])) {
-        sum += stats.sums[index];
-        sumSq += stats.sumsSq[index];
-        minVal = fmin(minVal, stats.minVals[index]);
-        maxVal = fmax(maxVal, stats.maxVals[index]);
-    }
-    nanCount += stats.nanCounts[index];
-}
-
 Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : basicDatasetDims(basicDatasetDims), numBins(numBins), partialHistMultiplier(0) {}
 
 Stats::~Stats() {
@@ -94,37 +53,6 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
         histograms = new int64_t[statsSize * numBins];
         partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
         this->partialHistMultiplier = partialHistMultiplier;
-    }
-}
-
-void Stats::copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
-    if ((hsize_t)counter.nanCount == totalVals) {
-        minVals[index] = NAN;
-        maxVals[index] = NAN;
-    } else {
-        minVals[index] = counter.minVal;
-        maxVals[index] = counter.maxVal;
-    }
-    sums[index] = counter.sum;
-    sumsSq[index] = counter.sumSq;
-    nanCounts[index] = counter.nanCount;
-}
-
-void Stats::accumulateHistogram(float val, double min, double range, hsize_t offset) {
-    int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
-    histograms[offset * numBins + binIndex]++;
-}
-
-void Stats::accumulatePartialHistogram(float val, double min, double range, hsize_t offset) {
-    int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
-    partialHistograms[offset * numBins + binIndex]++;
-}
-
-void Stats::consolidatePartialHistogram() {
-    for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
-        for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
-            histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
-        }
     }
 }
 

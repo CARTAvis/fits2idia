@@ -121,7 +121,7 @@ void FastConverter::copyAndCalculate() {
 
             for (hsize_t i = 0; i < depth; i++) {
                 auto& indexXY = i;
-                counterXYZ.accumulateStats(statsXY, indexXY);
+                statsXY.accumulateStatsToCounter(counterXYZ, indexXY);
             }
 
             statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);

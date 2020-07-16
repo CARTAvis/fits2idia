@@ -117,7 +117,7 @@ void SlowConverter::copyAndCalculate() {
             // Accumulate XYZ statistics
             if (depth > 1) {
                 DEBUG(std::cout << " Accumulating XYZ stats..." << std::flush;);
-                counterXYZ.accumulateStats(statsXY, indexXY);
+                statsXY.accumulateStatsToCounter(counterXYZ, indexXY);
             }
             
             // Final mipmap calculation
