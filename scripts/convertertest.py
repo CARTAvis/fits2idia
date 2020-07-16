@@ -276,13 +276,21 @@ def timer_image_set():
     image_set = []
     
     # square images; no fancy parameters; one stokes
-    for x in (100, 500, 1000, 5000, 10000):
-        for z in (100, 500, 1000, 5000, 10000):
-                if x * x * z * 4 * 1e-9 > 1:
-                    continue # don't exceed 1GB(ish)
+    for x in (10, 50, 100, 500, 1000, 5000, 10000, 50000):
+        for z in (10, 50, 100, 500, 1000, 5000, 10000, 50000):
+                if x * x * z * 4 * 1e-9 > 2:
+                    continue # don't exceed 2GB(ish)
                 image_set.append(((x, x, z), {}))
     
     return image_set
+
+# for testing this script
+def dummy_image_set():
+    return [
+        ((10, 10, 20), {}),
+        ((20, 20, 40), {}),
+        ((40, 40, 80), {}),
+    ]
 
 def test_correctness(*image_sets):
     for image_set in image_sets:
@@ -303,19 +311,38 @@ def test_speed(*image_sets, **kwargs):
     
     times = defaultdict(lambda: defaultdict(list))
     
-    for i in range(5):
+    for i in range(kwargs.get("repeat", 5)):
         for executable in executables:
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
                     t = time("test.fits", executable=executable)
                     times[dims][executable].append(t)
-                
-    print("dims", *executables)
+    
+    winners = {}
+    xs = set()
+    zs = set()
     
     for dims in sorted(times):
         best = [np.min(times[dims][e]) for e in executables]
-        print(dims, *best)
+        x, _, z = dims
+        xs.add(x)
+        zs.add(z)
+        winners[(x, z)] = "A" if min(best) == best[0] else "B"
+    
+    xs = sorted(xs)
+    zs = sorted(zs)
+    
+    print('X \ Z', *zs, sep='\t')
+    
+    for x in xs:
+        print(x, end='\t')
+        for z in zs:
+            if (x, z) in winners:
+                print(winners[(x, z)], end='\t')
+            else:
+                print('-', end='\t')
+        print()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
@@ -325,9 +352,10 @@ if __name__ == "__main__":
     
     if args.time:
         if args.compare:
-            test_speed(timer_image_set(), compare=args.compare)
+            test_speed(timer_image_set(), compare=args.compare, repeat=10)
+            #test_speed(dummy_image_set(), compare=args.compare, repeat=2)
         else:
-            test_speed(timer_image_set())
+            test_speed(timer_image_set(), compare=args.compare)
     else:
         if args.compare:
             test_consistency(args.compare, small_nans_image_set(), large_image_set())
