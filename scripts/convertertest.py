@@ -352,8 +352,8 @@ if __name__ == "__main__":
     
     if args.time:
         if args.compare:
-            #test_speed(timer_image_set(), compare=args.compare)
-            test_speed(dummy_image_set(), compare=args.compare, repeat=2)
+            test_speed(timer_image_set(), compare=args.compare)
+            #test_speed(dummy_image_set(), compare=args.compare, repeat=2)
         else:
             test_speed(timer_image_set(), compare=args.compare)
     else:
