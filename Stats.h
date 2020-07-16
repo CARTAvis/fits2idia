@@ -19,7 +19,7 @@ struct Stats {
     void accumulateFiniteLazy(hsize_t index, float val);
     void accumulateFiniteLazyFirst(hsize_t index, float val);
     void accumulateNonFinite(hsize_t index);
-    void accumulateStats(Stats other, hsize_t index, hsize_t otherIndex);
+    void accumulateStats(const Stats& other, hsize_t index, hsize_t otherIndex);
     void finalMinMax(hsize_t index, hsize_t totalVals);
     
     // Histograms

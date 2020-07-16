@@ -69,7 +69,7 @@ void Stats::accumulateNonFinite(hsize_t index) {
     nanCounts[index]++;
 }
 
-void Stats::accumulateStats(Stats other, hsize_t index, hsize_t otherIndex) {
+void Stats::accumulateStats(const Stats& other, hsize_t index, hsize_t otherIndex) {
     if (std::isfinite(other.maxVals[otherIndex])) {
         sums[index] += other.sums[otherIndex];
         sumsSq[index] += other.sumsSq[otherIndex];

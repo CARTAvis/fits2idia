@@ -117,7 +117,7 @@ void FastConverter::copyAndCalculate() {
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
-            TIMER(timer.start("XYZ and Z statistics"););
+            TIMER(timer.start("XYZ statistics"););
 
             for (hsize_t i = 0; i < depth; i++) {
                 auto& indexXY = i;
@@ -129,6 +129,8 @@ void FastConverter::copyAndCalculate() {
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
+            TIMER(timer.start("Z statistics"););
+
             
             
             
@@ -300,10 +302,10 @@ void FastConverter::copyAndCalculate() {
         
         statsXY.resetBuffers();
         
-        TIMER(timer.start("XYZ and Z statistics"););
-        
         if (depth > 1) {
+            TIMER(timer.start("XYZ statistics"););
             statsXYZ.resetBuffers();
+            TIMER(timer.start("Z statistics"););
             statsZ.resetBuffers();
         }
                 
