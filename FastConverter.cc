@@ -115,7 +115,7 @@ void FastConverter::copyAndCalculate() {
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
-            TIMER(timer.start("XYZ and Z statistics"););
+            TIMER(timer.start("XYZ statistics"););
             
             StatsCounter counterXYZ;
 
@@ -129,6 +129,7 @@ void FastConverter::copyAndCalculate() {
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
+            TIMER(timer.start("Z statistics"););
             
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
@@ -288,11 +289,6 @@ void FastConverter::copyAndCalculate() {
             statsXYZ.write({1}, {currentStokes});
             statsZ.write({1, height, width}, {currentStokes, 0, 0});
         }
-        
-        // Clear the stats before the next Stokes
-        TIMER(timer.start(timerLabelXYRotation););
-                
-        TIMER(timer.start("XYZ and Z statistics"););
                 
         // Clear the mipmaps before the next Stokes
         TIMER(timer.start("Mipmaps"););
