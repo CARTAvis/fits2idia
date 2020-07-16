@@ -31,7 +31,7 @@ void StatsCounter::accumulateNonFinite() {
     nanCount++;
 }
 
-void StatsCounter::accumulateStats(Stats stats, hsize_t index) {
+void StatsCounter::accumulateStats(const Stats& stats, hsize_t index) {
     if (std::isfinite(stats.maxVals[index])) {
         sum += stats.sums[index];
         sumSq += stats.sumsSq[index];
@@ -41,7 +41,21 @@ void StatsCounter::accumulateStats(Stats stats, hsize_t index) {
     nanCount += stats.nanCounts[index];
 }
 
-Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : basicDatasetDims(basicDatasetDims), numBins(numBins) {}
+Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : basicDatasetDims(basicDatasetDims), numBins(numBins), partialHistMultiplier(0) {}
+
+Stats::~Stats() {
+    if (!fullBasicBufferDims.empty()) {
+        delete[] minVals;
+        delete[] maxVals;
+        delete[] sums;
+        delete[] sumsSq;
+        delete[] nanCounts;
+        if (numBins) {
+            delete[] histograms;
+            delete[] partialHistograms;
+        }
+    }
+}
 
 hsize_t Stats::size(std::vector<hsize_t> dims, hsize_t numBins, hsize_t partialHistMultiplier) {
     auto statsSize = product(dims);
@@ -70,15 +84,16 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     fullBasicBufferDims = dims;
     auto statsSize = product(dims);
     
-    minVals.resize(statsSize, std::numeric_limits<float>::max());
-    maxVals.resize(statsSize, -std::numeric_limits<float>::max());
-    sums.resize(statsSize);
-    sumsSq.resize(statsSize);
-    nanCounts.resize(statsSize);
+    minVals = new float[statsSize];
+    maxVals = new float[statsSize];
+    sums = new double[statsSize];
+    sumsSq = new double[statsSize];
+    nanCounts = new int64_t[statsSize];
     
     if (numBins) {
-        histograms.resize(statsSize * numBins);
-        partialHistograms.resize(statsSize * numBins * partialHistMultiplier);
+        histograms = new int64_t[statsSize * numBins];
+        partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
+        this->partialHistMultiplier = partialHistMultiplier;
     }
 }
 
@@ -106,8 +121,7 @@ void Stats::accumulatePartialHistogram(float val, double min, double range, hsiz
 }
 
 void Stats::consolidatePartialHistogram() {
-    auto multiplier = partialHistograms.size() / histograms.size();
-    for (hsize_t offset = 0; offset < multiplier; offset++) {
+    for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
         for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
             histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
         }
@@ -137,26 +151,13 @@ void Stats::write(const std::vector<hsize_t>& basicBufferDims, const std::vector
 }
     
 void Stats::writeBasic(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    writeHdf5Data(minDset, minVals.data(), basicBufferDims, count, start);
-    writeHdf5Data(maxDset, maxVals.data(), basicBufferDims, count, start);
-    writeHdf5Data(sumDset, sums.data(), basicBufferDims, count, start);
-    writeHdf5Data(ssqDset, sumsSq.data(), basicBufferDims, count, start);
-    writeHdf5Data(nanDset, nanCounts.data(), basicBufferDims, count, start);
+    writeHdf5Data(minDset, minVals, basicBufferDims, count, start);
+    writeHdf5Data(maxDset, maxVals, basicBufferDims, count, start);
+    writeHdf5Data(sumDset, sums, basicBufferDims, count, start);
+    writeHdf5Data(ssqDset, sumsSq, basicBufferDims, count, start);
+    writeHdf5Data(nanDset, nanCounts, basicBufferDims, count, start);
 }
 
 void Stats::writeHistogram(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    writeHdf5Data(histDset, histograms.data(), extend(basicBufferDims, {numBins}), count, start);
-}
-
-void Stats::resetBuffers() {
-    std::fill(minVals.begin(), minVals.end(), std::numeric_limits<float>::max());
-    std::fill(maxVals.begin(), maxVals.end(), -std::numeric_limits<float>::max());
-    std::fill(sums.begin(), sums.end(), 0);
-    std::fill(sumsSq.begin(), sumsSq.end(), 0);
-    std::fill(nanCounts.begin(), nanCounts.end(), 0);
-    
-    if (numBins) {
-        std::fill(histograms.begin(), histograms.end(), 0);
-        std::fill(partialHistograms.begin(), partialHistograms.end(), 0);
-    }
+    writeHdf5Data(histDset, histograms, extend(basicBufferDims, {numBins}), count, start);
 }

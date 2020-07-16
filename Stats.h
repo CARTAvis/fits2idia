@@ -13,7 +13,7 @@ struct StatsCounter {
     void accumulateFiniteLazy(float val);
     void accumulateFiniteLazyFirst(float val);
     void accumulateNonFinite();
-    void accumulateStats(Stats stats, hsize_t index);
+    void accumulateStats(const Stats& stats, hsize_t index);
 
     float minVal;
     float maxVal;
@@ -25,6 +25,7 @@ struct StatsCounter {
 struct Stats {
     Stats() {}
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
+    ~Stats();
     
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0);
     
@@ -47,8 +48,6 @@ struct Stats {
     void writeBasic(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
     void writeHistogram(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
     
-    void resetBuffers();
-    
     // Dataset dimensions
     std::vector<hsize_t> basicDatasetDims;
     hsize_t numBins;
@@ -65,16 +64,17 @@ struct Stats {
     // Buffer dimensions
     
     std::vector<hsize_t> fullBasicBufferDims;
+    hsize_t partialHistMultiplier;
 
     // Buffers
-    std::vector<float> minVals;
-    std::vector<float> maxVals;
-    std::vector<double> sums;
-    std::vector<double> sumsSq;
-    std::vector<int64_t> nanCounts;
+    float* minVals;
+    float* maxVals;
+    double* sums;
+    double* sumsSq;
+    int64_t* nanCounts;
     
-    std::vector<int64_t> histograms;
-    std::vector<int64_t> partialHistograms;
+    int64_t* histograms;
+    int64_t* partialHistograms;
 };
 
 #endif

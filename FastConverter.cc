@@ -291,15 +291,8 @@ void FastConverter::copyAndCalculate() {
         
         // Clear the stats before the next Stokes
         TIMER(timer.start(timerLabelXYRotation););
-        
-        statsXY.resetBuffers();
-        
+                
         TIMER(timer.start("XYZ and Z statistics"););
-        
-        if (depth > 1) {
-            statsXYZ.resetBuffers();
-            statsZ.resetBuffers();
-        }
                 
         // Clear the mipmaps before the next Stokes
         TIMER(timer.start("Mipmaps"););

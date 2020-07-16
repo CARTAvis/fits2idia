@@ -230,17 +230,6 @@ void SlowConverter::copyAndCalculate() {
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
-        
-        // Clear the stats before the next Stokes
-        TIMER(timer.start(timerLabelStatsMipmaps););
-        
-        statsXY.resetBuffers();
-        
-        TIMER(timer.start(timerLabelStatsMipmaps););
-        
-        if (depth > 1) {
-            statsXYZ.resetBuffers();
-        }
     
     } // end of stokes
     
@@ -335,9 +324,6 @@ void SlowConverter::copyAndCalculate() {
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
                     statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
-                    
-                    // reset Z statistics buffers before the next slice
-                    statsZ.resetBuffers();
                 }
             }
         }
