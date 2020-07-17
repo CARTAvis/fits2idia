@@ -27,6 +27,7 @@ struct MipMap {
             }
         }
     }
+    
     void write(hsize_t stokesOffset, hsize_t channelOffset);
     void resetBuffers();
     
@@ -55,7 +56,7 @@ struct MipMaps {
     
     void createDatasets(H5::Group group);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
-
+    
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
         for (auto& mipMap : mipMaps) {
             mipMap.accumulate(val, x, y, totalChannelOffset);

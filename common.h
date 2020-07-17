@@ -35,7 +35,8 @@
     #define TIMER(x) do {} while (0)
 #endif
 
-#define PROGRESS(x) if (progress) std::cout << x
+#define PROGRESS(msg) if (progress) std::cout << msg
+#define PROGRESS_DECIMATED(index, stride, msg) if (progress && !(index % stride)) std::cout << msg
 
 #define EMPTY_DIMS std::vector<hsize_t>()
 

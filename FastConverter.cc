@@ -35,6 +35,9 @@ void FastConverter::reportMemoryUsage() {
 }
 
 void FastConverter::copyAndCalculate() {
+    const hsize_t pixelProgressStride = std::max((hsize_t)1, (hsize_t)(width * height / 100));
+    const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+    
     TIMER(timer.start("Allocate"););
     
     // Process one stokes at a time
@@ -54,6 +57,7 @@ void FastConverter::copyAndCalculate() {
 
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
+        PROGRESS("Stokes " << currentStokes << ":" << std::endl);
 
         // Read data into memory space
         TIMER(timer.start("Read"););
@@ -67,12 +71,14 @@ void FastConverter::copyAndCalculate() {
         }
         
         DEBUG(std::cout << " " << timerLabelXYRotation <<  "..." << std::flush;);
+        PROGRESS("\tMain loop\t");
         TIMER(timer.start(timerLabelXYRotation););
 
         // First loop calculates stats for each XY slice and rotates the dataset
         
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
+            PROGRESS_DECIMATED(i, channelProgressStride, "|");
             StatsCounter counterXY;
             
             auto& indexXY = i;
@@ -115,6 +121,7 @@ void FastConverter::copyAndCalculate() {
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
+            PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start("XYZ statistics"););
             
             StatsCounter counterXYZ;
@@ -129,13 +136,14 @@ void FastConverter::copyAndCalculate() {
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
-            TIMER(timer.start("Z statistics"););
-            
+
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
                     StatsCounter counterZ;
+                    
                     auto indexZ = k + j * width;
+                    PROGRESS_DECIMATED(indexZ, pixelProgressStride, ".");
                     
                     for (hsize_t i = 0; i < depth; i++) {
                         auto sourceIndex = k + width * j + (height * width) * i;
@@ -152,11 +160,14 @@ void FastConverter::copyAndCalculate() {
                     statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                 }
             }
+
+            PROGRESS(std::endl);
         }
 
         // Third loop handles histograms
         
         DEBUG(std::cout << " Histograms..." << std::flush;);
+        PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
         
         double cubeMin;
@@ -173,6 +184,7 @@ void FastConverter::copyAndCalculate() {
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
+            PROGRESS_DECIMATED(i, channelProgressStride, "|");
             
             auto& indexXY = i;
             double chanMin = statsXY.minVals[indexXY];
@@ -220,14 +232,15 @@ void FastConverter::copyAndCalculate() {
             } // end of XY loop
         } // end of parallel Z loop
         
-        
-        
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             statsXYZ.consolidatePartialHistogram();
         }
+        
+        PROGRESS(std::endl);
 
         DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
+        PROGRESS("\tWrite data" << std::endl);
         TIMER(timer.start("Write"););
                     
         std::vector<hsize_t> memDims = {depth, height, width};
@@ -255,13 +268,12 @@ void FastConverter::copyAndCalculate() {
         
         // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
+        PROGRESS("\tMipmaps\t\t");
         TIMER(timer.start("Mipmaps"););
-        
-        
         
 #pragma omp parallel for
         for (hsize_t c = 0; c < depth; c++) {
-            
+            PROGRESS_DECIMATED(c, channelProgressStride, "|");
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
                     auto sourceIndex = x + width * y + (height * width) * c;
@@ -272,12 +284,13 @@ void FastConverter::copyAndCalculate() {
                 }
             }
         } // end of mipmap loop
-        
+        PROGRESS(std::endl);
         
         // Final mipmap calculation
         mipMaps.calculate();
         
         TIMER(timer.start("Write"););
+        PROGRESS("\tWrite stats & mipmaps" << std::endl);
         
         // Write the mipmaps
         mipMaps.write(currentStokes, 0);
