@@ -34,8 +34,9 @@ void SlowConverter::reportMemoryUsage() {
 }
 
 void SlowConverter::copyAndCalculate() {
-    const hsize_t pixelProgressStride = std::max((hsize_t)1, (hsize_t)(width * height / 100));
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+    hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
+    const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
@@ -64,7 +65,7 @@ void SlowConverter::copyAndCalculate() {
         PROGRESS("\tMain loop\t");
         
         for (hsize_t c = 0; c < depth; c++) {
-            PROGRESS_DECIMATED(c, channelProgressStride, ".");
+            PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
@@ -174,7 +175,7 @@ void SlowConverter::copyAndCalculate() {
         
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
-            PROGRESS_DECIMATED(c, channelProgressStride, ".");
+            PROGRESS_DECIMATED(c, channelProgressStride, "|");
             auto indexXY = c;
                             
             double chanMin = statsXY.minVals[indexXY];
@@ -277,13 +278,17 @@ void SlowConverter::copyAndCalculate() {
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
             PROGRESS("\tStokes " << s << "\t");
+            
+            hsize_t tileCount(0);
+            
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
+                    tileCount++;
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
                     
                     DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
-                    PROGRESS("|");
+                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
                     
                     // read tile slice
                     DEBUG(std::cout << " Reading main dataset..." << std::flush;);

@@ -78,7 +78,7 @@ void FastConverter::copyAndCalculate() {
         
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
-            PROGRESS_DECIMATED(i, channelProgressStride, ".");
+            PROGRESS_DECIMATED(i, channelProgressStride, "|");
             
             auto& indexXY = i;
             std::function<void(float)> accumulate;
@@ -183,7 +183,7 @@ void FastConverter::copyAndCalculate() {
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
-            PROGRESS_DECIMATED(i, channelProgressStride, ".");
+            PROGRESS_DECIMATED(i, channelProgressStride, "|");
             
             auto& indexXY = i;
             double chanMin = statsXY.minVals[indexXY];
@@ -272,7 +272,7 @@ void FastConverter::copyAndCalculate() {
         
 #pragma omp parallel for
         for (hsize_t c = 0; c < depth; c++) {
-            PROGRESS_DECIMATED(c, channelProgressStride, ".");
+            PROGRESS_DECIMATED(c, channelProgressStride, "|");
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
                     auto sourceIndex = x + width * y + (height * width) * c;
