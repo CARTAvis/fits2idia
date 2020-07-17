@@ -4,6 +4,13 @@
 
 MipMap::MipMap(const std::vector<hsize_t>& datasetDims, int mip) : datasetDims(datasetDims), mip(mip) {}
 
+MipMap::~MipMap() {
+    if (!bufferDims.empty()) {
+        delete[] vals;
+        delete[] count;
+    }
+}
+
 void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims) {
     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
     floatType.setOrder(H5T_ORDER_LE);
@@ -19,12 +26,17 @@ void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDim
 }
 
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
-    vals.resize(product(bufferDims));
-    count.resize(product(bufferDims));
+    bufferSize = product(bufferDims);
+    
+    vals = new double[bufferSize];
+    count = new int[bufferSize];
+    
+    resetBuffers();
     
     this->bufferDims = bufferDims;
     
     auto N = bufferDims.size();
+    
     width = bufferDims[N - 1];
     height = bufferDims[N - 2];
     depth = N > 2 ? bufferDims[N - 3] : 1;
@@ -36,12 +48,14 @@ void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
     std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
     std::vector<hsize_t> start = trimAxes({stokesOffset, channelOffset, 0, 0}, N);
     
-    writeHdf5Data(dataset, vals.data(), bufferDims, count, start);
+    writeHdf5Data(dataset, vals, bufferDims, count, start);
 }
 
 void MipMap::resetBuffers() {
-    std::fill(vals.begin(), vals.end(), 0);
-    std::fill(count.begin(), count.end(), 0);
+    for (hsize_t i = 0; i < bufferSize; i++) {
+        vals[i] = 0;
+        count[i] = 0;
+    }
 }
 
 // MipMaps

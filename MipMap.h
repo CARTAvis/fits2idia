@@ -8,6 +8,7 @@
 struct MipMap {
     MipMap() {};
     MipMap(const std::vector<hsize_t>& datasetDims, int mip);
+    ~MipMap();
     
     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
@@ -19,7 +20,7 @@ struct MipMap {
     }
 
     void calculate() {
-        for (hsize_t mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
+        for (hsize_t mipIndex = 0; mipIndex < bufferSize; mipIndex++) {
             if (count[mipIndex]) {
                 vals[mipIndex] /= count[mipIndex];
             } else {
@@ -37,13 +38,15 @@ struct MipMap {
     H5::DataSet dataset;
     
     std::vector<hsize_t> bufferDims;
+    hsize_t bufferSize;
+    
     hsize_t width;
     hsize_t height;
     hsize_t depth;
     hsize_t stokes;
     
-    std::vector<double> vals;
-    std::vector<int> count;
+    double* vals;
+    int* count;
 };
 
 // A set of mipmaps
