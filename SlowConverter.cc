@@ -34,6 +34,9 @@ void SlowConverter::reportMemoryUsage() {
 }
 
 void SlowConverter::copyAndCalculate() {
+    const hsize_t pixelProgressStride = std::max((hsize_t)1, (hsize_t)(width * height / 100));
+    const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+    
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
@@ -56,8 +59,12 @@ void SlowConverter::copyAndCalculate() {
     
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
+        PROGRESS("Stokes " << s << ":" << std::endl);
+        
+        PROGRESS("\tMain loop\t");
         
         for (hsize_t c = 0; c < depth; c++) {
+            PROGRESS_DECIMATED(c, channelProgressStride, ".");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
@@ -134,9 +141,12 @@ void SlowConverter::copyAndCalculate() {
             
         } // end of first channel loop
         
+        PROGRESS(std::endl);
+        
         if (depth > 1) {
             // Final correction of XYZ min and max
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
+            PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start(timerLabelStatsMipmaps););
             statsXYZ.finalMinMax(0, depth * height * width);
         }
@@ -145,6 +155,7 @@ void SlowConverter::copyAndCalculate() {
         // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
         // We do the second pass backwards to take advantage of caching
         DEBUG(std::cout << " Histograms..." << std::endl;);
+        PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
         
         double cubeMin;
@@ -163,6 +174,7 @@ void SlowConverter::copyAndCalculate() {
         
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
+            PROGRESS_DECIMATED(c, channelProgressStride, ".");
             auto indexXY = c;
                             
             double chanMin = statsXY.minVals[indexXY];
@@ -219,8 +231,11 @@ void SlowConverter::copyAndCalculate() {
             } // end of XY loop
         } // end of second channel loop (XY and XYZ histograms)
         
+        PROGRESS(std::endl);
+        
         // Write the statistics
         TIMER(timer.start("Write"););
+        PROGRESS("\tWrite stats & mipmaps" << std::endl);
                 
         statsXY.write({1, depth}, {s, 0});
         
@@ -250,6 +265,7 @@ void SlowConverter::copyAndCalculate() {
     // Swizzle
     if (depth > 1) {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
+        PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
         
         hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
@@ -260,12 +276,14 @@ void SlowConverter::copyAndCalculate() {
         
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
+            PROGRESS("\tStokes " << s << "\t");
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
                     
                     DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
+                    PROGRESS("|");
                     
                     // read tile slice
                     DEBUG(std::cout << " Reading main dataset..." << std::flush;);
@@ -331,6 +349,7 @@ void SlowConverter::copyAndCalculate() {
                     statsZ.resetBuffers();
                 }
             }
+            PROGRESS(std::endl);
         }
         
         TIMER(timer.start("Free"););
