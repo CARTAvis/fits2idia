@@ -78,6 +78,8 @@ struct Stats {
         sumsSq[index] = counter.sumSq;
         nanCounts[index] = counter.nanCount;
     }
+   
+    // Histograms
 
     // Histograms
     

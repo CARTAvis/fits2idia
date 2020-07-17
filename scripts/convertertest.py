@@ -211,8 +211,11 @@ def time(infile, slow=False, executable="hdf_convert"):
     print(*cmd)
     
     start = timer()
-    subprocess.run(cmd)
+    result = subprocess.run(cmd)
     end = timer()
+    
+    if result.returncode > 0:
+        return None
 
     subprocess.run(["rm", "test.fits", "TIMED.hdf5"])
         
@@ -272,17 +275,25 @@ def large_image_set():
                 image_set.append((dims, params))
     return image_set
 
-def timer_image_set():
-    image_set = []
-    
-    # square images; no fancy parameters; one stokes
-    for x in (10, 50, 100, 500, 1000, 5000, 10000, 50000):
-        for z in (10, 50, 100, 500, 1000, 5000, 10000, 50000):
-                if x * x * z * 4 * 1e-9 > 2:
-                    continue # don't exceed 2GB(ish)
-                image_set.append(((x, x, z), {}))
-    
-    return image_set
+def timer_image_set(slow=False):
+    if slow:
+        return [
+            ((500, 500, 1000), {}),
+            ((1000, 1000, 1000), {}),
+            ((5000, 5000, 500), {}),
+            ((5000, 5000, 1000), {}),
+            ((10000, 10000, 500), {}),
+            ((10000, 10000, 1000), {}),
+        ]
+    else:
+        return [
+            ((50, 50, 50000), {}),
+            ((100, 100, 50000), {}),
+            ((500, 500, 500), {}),
+            ((500, 500, 1000), {}),
+            ((1000, 1000, 500), {}),
+            ((5000, 5000, 10), {}),
+        ]
 
 # for testing this script
 def dummy_image_set():
@@ -317,32 +328,42 @@ def test_speed(*image_sets, **kwargs):
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
                     t = time("test.fits", slow=kwargs["slow"], executable=executable)
-                    times[dims][executable].append(t)
+                    if t is not None:
+                        times[dims][executable].append(t)
     
     winners = {}
     xs = set()
     zs = set()
     
+    print("Image dimensions", *executables, sep='\t')
+    print()
+    
     for dims in sorted(times):
         best = [np.min(times[dims][e]) for e in executables]
+        print(*dims, *best, sep='\t')
         x, _, z = dims
         xs.add(x)
         zs.add(z)
         winners[(x, z)] = "A" if min(best) == best[0] else "B"
     
-    xs = sorted(xs)
-    zs = sorted(zs)
-    
-    print('X \ Z', *zs, sep='\t')
-    
-    for x in xs:
-        print(x, end='\t')
-        for z in zs:
-            if (x, z) in winners:
-                print(winners[(x, z)], end='\t')
-            else:
-                print('-', end='\t')
+    if len(executables) > 1:
+        xs = sorted(xs)
+        zs = sorted(zs)
+        
+        for label, path in zip(["A", "B"], executables):
+            print("%s: %s" % (label, path))
         print()
+        
+        print('X \ Z', *zs, sep='\t')
+        
+        for x in xs:
+            print(x, end='\t')
+            for z in zs:
+                if (x, z) in winners:
+                    print(winners[(x, z)], end='\t')
+                else:
+                    print('-', end='\t')
+            print()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
@@ -353,10 +374,10 @@ if __name__ == "__main__":
     
     if args.time:
         if args.compare:
-            test_speed(timer_image_set(), compare=args.compare, repeat=10, slow=args.slow)
+            test_speed(timer_image_set(args.slow), compare=args.compare, repeat=3, slow=args.slow)
             #test_speed(dummy_image_set(), compare=args.compare, repeat=2, slow=args.slow)
         else:
-            test_speed(timer_image_set(), slow=args.slow)
+            test_speed(timer_image_set(args.slow), slow=args.slow)
             #test_speed(dummy_image_set(), slow=args.slow)
     else:
         if args.compare:
