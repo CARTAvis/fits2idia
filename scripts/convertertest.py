@@ -231,9 +231,9 @@ def test_converter_correctness(infile):
     
     subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
 
-def test_new_old_converter(infile, old_converter):
-    convert(infile, "OLD.hdf5", executable=old_converter)
-    convert(infile, "NEW.hdf5")
+def test_new_old_converter(infile, slow, old_converter):
+    convert(infile, "OLD.hdf5", slow=slow, executable=old_converter)
+    convert(infile, "NEW.hdf5", slow=slow)
     
     compare_hdf5_hdf5("OLD.hdf5", "NEW.hdf5", "Old and new versions differ.", True)
 
@@ -298,11 +298,11 @@ def test_correctness(*image_sets):
             make_image("test.fits", *dims, **params)
             test_converter_correctness("test.fits")
         
-def test_consistency(old_converter, *image_sets):
+def test_consistency(old_converter, *image_sets, **kwargs):
     for image_set in image_sets:
         for dims, params in image_set:
             make_image("test.fits", *dims, **params)
-            test_new_old_converter("test.fits", old_converter)
+            test_new_old_converter("test.fits", kwargs["slow"], old_converter)
             
 def test_speed(*image_sets, **kwargs):
     executables = ["hdf_convert"]
@@ -316,7 +316,7 @@ def test_speed(*image_sets, **kwargs):
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
-                    t = time("test.fits", executable=executable)
+                    t = time("test.fits", slow=kwargs["slow"], executable=executable)
                     times[dims][executable].append(t)
     
     winners = {}
@@ -348,16 +348,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
     parser.add_argument('-c', '--compare', help='A path to another converter executable to use as a reference. If a reference converter is given, random files converted using the fast algorithm with both converters will be compared to each other. If none is given, the output of the converter at the default path will be checked for correctness (THIS IS SLOW), and its fast and slow algorithm outputs will be compared for consistency.')
     parser.add_argument('-t', '--time', action='store_true', help='Time the converter(s) instead of checking the output.')
+    parser.add_argument('-s', '--slow', action='store_true', help='Use the slow converter versions when comparing converters or timing converter(s).')
     args = parser.parse_args()
     
     if args.time:
         if args.compare:
-            test_speed(timer_image_set(), compare=args.compare, repeat=10)
-            #test_speed(dummy_image_set(), compare=args.compare, repeat=2)
+            test_speed(timer_image_set(), compare=args.compare, repeat=10, slow=args.slow)
+            #test_speed(dummy_image_set(), compare=args.compare, repeat=2, slow=args.slow)
         else:
-            test_speed(timer_image_set(), compare=args.compare)
+            test_speed(timer_image_set(), slow=args.slow)
+            #test_speed(dummy_image_set(), slow=args.slow)
     else:
         if args.compare:
-            test_consistency(args.compare, small_nans_image_set(), large_image_set())
+            test_consistency(args.compare, small_nans_image_set(), large_image_set(), slow=args.slow)
         else:
             test_correctness(small_nans_image_set(), large_image_set())
