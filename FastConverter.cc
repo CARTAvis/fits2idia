@@ -181,6 +181,9 @@ void FastConverter::copyAndCalculate() {
             cubeRange = cubeMax - cubeMin;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
+        
+        statsXY.clearHistogramBuffers();
+        statsXYZ.clearHistogramBuffers();
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {

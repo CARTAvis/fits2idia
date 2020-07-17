@@ -174,6 +174,9 @@ void SlowConverter::copyAndCalculate() {
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
         
+        statsXY.clearHistogramBuffers();
+        statsXYZ.clearHistogramBuffers();
+        
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         
         for (hsize_t c = depth; c-- > 0; ) {

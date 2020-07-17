@@ -80,6 +80,8 @@ struct Stats {
     }
 
     // Histograms
+    
+    void clearHistogramBuffers();
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
