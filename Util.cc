@@ -38,7 +38,7 @@ std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mip) {
 }
 
 hsize_t product(const std::vector<hsize_t>& dims) {
-    return std::accumulate(begin(dims), end(dims), 1, std::multiplies<hsize_t>());
+    return std::accumulate(begin(dims), end(dims), (hsize_t)1, std::multiplies<hsize_t>());
 }
 
 bool useChunks(const std::vector<hsize_t>& dims) {    
