@@ -22,8 +22,6 @@ struct Stats {
         sums[index] += val;
         sumsSq[index] += val * val;
     }
-   
-    // Histograms
 
     void accumulateFiniteLazy(hsize_t index, float val) {
         if (val < minVals[index]) {
@@ -62,6 +60,8 @@ struct Stats {
             maxVals[index] = NAN;
         }
     }
+   
+    // Histograms
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
