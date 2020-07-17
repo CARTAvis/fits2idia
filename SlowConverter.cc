@@ -10,7 +10,7 @@ void SlowConverter::reportMemoryUsage() {
     sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
-        sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
         sizes["XYZ stats"] = Stats::size({}, numBins, depth);
         sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
     }
