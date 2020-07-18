@@ -260,6 +260,16 @@ def small_nans_image_set():
                 image_set.append((dims, params))
     return image_set
 
+def small_dims_image_set():
+    return [
+        ((400, 300, 20, 4), {}),
+        ((400, 300, 20, 3), {}),
+        ((400, 300, 20, 2), {}),
+        ((400, 300, 20, 1), {}),
+        ((400, 300, 20), {}),
+        ((400, 300), {}),
+    ]
+
 def large_image_set():
     image_set = []
     
@@ -294,6 +304,13 @@ def timer_image_set(slow=False):
             ((1000, 1000, 500), {}),
             ((5000, 5000, 10), {}),
         ]
+
+def wide_timer_image_set():
+    return [
+        ((1000, 1000, 10), {}),
+        ((5000, 5000, 10), {}),
+        ((10000, 10000, 10), {}),
+    ]
 
 # for testing this script
 def dummy_image_set():
@@ -376,11 +393,12 @@ if __name__ == "__main__":
         if args.compare:
             test_speed(timer_image_set(args.slow), compare=args.compare, repeat=3, slow=args.slow)
             #test_speed(dummy_image_set(), compare=args.compare, repeat=2, slow=args.slow)
+            #test_speed(wide_timer_image_set(), compare=args.compare, repeat=3, slow=args.slow)
         else:
             test_speed(timer_image_set(args.slow), slow=args.slow)
             #test_speed(dummy_image_set(), slow=args.slow)
     else:
         if args.compare:
-            test_consistency(args.compare, small_nans_image_set(), large_image_set(), slow=args.slow)
+            test_consistency(args.compare, small_dims_image_set(), small_nans_image_set(), large_image_set(), slow=args.slow)
         else:
-            test_correctness(small_nans_image_set(), large_image_set())
+            test_correctness(small_dims_image_set(), small_nans_image_set(), large_image_set())
