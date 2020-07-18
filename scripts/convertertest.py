@@ -270,11 +270,11 @@ def small_dims_image_set():
         ((400, 300), {}),
     ]
 
-def large_image_set():
+def large_mipmap_image_set():
     image_set = []
     
     # A few bigger images to test multiple mipmaps
-    for dims in ((600, 200), (600, 200, 10), (5000, 200, 10, 2)):
+    for dims in ((5000, 200), (5000, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
             for nan_density in (50,):
                 params = {
@@ -285,7 +285,7 @@ def large_image_set():
                 image_set.append((dims, params))
     return image_set
 
-def timer_image_set(slow=False):
+def large_timer_image_set(slow=False):
     if slow:
         return [
             ((500, 500, 1000), {}),
@@ -312,6 +312,13 @@ def wide_timer_image_set():
         ((10000, 10000, 10), {}),
     ]
 
+def deep_timer_image_set():
+    return [
+        ((10, 10, 500), {}),
+        ((10, 10, 1000), {}),
+        ((10, 10, 2000), {}),
+    ]
+
 # for testing this script
 def dummy_image_set():
     return [
@@ -319,6 +326,18 @@ def dummy_image_set():
         ((20, 20, 40), {}),
         ((40, 40, 80), {}),
     ]
+
+IMAGE_SETS = {
+    "SMALL_NANS": small_nans_image_set(),
+    "SMALL_DIMS": small_dims_image_set(),
+    "LARGE_MIPMAP": large_mipmap_image_set(),
+    "LARGE_TIMER_SQUARE_FAST": large_timer_image_set(slow=False),
+    "LARGE_TIMER_SQUARE_SLOW": large_timer_image_set(slow=True),
+    "WIDE_TIMER_SQUARE":  wide_timer_image_set(),
+    "DEEP_TIMER_SQUARE":  deep_timer_image_set(),
+    "DUMMY":  dummy_image_set(),
+
+}
 
 def test_correctness(*image_sets):
     for image_set in image_sets:
@@ -339,7 +358,7 @@ def test_speed(*image_sets, **kwargs):
     
     times = defaultdict(lambda: defaultdict(list))
     
-    for i in range(kwargs.get("repeat", 5)):
+    for i in range(kwargs["repeat"]):
         for executable in executables:
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
@@ -387,18 +406,19 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--compare', help='A path to another converter executable to use as a reference. If a reference converter is given, random files converted using the fast algorithm with both converters will be compared to each other. If none is given, the output of the converter at the default path will be checked for correctness (THIS IS SLOW), and its fast and slow algorithm outputs will be compared for consistency.')
     parser.add_argument('-t', '--time', action='store_true', help='Time the converter(s) instead of checking the output.')
     parser.add_argument('-s', '--slow', action='store_true', help='Use the slow converter versions when comparing converters or timing converter(s).')
+    parser.add_argument('-i', '--image-set', nargs="+", help="The image set(s) to use. Any combination of %s. By default a small dummy set is used." % ", ".join(repr(o) for o in IMAGE_SETS) , default=["DUMMY"])
+    parser.add_argument('-r', '--repeat', type=int, help="The number of times to repeat timed conversions (default: 3).", default=3)
     args = parser.parse_args()
+    
+    image_sets = (IMAGE_SETS[i] for i in args.image_set)
     
     if args.time:
         if args.compare:
-            test_speed(timer_image_set(args.slow), compare=args.compare, repeat=3, slow=args.slow)
-            #test_speed(dummy_image_set(), compare=args.compare, repeat=2, slow=args.slow)
-            #test_speed(wide_timer_image_set(), compare=args.compare, repeat=3, slow=args.slow)
+            test_speed(*image_sets, compare=args.compare, repeat=args.repeat, slow=args.slow)
         else:
-            test_speed(timer_image_set(args.slow), slow=args.slow)
-            #test_speed(dummy_image_set(), slow=args.slow)
+            test_speed(*image_sets, slow=args.slow)
     else:
         if args.compare:
-            test_consistency(args.compare, small_dims_image_set(), small_nans_image_set(), large_image_set(), slow=args.slow)
+            test_consistency(args.compare, *image_sets, slow=args.slow)
         else:
-            test_correctness(small_dims_image_set(), small_nans_image_set(), large_image_set())
+            test_correctness(*image_sets)
