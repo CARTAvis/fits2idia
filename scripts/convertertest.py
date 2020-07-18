@@ -264,7 +264,7 @@ def large_image_set():
     image_set = []
     
     # A few bigger images to test multiple mipmaps
-    for dims in ((600, 200), (600, 200, 10), (600, 200, 10, 2)):
+    for dims in ((600, 200), (600, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
             for nan_density in (50,):
                 params = {
