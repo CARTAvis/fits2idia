@@ -4,9 +4,49 @@
 #include "common.h"
 #include "Util.h"
 
+struct StatsCounter {
+    StatsCounter() : minVal(std::numeric_limits<float>::max()), maxVal(-std::numeric_limits<float>::max()), sum(0), sumSq(0), nanCount(0) {
+    }
+        
+    void accumulateFinite(float val) {
+        minVal = fmin(minVal, val);
+        maxVal = fmax(maxVal, val);
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateFiniteLazy(float val) {
+        if (val < minVal) {
+            minVal = val;
+        } else if (val > maxVal) {
+            maxVal = val;
+        }
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateFiniteLazyFirst(float val) {
+        minVal = val;
+        maxVal = val;
+        sum += val;
+        sumSq += val * val;
+    }
+
+    void accumulateNonFinite() {
+        nanCount++;
+    }
+
+    float minVal;
+    float maxVal;
+    double sum;
+    double sumSq;
+    int64_t nanCount;
+};
+
 struct Stats {
     Stats() {}
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
+    ~Stats();
     
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0);
     
@@ -15,53 +55,35 @@ struct Stats {
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
     
     // Basic stats
-
-    void accumulateFinite(hsize_t index, float val) {
-        minVals[index] = fmin(minVals[index], val);
-        maxVals[index] = fmax(maxVals[index], val);
-        sums[index] += val;
-        sumsSq[index] += val * val;
-    }
-
-    void accumulateFiniteLazy(hsize_t index, float val) {
-        if (val < minVals[index]) {
-            minVals[index] = val;
-        } else if (val > maxVals[index]) {
-            maxVals[index] = val;
+    
+    void accumulateStatsToCounter(StatsCounter& counter, hsize_t index) {
+        if (std::isfinite(maxVals[index])) {
+            counter.sum += sums[index];
+            counter.sumSq += sumsSq[index];
+            counter.minVal = fmin(counter.minVal, minVals[index]);
+            counter.maxVal = fmax(counter.maxVal, maxVals[index]);
         }
-        sums[index] += val;
-        sumsSq[index] += val * val;
+        counter.nanCount += nanCounts[index];
     }
-
-    void accumulateFiniteLazyFirst(hsize_t index, float val) {
-        minVals[index] = val;
-        maxVals[index] = val;
-        sums[index] += val;
-        sumsSq[index] += val * val;
-    }
-
-    void accumulateNonFinite(hsize_t index) {
-        nanCounts[index]++;
-    }
-
-    void accumulateStats(const Stats& other, hsize_t index, hsize_t otherIndex) {
-        if (std::isfinite(other.maxVals[otherIndex])) {
-            sums[index] += other.sums[otherIndex];
-            sumsSq[index] += other.sumsSq[otherIndex];
-            minVals[index] = fmin(minVals[index], other.minVals[otherIndex]);
-            maxVals[index] = fmax(maxVals[index], other.maxVals[otherIndex]);
-        }
-        nanCounts[index] += other.nanCounts[otherIndex];
-    }
-
-    void finalMinMax(hsize_t index, hsize_t totalVals) {
-        if ((hsize_t)nanCounts[index] == totalVals) {
+    
+    void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
+        if ((hsize_t)counter.nanCount == totalVals) {
             minVals[index] = NAN;
             maxVals[index] = NAN;
+        } else {
+            minVals[index] = counter.minVal;
+            maxVals[index] = counter.maxVal;
         }
+        sums[index] = counter.sum;
+        sumsSq[index] = counter.sumSq;
+        nanCounts[index] = counter.nanCount;
     }
    
     // Histograms
+
+    // Histograms
+    
+    void clearHistogramBuffers();
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
@@ -74,8 +96,7 @@ struct Stats {
     }
 
     void consolidatePartialHistogram() {
-        auto multiplier = partialHistograms.size() / histograms.size();
-        for (hsize_t offset = 0; offset < multiplier; offset++) {
+        for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
             for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
                 histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
             }
@@ -88,8 +109,6 @@ struct Stats {
     void write(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
     void writeBasic(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
     void writeHistogram(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-    
-    void resetBuffers();
     
     // Dataset dimensions
     std::vector<hsize_t> basicDatasetDims;
@@ -107,16 +126,17 @@ struct Stats {
     // Buffer dimensions
     
     std::vector<hsize_t> fullBasicBufferDims;
+    hsize_t partialHistMultiplier;
 
     // Buffers
-    std::vector<float> minVals;
-    std::vector<float> maxVals;
-    std::vector<double> sums;
-    std::vector<double> sumsSq;
-    std::vector<int64_t> nanCounts;
+    float* minVals;
+    float* maxVals;
+    double* sums;
+    double* sumsSq;
+    int64_t* nanCounts;
     
-    std::vector<int64_t> histograms;
-    std::vector<int64_t> partialHistograms;
+    int64_t* histograms;
+    int64_t* partialHistograms;
 };
 
 #endif

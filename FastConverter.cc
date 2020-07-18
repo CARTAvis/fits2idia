@@ -79,16 +79,17 @@ void FastConverter::copyAndCalculate() {
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
+            StatsCounter counterXY;
             
             auto& indexXY = i;
             std::function<void(float)> accumulate;
             
             auto lazy_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazy(indexXY, val);
+                counterXY.accumulateFiniteLazy(val);
             };
             
             auto first_accumulate = [&] (float val) {
-                statsXY.accumulateFiniteLazyFirst(indexXY, val);
+                counterXY.accumulateFiniteLazyFirst(val);
                 accumulate = lazy_accumulate;
             };
             
@@ -108,39 +109,39 @@ void FastConverter::copyAndCalculate() {
                     if (std::isfinite(val)) {
                         accumulate(val);
                     } else {
-                        statsXY.accumulateNonFinite(indexXY);
+                        counterXY.accumulateNonFinite();
                     }
                 }
             }
             
             // Final correction of XY min and max
-            statsXY.finalMinMax(indexXY, height * width);
+            statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
-        
-        PROGRESS(std::endl);
-        
+
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
             DEBUG(std::cout << " XYZ statistics..." << std::flush;);
             PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start("XYZ statistics"););
+            
+            StatsCounter counterXYZ;
 
             for (hsize_t i = 0; i < depth; i++) {
                 auto& indexXY = i;
-                statsXYZ.accumulateStats(statsXY, 0, indexXY);
+                statsXY.accumulateStatsToCounter(counterXYZ, indexXY);
             }
 
-            statsXYZ.finalMinMax(0, depth * height * width);
+            statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);
 
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
-            PROGRESS("\tZ stats\t\t");
-            TIMER(timer.start("Z statistics"););
 
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
+                    StatsCounter counterZ;
+                    
                     auto indexZ = k + j * width;
                     PROGRESS_DECIMATED(indexZ, pixelProgressStride, ".");
                     
@@ -150,16 +151,16 @@ void FastConverter::copyAndCalculate() {
 
                         if (std::isfinite(val)) {
                             // Not lazy; too much risk of encountering an ascending / descending sequence.
-                            statsZ.accumulateFinite(indexZ, val);
+                            counterZ.accumulateFinite(val);
                         } else {
-                            statsZ.accumulateNonFinite(indexZ);
+                            counterZ.accumulateNonFinite();
                         }
                     }
                     
-                    statsZ.finalMinMax(indexZ, depth);
+                    statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                 }
             }
-            
+
             PROGRESS(std::endl);
         }
 
@@ -180,6 +181,9 @@ void FastConverter::copyAndCalculate() {
             cubeRange = cubeMax - cubeMin;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
+        
+        statsXY.clearHistogramBuffers();
+        statsXYZ.clearHistogramBuffers();
 
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
@@ -300,18 +304,6 @@ void FastConverter::copyAndCalculate() {
         if (depth > 1) {
             statsXYZ.write({1}, {currentStokes});
             statsZ.write({1, height, width}, {currentStokes, 0, 0});
-        }
-        
-        // Clear the stats before the next Stokes
-        TIMER(timer.start(timerLabelXYRotation););
-        
-        statsXY.resetBuffers();
-        
-        if (depth > 1) {
-            TIMER(timer.start("XYZ statistics"););
-            statsXYZ.resetBuffers();
-            TIMER(timer.start("Z statistics"););
-            statsZ.resetBuffers();
         }
                 
         // Clear the mipmaps before the next Stokes

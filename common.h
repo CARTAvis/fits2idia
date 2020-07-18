@@ -12,6 +12,7 @@
 #include <memory>
 #include <numeric>
 #include <iterator>
+#include <cstring>
 
 #include <H5Cpp.h>
 #include <fitsio.h>
