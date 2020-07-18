@@ -58,12 +58,8 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
 
 void Stats::clearHistogramBuffers() {
     auto statsSize = product(fullBasicBufferDims);
-    for (hsize_t i = 0; i < statsSize * numBins; i++) {
-        histograms[i] = 0;
-        for (hsize_t j = 0; j < partialHistMultiplier; j++) {
-            partialHistograms[partialHistMultiplier * i + j] = 0;
-        }
-    }
+    memset(histograms, 0, sizeof(int64_t) * statsSize * numBins);
+    memset(partialHistograms, 0, sizeof(int64_t) * statsSize * numBins * partialHistMultiplier);
 }
 
 void Stats::write() {

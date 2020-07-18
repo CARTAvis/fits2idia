@@ -52,10 +52,8 @@ void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
 }
 
 void MipMap::resetBuffers() {
-    for (hsize_t i = 0; i < bufferSize; i++) {
-        vals[i] = 0;
-        count[i] = 0;
-    }
+    memset(vals, 0, sizeof(double) * bufferSize);
+    memset(count, 0, sizeof(int) * bufferSize);
 }
 
 // MipMaps

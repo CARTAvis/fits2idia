@@ -264,7 +264,7 @@ def large_image_set():
     image_set = []
     
     # A few bigger images to test multiple mipmaps
-    for dims in ((600, 200), (600, 200, 10), (600, 200, 10, 2)):
+    for dims in ((600, 200), (600, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
             for nan_density in (50,):
                 params = {
@@ -383,4 +383,5 @@ if __name__ == "__main__":
         if args.compare:
             test_consistency(args.compare, small_nans_image_set(), large_image_set(), slow=args.slow)
         else:
-            test_correctness(small_nans_image_set(), large_image_set())
+            #test_correctness(small_nans_image_set(), large_image_set())
+            test_correctness(large_image_set())
