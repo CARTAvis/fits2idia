@@ -37,7 +37,7 @@
 #endif
 
 #define PROGRESS(msg) if (progress) std::cout << msg
-#define PROGRESS_DECIMATED(index, stride, msg) if (progress && !(index % stride)) std::cout << msg
+#define PROGRESS_DECIMATED(index, stride, msg) if (progress && !(index % stride)) std::cout << msg << std::flush
 
 #define EMPTY_DIMS std::vector<hsize_t>()
 
