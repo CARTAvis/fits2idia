@@ -117,6 +117,8 @@ void FastConverter::copyAndCalculate() {
             // Final correction of XY min and max
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
+        
+        PROGRESS(std::endl);
 
         if (depth > 1) {
             // Consolidate XY stats into XYZ stats
@@ -136,6 +138,8 @@ void FastConverter::copyAndCalculate() {
             // Second loop calculates stats for each Z profile (i.e. average/min/max XY slices)
             
             DEBUG(std::cout << " Z statistics... " << std::flush;);
+            PROGRESS("\tZ stats\t\t");
+            TIMER(timer.start("Z statistics"););
 
 #pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
