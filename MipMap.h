@@ -2,29 +2,25 @@
 #define __MIPMAP_H
 
 #include "common.h"
+#include "Util.h"
 
+// A single mipmap
 struct MipMap {
-    MipMap() {}
+    MipMap() {};
+    MipMap(const std::vector<hsize_t>& datasetDims, int mip);
+    ~MipMap();
     
-    MipMap(int N, hsize_t width, hsize_t height, hsize_t depth, int divisor) :
-        N(N),
-        divisor(divisor),
-        channelSize(width * height),
-        width(width),
-        height(height),
-        depth(depth),
-        vals(depth * channelSize),
-        count(depth * channelSize)
-    {}
+    void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
+    void createBuffers(std::vector<hsize_t>& bufferDims);
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
-        hsize_t mipIndex = totalChannelOffset * channelSize + (y / divisor) * width + (x / divisor);
+        hsize_t mipIndex = totalChannelOffset * width * height + (y / mip) * width + (x / mip);
         vals[mipIndex] += val;
         count[mipIndex]++;
     }
-    
+
     void calculate() {
-        for (int mipIndex = 0; mipIndex < vals.size(); mipIndex++) {
+        for (hsize_t mipIndex = 0; mipIndex < bufferSize; mipIndex++) {
             if (count[mipIndex]) {
                 vals[mipIndex] /= count[mipIndex];
             } else {
@@ -33,90 +29,59 @@ struct MipMap {
         }
     }
     
-    void reset() {
-        std::fill(vals.begin(), vals.end(), 0);
-        std::fill(count.begin(), count.end(), 0);
-    }
+    void write(hsize_t stokesOffset, hsize_t channelOffset);
+    void resetBuffers();
     
-    bool useChunks() {
-        return TILE_SIZE <= width && TILE_SIZE <= height;
-    }
+    std::vector<hsize_t> datasetDims;
+    int mip;
     
-    void createDataset(H5::Group mipMapGroup, H5::FloatType floatType, Dims dims) {
-        std::vector<hsize_t> mipMapDims = dims.mipMapExtra;
-        mipMapDims.push_back(height);
-        mipMapDims.push_back(width);
-        
-        H5::DSetCreatPropList createPlist;
-        if (useChunks()) {
-            createPlist.setChunk(dims.N, dims.tileDims.data());
-        }
-        
-        auto dataSpace = H5::DataSpace(N, mipMapDims.data());
-        
-        std::ostringstream mipMapName;
-        mipMapName << "DATA_XY_" << divisor;
-        
-        dataSet = mipMapGroup.createDataSet(mipMapName.str().c_str(), floatType, dataSpace, createPlist);
-    }
+    H5::DataSet dataset;
     
-    void write(hsize_t stokesOffset, hsize_t channelOffset) {
-        std::vector<hsize_t> count;
-        std::vector<hsize_t> start;
-        
-        if (N == 2) {
-            count = {height, width};
-            start = {0, 0};
-        } else if (N == 3) {
-            count = {depth, height, width};
-            start = {channelOffset, 0, 0};
-        } else if (N == 4) {
-            count = {1, depth, height, width};
-            start = {stokesOffset, channelOffset, 0, 0};
-        }
-        
-        hsize_t memDims[] = {depth, height, width};
-        H5::DataSpace memspace(3, memDims);
-
-        auto sliceDataSpace = dataSet.getSpace();
-        sliceDataSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-
-        dataSet.write(vals.data(), H5::PredType::NATIVE_DOUBLE, memspace, sliceDataSpace);
-    }
+    std::vector<hsize_t> bufferDims;
+    hsize_t bufferSize;
     
-    static void initialise(std::vector<MipMap>& mipMaps, int N, hsize_t width, hsize_t height, hsize_t depth) {
-        int divisor = 1;
-        while (width > MIN_MIPMAP_SIZE || height > MIN_MIPMAP_SIZE) {
-            divisor *= 2;
-            width = (width + 1) / 2;
-            height = (height + 1) / 2;
-            mipMaps.push_back(MipMap(N, width, height, depth, divisor));
-        }
-    }
-    
-    static hsize_t size(hsize_t width, hsize_t height, hsize_t depth) {
-        hsize_t size = 0;
-        int divisor = 1;
-        while (width > MIN_MIPMAP_SIZE || height > MIN_MIPMAP_SIZE) {
-            divisor *= 2;
-            width = (width + 1) / 2;
-            height = (height + 1) / 2;
-            size += (sizeof(double) + sizeof(int)) * width * height * depth;
-        }
-        return size;
-    }
-    
-    int N;
-    int divisor;
-    hsize_t channelSize;
     hsize_t width;
     hsize_t height;
     hsize_t depth;
+    hsize_t stokes;
     
-    std::vector<double> vals;
-    std::vector<int> count;
+    double* vals;
+    int* count;
+};
+
+// A set of mipmaps
+struct MipMaps {
+    MipMaps() {};
+    MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& chunkDims);
     
-    H5::DataSet dataSet;
+    // We need the dataset dimensions to work out how many mipmaps we have
+    static hsize_t size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims);
+    
+    void createDatasets(H5::Group group);
+    void createBuffers(const std::vector<hsize_t>& standardBufferDims);
+    
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
+        for (auto& mipMap : mipMaps) {
+            mipMap.accumulate(val, x, y, totalChannelOffset);
+        }
+    }
+
+    void calculate() {
+        for (auto& mipMap : mipMaps) {
+            mipMap.calculate();
+        }
+    }
+    
+    // TODO if we ever want a tiled mipmap calculation
+    // we'll need to implement options to pass in custom buffer dims
+    // and additional x and y offsets
+    void write(hsize_t stokesOffset, hsize_t channelOffset);
+    void resetBuffers();
+    
+    std::vector<hsize_t> standardDims;
+    std::vector<hsize_t> chunkDims;
+    
+    std::vector<MipMap> mipMaps;
 };
 
 #endif

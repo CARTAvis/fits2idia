@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(hdf_convert)
 
+set(default_build_type "Release")
+
 set(CMAKE_CXX_STANDARD 11)
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
@@ -25,9 +27,12 @@ set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 set(SOURCE_FILES
     ${SOURCE_FILES}
     main.cc
+    Stats.cc
+    MipMap.cc
     Converter.cc
     FastConverter.cc
-    SlowConverter.cc)
+    SlowConverter.cc
+    Util.cc)
 
 add_executable(hdf_convert ${SOURCE_FILES})
 target_link_libraries(hdf_convert ${LINK_LIBS})

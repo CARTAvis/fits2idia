@@ -2,24 +2,26 @@
 #define __IMAGE_H
 
 #include "common.h"
-#include "Dims.h"
 #include "Stats.h"
 #include "MipMap.h"
 #include "Timer.h"
+#include "Util.h"
 
 class Converter {
 public:
     Converter() {}
-    Converter(std::string inputFileName, std::string outputFileName);
+    Converter(std::string inputFileName, std::string outputFileName, bool progress);
     ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
     void convert();
     virtual void reportMemoryUsage();
     
 protected:
-    void readFits(hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
     virtual void copyAndCalculate();
+    
+    Timer timer;
+    bool progress;
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -31,7 +33,6 @@ protected:
     H5::DataSet standardDataSet;
     H5::DataSet swizzledDataSet;
     
-    // Data objects
     float* standardCube;
     float* rotatedCube;
     
@@ -41,30 +42,25 @@ protected:
     Stats statsXYZ;
     
     // MipMaps
-    std::vector<MipMap> mipMaps;
-    
-    int status;
-    Timer timer;
+    MipMaps mipMaps;
     
     int N;
     hsize_t stokes, depth, height, width;
-    Dims dims;
-    int numBinsXY;
-    int numBinsXYZ;
-    std::string swizzledName;
+    hsize_t numBins;
     
-    // Types
-    H5::StrType strType;
-    H5::IntType boolType;
-    H5::FloatType doubleType;
-    H5::FloatType floatType;
-    H5::IntType intType;
+    // Dataset dimensions
+    
+    std::vector<hsize_t> standardDims;
+    std::vector<hsize_t> swizzledDims;
+    std::vector<hsize_t> tileDims;
+    
+    std::string swizzledName;
 };
 
 
 class FastConverter : public Converter {
 public:
-    FastConverter(std::string inputFileName, std::string outputFileName);
+    FastConverter(std::string inputFileName, std::string outputFileName, bool progress);
     void reportMemoryUsage() override;
     
 protected:
@@ -74,7 +70,7 @@ protected:
 
 class SlowConverter : public Converter {
 public:
-    SlowConverter(std::string inputFileName, std::string outputFileName);
+    SlowConverter(std::string inputFileName, std::string outputFileName, bool progress);
     void reportMemoryUsage() override;
     
 protected:
