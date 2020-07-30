@@ -1,4 +1,4 @@
-#include "HDF5Wrapper.h" 
+#include "HDF5Wrapper.h"
 
 void H5OutputFile::create(std::string filename, hid_t flag,
     int taskID, bool iparallelopen)
@@ -89,6 +89,263 @@ void H5OutputFile::close()
 #ifdef USEPARALLELHDF
     parallel_access_id = -1;
 #endif
+}
+
+std::vector<std::string> H5OutputFile::_tokenize(const std::string &s)
+{
+    std::string delims("/");
+    std::string::size_type lastPos = s.find_first_not_of(delims, 0);
+    std::string::size_type pos     = s.find_first_of(delims, lastPos);
+
+    std::vector<std::string> tokens;
+    while (std::string::npos != pos || std::string::npos != lastPos) {
+        tokens.push_back(s.substr(lastPos, pos - lastPos));
+        lastPos = s.find_first_not_of(delims, pos);
+        pos = s.find_first_of(delims, lastPos);
+    }
+    return tokens;
+}
+
+/// get an attribute going to list of hids
+void H5OutputFile::_get_attribute(std::vector<hid_t> &ids, const std::string attr_name)
+{
+    //can use H5Aexists as it is the C interface but how to access it?
+    auto exists = H5Aexists(ids.back(), attr_name.c_str());
+    if (exists == 0) {
+        throw std::invalid_argument(std::string("attribute not found ") + attr_name);
+    }
+    else if (exists < 0) {
+        throw std::runtime_error("Error on H5Aexists");
+    }
+    auto attr = H5Aopen(ids.back(), attr_name.c_str(), H5P_DEFAULT);
+    ids.push_back(attr);
+}
+/// get attributes parsing list of ids and vector of strings
+void H5OutputFile::_get_attribute(std::vector<hid_t> &ids, const std::vector<std::string> &parts)
+{
+    // This is the attribute name, so open it and store the id
+    if (parts.size() == 1) {
+        _get_attribute(ids, parts[0]);
+    }
+    else
+    {
+        //otherwise enter group and recursively call funciotn
+        H5O_info_t object_info;
+        hid_t newid;
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        if (object_info.type == H5O_TYPE_GROUP) {
+            newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
+        }
+        else if (object_info.type == H5O_TYPE_DATASET) {
+            newid = H5Dopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
+        }
+        ids.push_back(newid);
+        //get the substring
+        std::vector<std::string> subparts(parts.begin() + 1, parts.end());
+        //call function again
+        _get_attribute(ids, subparts);
+    }
+}
+
+/// get attribute in file, storing relevant ids in vector
+void H5OutputFile::get_attribute(std::vector<hid_t> &ids, const std::string &name)
+{
+    std::vector<std::string> parts = _tokenize(name);
+    ids.push_back(file_id);
+    _get_attribute(ids, parts);
+}
+
+/// get an attribute going to list of hids
+void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::string dset_name)
+{
+    auto dset_id = H5Dopen(ids.back(), dset_name.c_str(), H5P_DEFAULT);
+    if (dset_id < 0) {
+        throw std::invalid_argument(std::string("dataset not found ") + dset_name);
+    }
+    ids.push_back(dset_id);
+}
+/// get attributes parsing list of ids and vector of strings
+void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::vector<std::string> &parts)
+{
+    // This is the attribute name, so open it and store the id
+    if (parts.size() == 1) {
+        _get_dataset(ids, parts[0]);
+    }
+    else
+    {
+        //otherwise enter group and recursively call funciotn
+        H5O_info_t object_info;
+        hid_t newid;
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        if (object_info.type == H5O_TYPE_GROUP) {
+            newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
+        }
+        else if (object_info.type == H5O_TYPE_DATASET) {
+            throw std::runtime_error("Incorrect path to data set, encountered another data set in path");
+        }
+        ids.push_back(newid);
+        //get the substring
+        std::vector<std::string> subparts(parts.begin() + 1, parts.end());
+        //call function again
+        _get_dataset(ids, subparts);
+    }
+}
+
+/// get attribute in file, storing relevant ids in vector
+void H5OutputFile::get_dataset(std::vector<hid_t> &ids, const std::string &name)
+{
+    std::vector<std::string> parts = _tokenize(name);
+    ids.push_back(file_id);
+    _get_dataset(ids, parts);
+}
+
+
+/// close open hids stored in vector
+void H5OutputFile::close_hdf_ids(std::vector<hid_t> &ids)
+{
+    H5O_info_t object_info;
+    for (auto &id:ids)
+    {
+        H5Oget_info(id, &object_info);
+        if (object_info.type == H5O_TYPE_GROUP) {
+            H5Gclose(id);
+        }
+        else if (object_info.type == H5O_TYPE_GROUP) {
+            H5Dclose(id);
+        }
+    }
+}
+
+/// read a scalar attribute
+template<typename T> void H5OutputFile::_do_read(const hid_t &attr, const hid_t &type, T &val)
+{
+    if (hdf5_type(T{}) == H5T_C_S1)
+    {
+      _do_read_string(attr, type, val);
+    }
+    else {
+      H5Aread(attr, type, &val);
+    }
+}
+
+/// read a string attribute
+void H5OutputFile::_do_read_string(const hid_t &attr, const hid_t &type, std::string &val)
+{
+    std::vector<char> buf;
+    hid_t type_in_file = H5Aget_type(attr);
+    hid_t type_in_memory = H5Tcopy(type); // copy memory type because we'll need to modify it
+    size_t length = H5Tget_size(type_in_file); // get length of the string in the file
+    buf.resize(length+1); // resize buffer in memory, allowing for null terminator
+    H5Tset_size(type_in_memory, length+1); // tell HDF5 the length of the buffer in memory
+    H5Tset_strpad(type_in_memory, H5T_STR_NULLTERM); // specify that we want a null terminated string
+    H5Aread(attr, type_in_memory, buf.data());
+    H5Tclose(type_in_memory);
+    H5Tclose(type_in_file);
+    val=std::string(buf.data());
+}
+
+/// read a vector attribute
+template<typename T> void H5OutputFile::_do_read_v(const hid_t &attr, const hid_t &type, std::vector<T> &val)
+{
+    hid_t space = H5Aget_space (attr);
+    int npoints = H5Sget_simple_extent_npoints(space);
+    val.resize(npoints);
+    H5Aread(attr, type, val.data());
+    H5Sclose(space);
+}
+
+template<typename T> const T H5OutputFile::read_attribute(const std::string &name) {
+    std::string attr_name;
+    T val;
+    hid_t type;
+    H5O_info_t object_info;
+    std::vector <hid_t> ids;
+    //traverse the file to get to the attribute, storing the ids of the
+    //groups, data spaces, etc that have been opened.
+    get_attribute(ids, name);
+    //now reverse ids and load attribute
+    reverse(ids.begin(),ids.end());
+    //determine hdf5 type of the array in memory
+    type = hdf5_type(T{});
+    // read the data
+    _do_read<T>(ids[0], type, val);
+    H5Aclose(ids[0]);
+    ids.erase(ids.begin());
+    //now have hdf5 ids traversed to get to desired attribute so move along to close all
+    //based on their object type
+    close_hdf_ids(ids);
+    return val;
+}
+
+//read vector attribute
+template<typename T> const std::vector<T> H5OutputFile::read_attribute_v(const std::string &name) {
+    std::string attr_name;
+    std::vector<T> val;
+    hid_t type;
+    H5O_info_t object_info;
+    std::vector <hid_t> ids;
+    //traverse the file to get to the attribute, storing the ids of the
+    //groups, data spaces, etc that have been opened.
+    get_attribute(ids, name);
+    //now reverse ids and load attribute
+    reverse(ids.begin(),ids.end());
+    //determine hdf5 type of the array in memory
+    type = hdf5_type(T{});
+    // read the data
+    _do_read_v<T>(ids[0], type, val);
+    H5Aclose(ids[0]);
+    ids.erase(ids.begin());
+    //now have hdf5 ids traversed to get to desired attribute so move along to close all
+    //based on their object type
+    close_hdf_ids(ids);
+    return val;
+}
+
+
+bool H5OutputFile::exists_attribute(const std::string &parent, const std::string &name) {
+    std::string attr_name = parent+std::string("/")+name;
+    std::vector <hid_t> ids;
+    bool exists = true;
+    //groups, data spaces, etc that have been opened.
+    try {
+      get_attribute(ids, attr_name);
+    }
+    catch (const std::invalid_argument& ia)
+    {
+      exists = false;
+    }
+    //now reverse ids and load attribute
+    reverse(ids.begin(),ids.end());
+    //check if present
+    if (exists) {
+      H5Aclose(ids[0]);
+      ids.erase(ids.begin());
+    }
+    close_hdf_ids(ids);
+    return exists;
+}
+
+bool H5OutputFile::exists_dataset(const std::string &parent, const std::string &name) {
+    std::string dset_name = parent+std::string("/")+name;
+    std::vector <hid_t> ids;
+    bool exists = true;
+    //groups, data spaces, etc that have been opened.
+    try {
+      get_dataset(ids, dset_name);
+    }
+    catch (const std::invalid_argument& ia)
+    {
+      exists = false;
+    }
+    //now reverse ids and load attribute
+    reverse(ids.begin(),ids.end());
+    //check if present
+    if (exists) {
+      H5Dclose(ids[0]);
+      ids.erase(ids.begin());
+    }
+    close_hdf_ids(ids);
+    return exists;
 }
 
 /// Write a new 1D dataset. Data type of the new dataset is taken to be the type of

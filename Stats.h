@@ -8,7 +8,7 @@
 struct StatsCounter {
     StatsCounter() : minVal(std::numeric_limits<float>::max()), maxVal(-std::numeric_limits<float>::max()), sum(0), sumSq(0), nanCount(0) {
     }
-        
+
     void accumulateFinite(float val) {
         minVal = fmin(minVal, val);
         maxVal = fmax(maxVal, val);
@@ -48,16 +48,16 @@ struct Stats {
     Stats();
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
     ~Stats();
-    
+
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0);
-    
+
     // Setup
     //void createDatasets(H5::Group group, std::string name);
-    void createDatasets(H5Outputfile H5outputfile, hid_t gid, std::string name);
+    void createDatasets(H5OutputFile &H5outputfile, hid_t gid, std::string name);
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
-    
+
     // Basic stats
-    
+
     void accumulateStatsToCounter(StatsCounter& counter, hsize_t index) {
         if (std::isfinite(maxVals[index])) {
             counter.sum += sums[index];
@@ -67,7 +67,7 @@ struct Stats {
         }
         counter.nanCount += nanCounts[index];
     }
-    
+
     void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
         if ((hsize_t)counter.nanCount == totalVals) {
             minVals[index] = NAN;
@@ -80,11 +80,11 @@ struct Stats {
         sumsSq[index] = counter.sumSq;
         nanCounts[index] = counter.nanCount;
     }
-   
+
     // Histograms
 
     // Histograms
-    
+
     void clearHistogramBuffers();
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
@@ -104,38 +104,38 @@ struct Stats {
             }
         }
     }
-    
+
     // Writing
     void write();
     void write(const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
     void write(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
     void writeBasic(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
     void writeHistogram(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-    
+
     // Dataset dimensions
     std::vector<hsize_t> basicDatasetDims;
     hsize_t numBins;
-    
+
     // Datasets
 //     H5::DataSet minDset;
 //     H5::DataSet maxDset;
 //     H5::DataSet sumDset;
 //     H5::DataSet ssqDset;
 //     H5::DataSet nanDset;
-//     
+//
 //     H5::DataSet histDset;
-    
+
     hid_t minDset;
     hid_t maxDset;
     hid_t sumDset;
     hid_t ssqDset;
     hid_t nanDset;
-    
+
     hid_t histDset;
 
-    
+
     // Buffer dimensions
-    
+
     std::vector<hsize_t> fullBasicBufferDims;
     hsize_t partialHistMultiplier;
 
@@ -146,7 +146,7 @@ struct Stats {
     double* sums;
     double* sumsSq;
     int64_t* nanCounts;
-    
+
     int64_t* histograms;
     int64_t* partialHistograms;
 };
