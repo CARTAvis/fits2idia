@@ -145,95 +145,95 @@ void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize
 }
 
 // Only available in C++ API from 1.10.1
-bool hdf5Exists(H5::H5Location& location, const std::string& name) {
-    return H5Lexists(location.getId(), name.c_str(), H5P_DEFAULT) > 0;
-}
-
-void createHdf5Dataset(H5::DataSet& dataset, H5::Group group, std::string path, H5::DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims) {
-    auto splitPath = split(path, '/');
-    
-    auto name = splitPath.back();
-    splitPath.pop_back();
-    
-    for (auto& groupname : splitPath) {
-        if (!hdf5Exists(group, groupname)) {
-            group = group.createGroup(groupname);
-        } else {
-            group = group.openGroup(groupname);
-        }
-    }
-    
-    H5::DSetCreatPropList propList;
-    if (!chunkDims.empty()) {
-        propList.setChunk(chunkDims.size(), chunkDims.data());
-    }
-    
-    auto dataSpace = H5::DataSpace(dims.size(), dims.data());
-    dataset = group.createDataSet(name, dataType, dataSpace, propList);
-}
-
-void writeHdf5Attribute(H5::Group group, std::string name, std::string value) {
-    H5::StrType strType(H5::PredType::C_S1, 256);
-    H5::DataSpace dataSpace(H5S_SCALAR);
-    auto attribute = group.createAttribute(name, strType, dataSpace);
-    attribute.write(strType, value);
-}
-
-void writeHdf5Attribute(H5::Group group, std::string name, int64_t value) {
-    H5::IntType intType(H5::PredType::NATIVE_INT64);
-    intType.setOrder(H5T_ORDER_LE);
-    H5::DataSpace dataSpace(H5S_SCALAR);
-    auto attribute = group.createAttribute(name, intType, dataSpace);
-    attribute.write(intType, &value);
-}
-
-void writeHdf5Attribute(H5::Group group, std::string name, double value) {
-    H5::FloatType doubleType(H5::PredType::NATIVE_DOUBLE);
-    doubleType.setOrder(H5T_ORDER_LE);
-    H5::DataSpace dataSpace(H5S_SCALAR);
-    auto attribute = group.createAttribute(name, doubleType, dataSpace);
-    attribute.write(doubleType, &value);
-}
-
-void writeHdf5Attribute(H5::Group group, std::string name, bool value) {
-    H5::IntType boolType(H5::PredType::NATIVE_HBOOL);
-    H5::DataSpace dataSpace(H5S_SCALAR);
-    auto attribute = group.createAttribute(name, boolType, dataSpace);
-    attribute.write(boolType, &value);
-}
-
-void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    H5::DataSpace memSpace(dims.size(), dims.data());
-    auto fileSpace = dataset.getSpace();
-    if (!count.empty() && !start.empty()) {
-        fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-    }
-    dataset.write(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
-}
-
-void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    H5::DataSpace memSpace(dims.size(), dims.data());
-    auto fileSpace = dataset.getSpace();
-    if (!count.empty() && !start.empty()) {
-        fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-    }
-    dataset.write(data, H5::PredType::NATIVE_DOUBLE, memSpace, fileSpace);
-}
-
-void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    H5::DataSpace memSpace(dims.size(), dims.data());
-    auto fileSpace = dataset.getSpace();
-    if (!count.empty() && !start.empty()) {
-        fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-    }
-    dataset.write(data, H5::PredType::NATIVE_INT64, memSpace, fileSpace);
-}
-
-void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
-    H5::DataSpace memSpace(dims.size(), dims.data());
-    auto fileSpace = dataset.getSpace();
-    if (!count.empty() && !start.empty()) {
-        fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
-    }
-    dataset.read(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
-}
+// bool hdf5Exists(H5::H5Location& location, const std::string& name) {
+//     return H5Lexists(location.getId(), name.c_str(), H5P_DEFAULT) > 0;
+// }
+// 
+// void createHdf5Dataset(H5::DataSet& dataset, H5::Group group, std::string path, H5::DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims) {
+//     auto splitPath = split(path, '/');
+//     
+//     auto name = splitPath.back();
+//     splitPath.pop_back();
+//     
+//     for (auto& groupname : splitPath) {
+//         if (!hdf5Exists(group, groupname)) {
+//             group = group.createGroup(groupname);
+//         } else {
+//             group = group.openGroup(groupname);
+//         }
+//     }
+//     
+//     H5::DSetCreatPropList propList;
+//     if (!chunkDims.empty()) {
+//         propList.setChunk(chunkDims.size(), chunkDims.data());
+//     }
+//     
+//     auto dataSpace = H5::DataSpace(dims.size(), dims.data());
+//     dataset = group.createDataSet(name, dataType, dataSpace, propList);
+// }
+// 
+// void writeHdf5Attribute(H5::Group group, std::string name, std::string value) {
+//     H5::StrType strType(H5::PredType::C_S1, 256);
+//     H5::DataSpace dataSpace(H5S_SCALAR);
+//     auto attribute = group.createAttribute(name, strType, dataSpace);
+//     attribute.write(strType, value);
+// }
+// 
+// void writeHdf5Attribute(H5::Group group, std::string name, int64_t value) {
+//     H5::IntType intType(H5::PredType::NATIVE_INT64);
+//     intType.setOrder(H5T_ORDER_LE);
+//     H5::DataSpace dataSpace(H5S_SCALAR);
+//     auto attribute = group.createAttribute(name, intType, dataSpace);
+//     attribute.write(intType, &value);
+// }
+// 
+// void writeHdf5Attribute(H5::Group group, std::string name, double value) {
+//     H5::FloatType doubleType(H5::PredType::NATIVE_DOUBLE);
+//     doubleType.setOrder(H5T_ORDER_LE);
+//     H5::DataSpace dataSpace(H5S_SCALAR);
+//     auto attribute = group.createAttribute(name, doubleType, dataSpace);
+//     attribute.write(doubleType, &value);
+// }
+// 
+// void writeHdf5Attribute(H5::Group group, std::string name, bool value) {
+//     H5::IntType boolType(H5::PredType::NATIVE_HBOOL);
+//     H5::DataSpace dataSpace(H5S_SCALAR);
+//     auto attribute = group.createAttribute(name, boolType, dataSpace);
+//     attribute.write(boolType, &value);
+// }
+// 
+// void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+//     H5::DataSpace memSpace(dims.size(), dims.data());
+//     auto fileSpace = dataset.getSpace();
+//     if (!count.empty() && !start.empty()) {
+//         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+//     }
+//     dataset.write(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
+// }
+// 
+// void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+//     H5::DataSpace memSpace(dims.size(), dims.data());
+//     auto fileSpace = dataset.getSpace();
+//     if (!count.empty() && !start.empty()) {
+//         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+//     }
+//     dataset.write(data, H5::PredType::NATIVE_DOUBLE, memSpace, fileSpace);
+// }
+// 
+// void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+//     H5::DataSpace memSpace(dims.size(), dims.data());
+//     auto fileSpace = dataset.getSpace();
+//     if (!count.empty() && !start.empty()) {
+//         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+//     }
+//     dataset.write(data, H5::PredType::NATIVE_INT64, memSpace, fileSpace);
+// }
+// 
+// void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
+//     H5::DataSpace memSpace(dims.size(), dims.data());
+//     auto fileSpace = dataset.getSpace();
+//     if (!count.empty() && !start.empty()) {
+//         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
+//     }
+//     dataset.read(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
+// }

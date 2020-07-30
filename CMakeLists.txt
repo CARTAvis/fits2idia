@@ -1,9 +1,32 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.13)
 project(hdf_convert)
 
 set(default_build_type "Release")
 
 set(CMAKE_CXX_STANDARD 11)
+
+# macro(find_hdf5)
+# 	find_package(HDF5 REQUIRED COMPONENTS C)
+# 	if (HDF5_FOUND)
+# 		include_directories(${HDF5_INCLUDE_DIRS})
+# 		if (HDF5_IS_PARALLEL HDF5_CONVERTER_ALLOWPARALLELHDF5)
+# 			set (ENV{HDF5_PREFER_PARALLEL} true)
+# 			set(HDF5_CONVERTER_HAS_PARALLEL_HDF5 Yes)
+# 			list(APPEND HDF5_CONVERTER_DEFINES USEPARALLELHDF)
+# 			if (HDF5_VERSION VERSION_GREATER "1.10.0" AND HDF5_CONVERTER_ALLOWCOMPRESSIONPARALLELHDF5)
+# 				set(HDF5_CONVERTER_HAS_COMPRESSED_HDF5 Yes)
+# 				list(APPEND HDF5_CONVERTER_DEFINES USEHDFCOMPRESSION)
+# 				list(APPEND HDF5_CONVERTER_DEFINES PARALLELCOMPRESSIONACTIVE)
+# 			endif()
+# 		else()
+# 			if (HDF5_CONVERTER_ALLOWCOMPRESSIONHDF5)
+# 				set(HDF5_CONVERTER_HAS_COMPRESSED_HDF5 Yes)
+# 				list(APPEND HDF5_CONVERTER_DEFINES USEHDFCOMPRESSION)
+# 			endif()
+# 		endif()
+#     endif()
+# endmacro()
+
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
 find_package(OpenMP)
@@ -26,13 +49,15 @@ set(LINK_LIBS ${LINK_LIBS} cfitsio ${HDF5_LIBRARIES})
 
 set(SOURCE_FILES
     ${SOURCE_FILES}
-    main.cc
-    Stats.cc
-    MipMap.cc
+    HDF5Wrapper.cc
     Converter.cc
     FastConverter.cc
     SlowConverter.cc
-    Util.cc)
+    Stats.cc
+    MipMap.cc
+    Util.cc
+    main.cc
+    )
 
 add_executable(hdf_convert ${SOURCE_FILES})
 target_link_libraries(hdf_convert ${LINK_LIBS})

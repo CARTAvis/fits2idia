@@ -43,7 +43,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
 
 Converter::~Converter() {
     // TODO this is probably unnecessary; the file object destructor should close the file properly.
-    outputFile.close();
+    HDF5outputFile.close();
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress) {
@@ -67,28 +67,34 @@ void Converter::convert() {
     
     // TODO dataset variables should be local and passed into the copy function?
     
-    outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
-    outputGroup = outputFile.createGroup("0");
+//     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
+//     outputGroup = outputFile.createGroup("0");
+
+    H5outputfile.create(tempOutputFileName, H5F_ACC_TRUNC);
+    hid_t gid = H5outputfile.create_group("0");
     
     std::vector<hsize_t> chunkDims;
     if (useChunks(standardDims)) {
         chunkDims = tileDims;
     }
     
-    H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
-    floatType.setOrder(H5T_ORDER_LE);
-    createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, standardDims, chunkDims);
+//     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
+//     floatType.setOrder(H5T_ORDER_LE);
+//     createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, standardDims, chunkDims);
+//????
+
     
-    statsXY.createDatasets(outputGroup, "XY");
+    
+//     statsXY.createDatasets(outputGroup, "XY");
 
     if (depth > 1) {
-        statsXYZ.createDatasets(outputGroup, "XYZ");
-        statsZ.createDatasets(outputGroup, "Z");
+//         statsXYZ.createDatasets(outputGroup, "XYZ");
+//         statsZ.createDatasets(outputGroup, "Z");
         
-        auto swizzledGroup = outputGroup.createGroup("SwizzledData");
+//         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
-        outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
-        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
+//         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
+//         createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
     }
     
     mipMaps.createDatasets(outputGroup);
@@ -97,9 +103,9 @@ void Converter::convert() {
     
     TIMER(timer.start("Headers"););
     
-    writeHdf5Attribute(outputGroup, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
-    writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
-    writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
+//     writeHdf5Attribute(outputGroup, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
+//     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
+//     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
 
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);
@@ -123,16 +129,16 @@ void Converter::convert() {
                     // STRING
                     std::string attributeValueStr;
                     readFitsStringAttribute(inputFilePtr, attributeName, attributeValueStr);
-                    writeHdf5Attribute(outputGroup, attributeName, attributeValueStr);
+//                     writeHdf5Attribute(outputGroup, attributeName, attributeValueStr);
                 } else if (attributeValue == "T" || attributeValue == "F") {
                     // BOOLEAN
                     bool attributeValueBool = (attributeValue == "T");
-                    writeHdf5Attribute(outputGroup, attributeName, attributeValueBool);
+//                     writeHdf5Attribute(outputGroup, attributeName, attributeValueBool);
                 } else if (attributeValue.find('.') != std::string::npos) {
                     // TRY TO PARSE AS DOUBLE
                     try {
                         double attributeValueDouble = std::stod(attributeValue);
-                        writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
+//                         writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: could not parse attribute '" << attributeName << "' as a float." << std::endl;
                         parsingFailure = true;
@@ -140,7 +146,7 @@ void Converter::convert() {
                         // Special handling for subnormal numbers
                         long double attributeValueLongDouble = std::stold(attributeValue);
                         double attributeValueDouble = (double) attributeValueLongDouble;
-                        writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
+//                         writeHdf5Attribute(outputGroup, attributeName, attributeValueDouble);
                         
                         std::ostringstream ostream;
                         ostream.precision(13);
@@ -158,7 +164,7 @@ void Converter::convert() {
                     // TRY TO PARSE AS INTEGER
                     try {
                         int64_t attributeValueInt = std::stoi(attributeValue);
-                        writeHdf5Attribute(outputGroup, attributeName, attributeValueInt);
+//                         writeHdf5Attribute(outputGroup, attributeName, attributeValueInt);
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: could not parse attribute '" << attributeName << "' as an integer." << std::endl;
                         parsingFailure = true;
@@ -167,7 +173,7 @@ void Converter::convert() {
                 
                 if (parsingFailure) {
                     // FALL BACK TO STRING
-                    writeHdf5Attribute(outputGroup, attributeName, attributeValue);
+//                     writeHdf5Attribute(outputGroup, attributeName, attributeValue);
                 }
             }
         }

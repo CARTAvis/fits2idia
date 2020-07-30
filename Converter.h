@@ -6,6 +6,7 @@
 #include "MipMap.h"
 #include "Timer.h"
 #include "Util.h"
+#include "HDF5Wrapper.h"
 
 class Converter {
 public:
@@ -28,10 +29,12 @@ protected:
     fitsfile* inputFilePtr;
     
     // Main HDF5 objects
-    H5::H5File outputFile;
-    H5::Group outputGroup;
-    H5::DataSet standardDataSet;
-    H5::DataSet swizzledDataSet;
+//     H5::H5File outputFile;
+//     H5::Group outputGroup;
+//     H5::DataSet standardDataSet;
+//     H5::DataSet swizzledDataSet;
+
+    H5OutputFile H5outputfile;
     
     float* standardCube;
     float* rotatedCube;

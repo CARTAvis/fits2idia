@@ -10,7 +10,8 @@ struct MipMap {
     MipMap(const std::vector<hsize_t>& datasetDims, int mip);
     ~MipMap();
     
-    void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
+//     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
+    void createDataset(H5Outputfile h5outputfile, hid_t gid, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
@@ -57,7 +58,8 @@ struct MipMaps {
     // We need the dataset dimensions to work out how many mipmaps we have
     static hsize_t size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims);
     
-    void createDatasets(H5::Group group);
+//     void createDatasets(H5::Group group);
+    void createDatasets(H5OutputFile H5Outputfile, hid_t gid);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {

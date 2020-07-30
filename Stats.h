@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "Util.h"
+#include "HDF5Wrapper.h"
 
 struct StatsCounter {
     StatsCounter() : minVal(std::numeric_limits<float>::max()), maxVal(-std::numeric_limits<float>::max()), sum(0), sumSq(0), nanCount(0) {
@@ -44,14 +45,15 @@ struct StatsCounter {
 };
 
 struct Stats {
-    Stats() {}
+    Stats();
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
     ~Stats();
     
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0);
     
     // Setup
-    void createDatasets(H5::Group group, std::string name);
+    //void createDatasets(H5::Group group, std::string name);
+    void createDatasets(H5Outputfile H5outputfile, hid_t gid, std::string name);
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
     
     // Basic stats
@@ -115,13 +117,22 @@ struct Stats {
     hsize_t numBins;
     
     // Datasets
-    H5::DataSet minDset;
-    H5::DataSet maxDset;
-    H5::DataSet sumDset;
-    H5::DataSet ssqDset;
-    H5::DataSet nanDset;
+//     H5::DataSet minDset;
+//     H5::DataSet maxDset;
+//     H5::DataSet sumDset;
+//     H5::DataSet ssqDset;
+//     H5::DataSet nanDset;
+//     
+//     H5::DataSet histDset;
     
-    H5::DataSet histDset;
+    hid_t minDset;
+    hid_t maxDset;
+    hid_t sumDset;
+    hid_t ssqDset;
+    hid_t nanDset;
+    
+    hid_t histDset;
+
     
     // Buffer dimensions
     
@@ -129,6 +140,7 @@ struct Stats {
     hsize_t partialHistMultiplier;
 
     // Buffers
+    //why not change this to vectors ???
     float* minVals;
     float* maxVals;
     double* sums;

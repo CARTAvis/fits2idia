@@ -18,11 +18,13 @@ void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDim
     std::ostringstream mipMapName;
     mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
     
-    if (useChunks(datasetDims)) {
-        createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims, chunkDims);
-    } else {
-        createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims);
-    }
+//     if (useChunks(datasetDims)) {
+//         createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims, chunkDims);
+//     } else {
+//         createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims);
+//     }
+//???
+    
 }
 
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
@@ -88,11 +90,17 @@ hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vecto
     return size;
 }
 
-void MipMaps::createDatasets(H5::Group group) {
+// void MipMaps::createDatasets(H5::Group group) {
+//     for (auto& mipMap : mipMaps) {
+//         mipMap.createDataset(group, chunkDims);
+//     }
+//     
+// }
+
+void MipMaps::createDatasets(H5OutputFile H5outputfile , hid_t gid) {
     for (auto& mipMap : mipMaps) {
-        mipMap.createDataset(group, chunkDims);
+        mipMap.createDataset(H5outputfile, gid, chunkDims);
     }
-    
 }
 
 void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {

@@ -80,7 +80,7 @@ void SlowConverter::copyAndCalculate() {
             TIMER(timer.start("Write"););
             
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
-            writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+//             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
@@ -293,7 +293,7 @@ void SlowConverter::copyAndCalculate() {
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
                     
-                    readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+//                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
@@ -345,7 +345,7 @@ void SlowConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
-                    writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+//                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
                     
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics

@@ -29,17 +29,17 @@ void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::st
 void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
 
 // Only available in C++ API from 1.10.1
-bool hdf5Exists(H5::H5Location& location, const std::string& name);
-void createHdf5Dataset(H5::DataSet& dataset, H5::Group group, std::string path, H5::DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims = EMPTY_DIMS);
-void writeHdf5Attribute(H5::Group group, std::string name, std::string value);
-void writeHdf5Attribute(H5::Group group, std::string name, int64_t value);
-void writeHdf5Attribute(H5::Group group, std::string name, double value);
-void writeHdf5Attribute(H5::Group group, std::string name, bool value);
+// bool hdf5Exists(H5::H5Location& location, const std::string& name);
+// void createHdf5Dataset(H5::DataSet& dataset, H5::Group group, std::string path, H5::DataType dataType, std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims = EMPTY_DIMS);
+// void writeHdf5Attribute(H5::Group group, std::string name, std::string value);
+// void writeHdf5Attribute(H5::Group group, std::string name, int64_t value);
+// void writeHdf5Attribute(H5::Group group, std::string name, double value);
+// void writeHdf5Attribute(H5::Group group, std::string name, bool value);
 
-void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+// void writeHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+// void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+// void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
-void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+// void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
 #endif
