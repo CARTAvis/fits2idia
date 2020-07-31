@@ -56,14 +56,14 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
-// void Converter::copyAndCalculate() {
-//     // implemented in subclasses
-// }
-//
-// void Converter::reportMemoryUsage() {
-//     // implemented in subclasses
-// }
-//
+void Converter::copyAndCalculate() {
+    // implemented in subclasses
+}
+
+void Converter::reportMemoryUsage() {
+    // implemented in subclasses
+}
+
 
 void Converter::convert() {
     // CREATE OUTPUT FILE
@@ -74,7 +74,7 @@ void Converter::convert() {
 //     outputGroup = outputFile.createGroup("0");
 
     H5outputfile.create(tempOutputFileName, H5F_ACC_TRUNC);
-    std::string parentpath = "0";
+    std::string parentpath("0");
     hid_t gid = H5outputfile.create_group(parentpath);
 
     std::vector<hsize_t> chunkDims;
@@ -109,9 +109,9 @@ void Converter::convert() {
 //     writeHdf5Attribute(outputGroup, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
 //     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
 //     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
-    H5outputfile.write_attribute(parentpath, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
-    H5outputfile.write_attribute(parentpath, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
-    H5outputfile.write_attribute(parentpath, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
+    H5outputfile.write_attribute(parentpath, std::string("SCHEMA_VERSION"), std::string(SCHEMA_VERSION));
+    H5outputfile.write_attribute(parentpath, std::string("HDF5_CONVERTER"), std::string(HDF5_CONVERTER));
+    H5outputfile.write_attribute(parentpath, std::string("HDF5_CONVERTER_VERSION"), std::string(HDF5_CONVERTER_VERSION));
 
 
     int numAttributes;

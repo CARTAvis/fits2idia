@@ -11,46 +11,49 @@ MipMap::~MipMap() {
     }
 }
 
-void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims) {
-    H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
-    floatType.setOrder(H5T_ORDER_LE);
-    
-    std::ostringstream mipMapName;
-    mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
-    
+// void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims) {
+//     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
+//     floatType.setOrder(H5T_ORDER_LE);
+//
+//     std::ostringstream mipMapName;
+//     mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
+//
 //     if (useChunks(datasetDims)) {
 //         createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims, chunkDims);
 //     } else {
 //         createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims);
 //     }
-//???
-    
+//
+// }
+
+void MipMap::createDataset(H5OutputFile &H5outputfile, hid_t gid, const std::vector<hsize_t>& chunkDims) {
 }
 
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     bufferSize = product(bufferDims);
-    
+
     vals = new double[bufferSize];
     count = new int[bufferSize];
-    
+
     resetBuffers();
-    
+
     this->bufferDims = bufferDims;
-    
+
     auto N = bufferDims.size();
-    
+
     width = bufferDims[N - 1];
     height = bufferDims[N - 2];
     depth = N > 2 ? bufferDims[N - 3] : 1;
-    stokes = N > 3 ? bufferDims[N - 4] : 1;        
+    stokes = N > 3 ? bufferDims[N - 4] : 1;
 }
 
-void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
+void MipMap::write(H5OutputFile &H5outputfile, hsize_t stokesOffset, hsize_t channelOffset) {
     int N = datasetDims.size();
     std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
     std::vector<hsize_t> start = trimAxes({stokesOffset, channelOffset, 0, 0}, N);
-    
-    writeHdf5Data(dataset, vals, bufferDims, count, start);
+
+    // writeHdf5Data(dataset, vals, bufferDims, count, start);
+    //???
 }
 
 void MipMap::resetBuffers() {
@@ -64,7 +67,7 @@ MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& 
     auto dims = standardDims;
     int N = dims.size();
     int mip = 1;
-    
+
     // We keep going until we have a mipmap which fits entirely within the minimum size
     while (dims[N - 1] > MIN_MIPMAP_SIZE || dims[N - 2] > MIN_MIPMAP_SIZE) {
         mip *= 2;
@@ -79,7 +82,7 @@ hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vecto
     auto datasetDims = standardDims;
     auto bufferDims = standardBufferDims;
     int N = standardDims.size();
-    
+
     while (datasetDims[N - 1] > MIN_MIPMAP_SIZE || datasetDims[N - 2] > MIN_MIPMAP_SIZE) {
         mip *= 2;
         datasetDims = mipDims(datasetDims, 2);
@@ -94,10 +97,10 @@ hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vecto
 //     for (auto& mipMap : mipMaps) {
 //         mipMap.createDataset(group, chunkDims);
 //     }
-//     
+//
 // }
 
-void MipMaps::createDatasets(H5OutputFile H5outputfile , hid_t gid) {
+void MipMaps::createDatasets(H5OutputFile &H5outputfile, hid_t gid) {
     for (auto& mipMap : mipMaps) {
         mipMap.createDataset(H5outputfile, gid, chunkDims);
     }
@@ -110,9 +113,9 @@ void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {
     }
 }
 
-void MipMaps::write(hsize_t stokesOffset, hsize_t channelOffset) {
+void MipMaps::write(H5OutputFile &H5outputfile, hsize_t stokesOffset, hsize_t channelOffset) {
     for (auto& mipMap : mipMaps) {
-        mipMap.write(stokesOffset, channelOffset);
+        mipMap.write(H5outputfile, stokesOffset, channelOffset);
     }
 }
 

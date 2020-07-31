@@ -106,11 +106,11 @@ struct Stats {
     }
 
     // Writing
-    void write();
-    void write(const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
-    void write(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
-    void writeBasic(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
-    void writeHistogram(const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+    void write(H5OutputFile &H5outputfile);
+    void write(H5OutputFile &H5outputfile, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
+    void write(H5OutputFile &H5outputfile, const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start);
+    void writeBasic(H5OutputFile &H5outputfile, const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+    void writeHistogram(H5OutputFile &H5outputfile, const std::vector<hsize_t>& basicBufferDims = EMPTY_DIMS, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
     // Dataset dimensions
     std::vector<hsize_t> basicDatasetDims;

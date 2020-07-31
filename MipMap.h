@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "Util.h"
+#include "HDF5Wrapper.h"
 
 // A single mipmap
 struct MipMap {
@@ -30,13 +31,14 @@ struct MipMap {
         }
     }
 
-    void write(hsize_t stokesOffset, hsize_t channelOffset);
+    void write(H5OutputFile &H5outputfile, hsize_t stokesOffset, hsize_t channelOffset);
     void resetBuffers();
 
     std::vector<hsize_t> datasetDims;
     int mip;
 
-    H5::DataSet dataset;
+    // H5::DataSet dataset;
+    hid_t dset_id;
 
     std::vector<hsize_t> bufferDims;
     hsize_t bufferSize;
@@ -77,7 +79,7 @@ struct MipMaps {
     // TODO if we ever want a tiled mipmap calculation
     // we'll need to implement options to pass in custom buffer dims
     // and additional x and y offsets
-    void write(hsize_t stokesOffset, hsize_t channelOffset);
+    void write(H5OutputFile &H5outputfile, hsize_t stokesOffset, hsize_t channelOffset);
     void resetBuffers();
 
     std::vector<hsize_t> standardDims;

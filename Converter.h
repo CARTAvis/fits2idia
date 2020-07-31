@@ -2,15 +2,15 @@
 #define __IMAGE_H
 
 #include "common.h"
+#include "Util.h"
+#include "HDF5Wrapper.h"
 #include "Stats.h"
 #include "MipMap.h"
 #include "Timer.h"
-#include "Util.h"
-#include "HDF5Wrapper.h"
 
 class Converter {
 public:
-    Converter() {}
+    Converter(){};
     Converter(std::string inputFileName, std::string outputFileName, bool progress);
     ~Converter();
 
