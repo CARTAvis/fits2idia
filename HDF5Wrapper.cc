@@ -169,7 +169,7 @@ void H5OutputFile::get_attribute(std::vector<hid_t> &ids, const std::string &nam
     _get_attribute(ids, parts);
 }
 
-/// get an attribute going to list of hids
+/// get a dataset going to list of hids
 void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::string dset_name)
 {
     auto dset_id = H5Dopen(ids.back(), dset_name.c_str(), H5P_DEFAULT);
@@ -205,13 +205,75 @@ void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::vector<std::
     }
 }
 
-/// get attribute in file, storing relevant ids in vector
+/// get dataset in file, storing relevant ids in vector
 void H5OutputFile::get_dataset(std::vector<hid_t> &ids, const std::string &name)
 {
     auto parts = _tokenize(name);
     _get_dataset(ids, parts);
 }
 
+/// get a hdf5 id  going to list of hids
+void H5OutputFile::_get_hdf5_id(std::vector<hid_t> &ids, const std::string name)
+{
+    auto id = H5Oopen(ids.back(), name.c_str(), H5P_DEFAULT);
+    if (id < 0) {
+        throw std::invalid_argument(std::string("hdf5 object not found ") + name);
+    }
+    ids.push_back(id);
+}
+/// get hdf5 ids parsing list of ids and vector of strings
+void H5OutputFile::_get_hdf5_id(std::vector<hid_t> &ids, const std::vector<std::string> &parts)
+{
+    // This is the attribute name, so open it and store the id
+    if (parts.size() == 1) {
+        _get_hdf5_id(ids, parts[0]);
+    }
+    else
+    {
+        //otherwise enter group and recursively call funciotn
+        H5O_info_t object_info;
+        hid_t newid;
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        if (object_info.type == H5O_TYPE_GROUP) {
+            newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
+        }
+        else {
+            throw std::runtime_error("Incorrect path, encountered something other than group");
+        }
+        ids.push_back(newid);
+        //get the substring
+        std::vector<std::string> subparts(parts.begin() + 1, parts.end());
+        //call function again
+        _get_dataset(ids, subparts);
+    }
+}
+
+/// get hdf5 id in file, storing relevant ids in vector
+void H5OutputFile::get_hdf5_id(std::vector<hid_t> &ids, const std::string &name)
+{
+    auto parts = _tokenize(name);
+    _get_hdf5_id(ids, parts);
+}
+hid_t H5OutputFile::get_hdf5_id(std::string path, std::string name, bool closeids)
+{
+    return get_hdf5_id(path+name, closeids);
+}
+hid_t H5OutputFile::get_hdf5_id(std::string fullname, bool closeids)
+{
+    hid_t id;
+    std::vector<hid_t> ids;
+    try {
+        get_hdf5_id(ids, fullname);
+        id = ids.back();
+    }
+    catch (const std::invalid_argument& ia)
+    {
+        id = -1;
+    }
+    ///\todo question of whether I should close the objects that have been opened
+    if (closeids) close_hdf_ids(ids);
+    return id;
+}
 
 /// close open hids stored in vector
 void H5OutputFile::close_hdf_ids(std::vector<hid_t> &ids)
@@ -234,7 +296,7 @@ void H5OutputFile::close_path(std::string path)
 {
     auto parts = _tokenize(path);
     std::vector<hid_t> ids;
-    // _get_path(ids, parts);
+    _get_hdf5_id(ids, parts);
     close_hdf_ids(ids);
 }
 
@@ -302,7 +364,7 @@ bool H5OutputFile::exists_dataset(const std::string &parent, const std::string &
 
 /// create a dataset
 hid_t H5OutputFile::create_dataset(std::string path, hid_t type_id,
-  std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims,
+  std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims,
   bool flag_parallel, bool flag_hyperslab, bool flag_collective)
 {
 #ifdef USEPARALLELHDF
@@ -423,6 +485,24 @@ hid_t H5OutputFile::create_dataset(std::string path, hid_t type_id,
       H5P_DEFAULT, prop_id, H5P_DEFAULT);
     return dset_id;
 }
+
+/// create a link
+herr_t H5OutputFile::create_link(std::string orgname, std::string linkname, bool ihard) {
+    std::vector<hid_t> orgids;
+    hid_t orgid = get_hdf5_id(orgname);
+    hid_t linkid;
+
+    if (H5Lexists(linkid, linkname.c_str(), H5P_DEFAULT))  {
+        throw std::runtime_error("Link already exists, cannot create new link");
+    }
+    if (ihard) {
+        return H5Lcreate_hard(orgid, orgname.c_str(), linkid, linkname.c_str(), H5P_DEFAULT, H5P_DEFAULT);
+    }
+    else {
+        return H5Lcreate_soft(orgname.c_str(), linkid, linkname.c_str(), H5P_DEFAULT, H5P_DEFAULT);
+    }
+}
+
 
 void H5OutputFile::write_dataset(std::string name, hsize_t len, std::string data, bool flag_parallel, bool flag_collective)
 {

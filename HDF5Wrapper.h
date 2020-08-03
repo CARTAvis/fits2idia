@@ -65,10 +65,12 @@ protected:
 
     /// tokenize a path given an input string
     std::vector<std::string> _tokenize(const std::string &s);
+
     /// get attribute id
     void _get_attribute(std::vector<hid_t> &ids, const std::string attr_name);
     /// get attribute id from tokenized string
     void _get_attribute(std::vector<hid_t> &ids, const std::vector<std::string> &parts);
+
     /// wrapper for reading scalar
     template<typename T> void _do_read(const hid_t &attr, const hid_t &type, T &val)
     {
@@ -94,8 +96,13 @@ protected:
 
     /// get dataset id
     void _get_dataset(std::vector<hid_t> &ids, const std::string dset_name);
-    /// get attribute id from tokenized string
+    /// get dataset id from tokenized string
     void _get_dataset(std::vector<hid_t> &ids, const std::vector<std::string> &parts);
+
+    /// get dataset id
+    void _get_hdf5_id(std::vector<hid_t> &ids, const std::string name);
+    /// get attribute id from tokenized string
+    void _get_hdf5_id(std::vector<hid_t> &ids, const std::vector<std::string> &parts);
 
 public:
 
@@ -116,7 +123,11 @@ public:
 
     /// create a group
     hid_t create_group(std::string groupname) {
-        hid_t group_id = H5Gcreate(file_id, groupname.c_str(),
+        hid_t group_id;
+        if (H5Lexists(group_id, groupname.c_str(), H5P_DEFAULT)) {
+            throw std::invalid_argument("Group "+groupname+"already present, not creating group");
+        }
+        group_id = H5Gcreate(file_id, groupname.c_str(),
             H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         return group_id;
     }
@@ -180,14 +191,14 @@ public:
     }
 
     template <typename T> hid_t create_dataset(std::string path, T&data,
-      std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims,
+      std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
       bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
     {
       return create_dataset(path, hdf5_type(T{}), dims, chunkDims,
       flag_parallel, flag_hyperslab, flag_collective);
     }
     hid_t create_dataset(std::string path, hid_t datatype,
-      std::vector<hsize_t> dims, const std::vector<hsize_t>& chunkDims,
+      std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
       bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true);
     /// close data set
     herr_t close_dataset(hid_t dset_id) {
@@ -195,6 +206,14 @@ public:
         return status;
     }
 
+    /// find and hdf5 object
+    void get_hdf5_id(std::vector<hid_t> &ids, const std::string &name);
+    hid_t get_hdf5_id(std::string path, std::string name, bool closeids = true);
+    hid_t get_hdf5_id(std::string fullname, bool closeids = true);
+
+    /// create a link
+    ///\todo could provide HDF 1.12 viable APIs for external links handling of VOL
+    herr_t create_link(std::string orgname, std::string linkname, bool ihard = true);
 
     //write 1D data sets of string or input data with defined data type
     void write_dataset(std::string name, hsize_t len, std::string data,

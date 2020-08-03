@@ -74,7 +74,7 @@ void Converter::convert() {
 //     outputGroup = outputFile.createGroup("0");
 
     H5outputfile.create(tempOutputFileName, H5F_ACC_TRUNC);
-    std::string parentpath("0");
+    std::string parentpath("0/");
     hid_t gid = H5outputfile.create_group(parentpath);
 
     std::vector<hsize_t> chunkDims;
@@ -85,19 +85,24 @@ void Converter::convert() {
 //     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
 //     floatType.setOrder(H5T_ORDER_LE);
 //     createHdf5Dataset(standardDataSet, outputGroup, "DATA", floatType, standardDims, chunkDims);
-//????
-
-
+    H5outputfile.create_dataset(parentpath, H5T_NATIVE_FLOAT,
+        standardDims, chunkDims);
 //     statsXY.createDatasets(outputGroup, "XY");
+    statsXY.createDatasets(H5outputfile, parentpath, "XY");
 
     if (depth > 1) {
 //         statsXYZ.createDatasets(outputGroup, "XYZ");
 //         statsZ.createDatasets(outputGroup, "Z");
-
 //         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
 //         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
 //         createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
+        statsXYZ.createDatasets(H5outputfile, parentpath, "XYZ");
+        statsZ.createDatasets(H5outputfile, parentpath, "Z");
+        auto swizzledGroup = H5outputfile.create_group("0/SwizzledData");
+        // We use this name in papers because it sounds more serious. :)
+        H5outputfile.create_link("0/SwizzledData", "0/PermutedData");
+        // ??? H5outputfile.create_dataset();
     }
 
     /// mipMaps.createDatasets(outputGroup);

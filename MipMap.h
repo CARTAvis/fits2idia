@@ -12,7 +12,7 @@ struct MipMap {
     ~MipMap();
 
 //     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
-    void createDataset(H5OutputFile &h5outputfile, hid_t gid, const std::vector<hsize_t>& chunkDims);
+    void createDataset(H5OutputFile &h5outputfile, std::string path, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
 
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
@@ -61,7 +61,7 @@ struct MipMaps {
     static hsize_t size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims);
 
 //     void createDatasets(H5::Group group);
-    void createDatasets(H5OutputFile &H5outputfile, hid_t gid);
+    void createDatasets(H5OutputFile &H5outputfile, std::string path);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
 
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {

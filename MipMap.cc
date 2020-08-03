@@ -26,7 +26,15 @@ MipMap::~MipMap() {
 //
 // }
 
-void MipMap::createDataset(H5OutputFile &H5outputfile, hid_t gid, const std::vector<hsize_t>& chunkDims) {
+void MipMap::createDataset(H5OutputFile &H5outputfile, std::string path, const std::vector<hsize_t>& chunkDims) {
+
+    std::ostringstream mipMapName;
+    mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
+    if (useChunks(datasetDims)) {
+        H5outputfile.create_dataset(path+mipMapName.str(), H5T_NATIVE_FLOAT, datasetDims, chunkDims);
+    } else {
+        H5outputfile.create_dataset(path+mipMapName.str(), H5T_NATIVE_FLOAT, datasetDims);
+    }
 }
 
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
@@ -100,9 +108,9 @@ hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vecto
 //
 // }
 
-void MipMaps::createDatasets(H5OutputFile &H5outputfile, hid_t gid) {
+void MipMaps::createDatasets(H5OutputFile &H5outputfile, std::string path) {
     for (auto& mipMap : mipMaps) {
-        mipMap.createDataset(H5outputfile, gid, chunkDims);
+        mipMap.createDataset(H5outputfile, path, chunkDims);
     }
 }
 

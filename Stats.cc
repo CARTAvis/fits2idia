@@ -25,7 +25,7 @@ hsize_t Stats::size(std::vector<hsize_t> dims, hsize_t numBins, hsize_t partialH
 }
 
 // void Stats::createDatasets(H5::Group group, std::string name) {
-void Stats::createDatasets(H5OutputFile &H5outputfile, hid_t gid, std::string name) {
+void Stats::createDatasets(H5OutputFile &H5outputfile, std::string pathname, std::string name) {
 
 //     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
 //     floatType.setOrder(H5T_ORDER_LE);
@@ -43,6 +43,13 @@ void Stats::createDatasets(H5OutputFile &H5outputfile, hid_t gid, std::string na
 //         createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}));
 //     }
 
+    for (auto i = 0; i<datasetnames.size(); i++) {
+        datasetids.push_back(H5outputfile.create_dataset(pathname + "/Statistics/" + name + datasetnames[i], datasettypes[i], basicDatasetDims));
+    }
+    if (numBins) {
+        datasetids.push_back(H5outputfile.create_dataset(pathname + "/Statistics/" + name + "/HISTOGRAMS",
+        H5T_NATIVE_LLONG, extend(basicDatasetDims, {numBins})));
+    }
 }
 
 void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier) {

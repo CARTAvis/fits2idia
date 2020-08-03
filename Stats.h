@@ -53,7 +53,7 @@ struct Stats {
 
     // Setup
     //void createDatasets(H5::Group group, std::string name);
-    void createDatasets(H5OutputFile &H5outputfile, hid_t gid, std::string name);
+    void createDatasets(H5OutputFile &H5outputfile, std::string path, std::string name);
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
 
     // Basic stats
@@ -117,13 +117,9 @@ struct Stats {
     hsize_t numBins;
 
     // Datasets
-//     H5::DataSet minDset;
-//     H5::DataSet maxDset;
-//     H5::DataSet sumDset;
-//     H5::DataSet ssqDset;
-//     H5::DataSet nanDset;
-//
-//     H5::DataSet histDset;
+    std::vector<std::string> datasetnames = {"/MIN", "/MAX", "/SUM", "/SUM_SQ", "/NAN_COUNT"};
+    std::vector<hid_t> datasettypes = {H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_LLONG};
+    std::vector<hid_t> datasetids;
 
     hid_t minDset;
     hid_t maxDset;
