@@ -255,6 +255,8 @@ void FastConverter::copyAndCalculate() {
         std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
         std::vector<hsize_t> start = trimAxes({currentStokes, 0, 0, 0}, N);
 //         writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+        H5outputfile.write_dataset_nd(standardDataSet,
+            memDims, standardCube, count, start);
 
         if (depth > 1) {
             // This all technically worked if we reused the standard filespace and memspace
@@ -262,6 +264,8 @@ void FastConverter::copyAndCalculate() {
             std::vector<hsize_t> swizzledCount = trimAxes({1, width, height, depth}, N);
             std::vector<hsize_t> swizzledMemDims = {width, height, depth};
 //             writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);
+            H5outputfile.write_dataset_nd(swizzledDataSet,
+                swizzledMemDims, rotatedCube, swizzledCount, start);
         }
 
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.

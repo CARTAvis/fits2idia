@@ -35,6 +35,8 @@ protected:
 //     H5::Group outputGroup;
 //     H5::DataSet standardDataSet;
 //     H5::DataSet swizzledDataSet;
+    std::string standardDataSet, swizzledDataSet;
+    hid_t standardDataSetID, swizzledDataSetID;
 
 
     float* standardCube;

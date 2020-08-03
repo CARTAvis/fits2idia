@@ -29,7 +29,7 @@ MipMap::~MipMap() {
 void MipMap::createDataset(H5OutputFile &H5outputfile, std::string path, const std::vector<hsize_t>& chunkDims) {
 
     std::ostringstream mipMapName;
-    mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
+    mipMapName << "/MipMaps/DATA/DATA_XY_" << mip;
     if (useChunks(datasetDims)) {
         H5outputfile.create_dataset(path+mipMapName.str(), H5T_NATIVE_FLOAT, datasetDims, chunkDims);
     } else {
@@ -61,7 +61,8 @@ void MipMap::write(H5OutputFile &H5outputfile, hsize_t stokesOffset, hsize_t cha
     std::vector<hsize_t> start = trimAxes({stokesOffset, channelOffset, 0, 0}, N);
 
     // writeHdf5Data(dataset, vals, bufferDims, count, start);
-    //???
+    ///\todo need to figure out if I use the name or the id from which I get the name
+    // H5outputfile.write_dataset_nd(dataset, bufferDims, vals, count, start);
 }
 
 void MipMap::resetBuffers() {

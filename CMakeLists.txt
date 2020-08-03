@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 project(hdf_convert)
 
 set(default_build_type "Release")
-
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 set(CMAKE_CXX_STANDARD 11)
 
 # macro(find_hdf5)
@@ -27,6 +27,7 @@ set(CMAKE_CXX_STANDARD 11)
 #     endif()
 # endmacro()
 
+FIND_PACKAGE(CFITSIO 3.000 REQUIRED)
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS C)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
 find_package(OpenMP)
