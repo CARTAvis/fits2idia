@@ -64,6 +64,10 @@ protected:
 };
 
 
+/*!
+Converter class that makes use of OpenMP parallelisation
+when calculating statistics and histograms
+*/
 class FastConverter : public Converter {
 public:
     FastConverter(std::string inputFileName, std::string outputFileName, bool progress);
@@ -74,6 +78,10 @@ protected:
 };
 
 
+/*!
+Converter class that has minimmal memory overhead but has no parallelisation 
+when calculating statistics and histograms
+*/
 class SlowConverter : public Converter {
 public:
     SlowConverter(std::string inputFileName, std::string outputFileName, bool progress);

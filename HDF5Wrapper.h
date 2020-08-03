@@ -251,6 +251,10 @@ public:
     ///\todo could provide HDF 1.12 viable APIs for external links handling of VOL
     herr_t create_link(std::string orgname, std::string linkname, bool ihard = true);
 
+    ///\todo add a write_to_dataset which is similar to below but provide the
+    ///dataset id. Does require storing the data space somewhere to close
+    ///it elsewhere.
+
     /// write 1D data sets of string or input data with defined data type
     /// without hyperslab selection
     void write_dataset(std::string name, hsize_t len, std::string data,
