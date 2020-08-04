@@ -44,9 +44,11 @@ void Stats::createDatasets(H5OutputFile &H5outputfile, std::string pathname, std
 //     }
 
     for (auto i = 0; i<datasetnames.size(); i++) {
+        datasetfullnames.push_back(pathname + "/Statistics/" + name + datasetnames[i]);
         datasetids.push_back(H5outputfile.create_dataset(pathname + "/Statistics/" + name + datasetnames[i], datasettypes[i], basicDatasetDims));
     }
     if (numBins) {
+        datasetfullnames.push_back(pathname + "/Statistics/" + name + "/HISTOGRAMS");
         datasetids.push_back(H5outputfile.create_dataset(pathname + "/Statistics/" + name + "/HISTOGRAMS",
         H5T_NATIVE_LLONG, extend(basicDatasetDims, {numBins})));
     }
@@ -105,24 +107,15 @@ void Stats::writeBasic(H5OutputFile &H5outputfile, const std::vector<hsize_t>& b
 //     writeHdf5Data(sumDset, sums, basicBufferDims, count, start);
 //     writeHdf5Data(ssqDset, sumsSq, basicBufferDims, count, start);
 //     writeHdf5Data(nanDset, nanCounts, basicBufferDims, count, start);
-
-
-    ///\todo need to get the names of the ids stored in datasetids
-    ///or do I just use the names?
-    //???
-    for (auto i = 0; i<datasetnames.size(); i++) {
-        // get_name(datasetids);
-    }
-    // H5outputfile.write_dataset_nd(minDset, basicBufferDims, minVals, count, start);
-    // H5outputfile.write_dataset_nd(maxDset, basicBufferDims, maxVals, count, start);
-    // H5outputfile.write_dataset_nd(sumDset, basicBufferDims, sums, count, start);
-    // H5outputfile.write_dataset_nd(ssqDset, basicBufferDims, sumsSq, count, start);
-    // H5outputfile.write_dataset_nd(nanDset, basicBufferDims, nanCounts, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[0], basicBufferDims, minVals, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[1], basicBufferDims, maxVals, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[2], basicBufferDims, sums, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[3], basicBufferDims, sumsSq, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[4], basicBufferDims, nanCounts, count, start);
 }
 
 // void Stats::writeHistogram(const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
 void Stats::writeHistogram(H5OutputFile &H5outputfile, const std::vector<hsize_t>& basicBufferDims, const std::vector<hsize_t>& count, const std::vector<hsize_t>& start) {
 //     writeHdf5Data(histDset, histograms, extend(basicBufferDims, {numBins}), count, start);
-    //???
-    // H5outputfile.write_dataset_nd(histDset, extend(basicBufferDims, {numBins}, histograms, count, start);
+    H5outputfile.write_to_dataset_nd(datasetfullnames[5], extend(basicBufferDims, {numBins}), histograms, count, start);
 }

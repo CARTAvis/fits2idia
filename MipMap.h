@@ -39,6 +39,7 @@ struct MipMap {
 
     // H5::DataSet dataset;
     hid_t dset_id;
+    std::string datasetfullpath;
 
     std::vector<hsize_t> bufferDims;
     hsize_t bufferSize;

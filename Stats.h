@@ -120,6 +120,7 @@ struct Stats {
     std::vector<std::string> datasetnames = {"/MIN", "/MAX", "/SUM", "/SUM_SQ", "/NAN_COUNT"};
     std::vector<hid_t> datasettypes = {H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_FLOAT, H5T_NATIVE_LLONG};
     std::vector<hid_t> datasetids;
+    std::vector<std::string> datasetfullnames;
 
     hid_t minDset;
     hid_t maxDset;
