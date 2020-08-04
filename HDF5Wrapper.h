@@ -39,6 +39,8 @@ static inline hid_t hdf5_type_from_string(std::string dummy)
 #endif
 
 ///\name HDF class to manage writing information
+///\todo need to look into whether one can open directly with
+/// full path or must open groups explicitly. If latter, updated needed
 class H5OutputFile
 {
 
@@ -65,6 +67,7 @@ protected:
 
     /// parallel hdf5 mpi routines
 #ifdef USEPARALLELHDF
+    /// set the offset points for the mpi write
     void _set_mpi_dim_and_offset(MPI_Comm &comm,
         hsize_t rank, std::vector<hsize_t> &dims,
         std::vector<unsigned long long> &dims_single,
@@ -73,11 +76,12 @@ protected:
         std::vector<unsigned long long> &mpi_hdf_dims_tot,
         bool flag_parallel, bool flag_first_dim_parallel
     );
+    /// select the hyperslab
     void _set_mpi_hyperslab(hid_t &dspace_id, hid_t &memspace_id,
         hsize_t rank, std::vector<hsize_t> &dims,
         std::vector<unsigned long long> &mpi_hdf_dims_tot,
         bool flag_parallel, bool flag_hyperslab);
-
+    /// and set the transfer properties
     void _set_mpi_dataset_properties(hid_t &prop_id, bool &iwrite,
         hid_t &dspace_id, hid_t &memspace_id,
         hsize_t rank, std::vector<hsize_t> dims, std::vector<hsize_t> dims_offset,
@@ -286,12 +290,54 @@ public:
 
     /// writes to an existing data set
     /// with a hyperslab selection defined by count, start
-    void write_to_dataset(std::string name, hsize_t len, std::string data,
-        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
-        bool flag_parallel = true, bool flag_collective = true);
     void write_to_dataset(std::string name, hsize_t len, void *data,
         const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
         hid_t memtype_id=-1, hid_t filetype_id=-1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true);
+    template <typename T> void write_to_dataset(std::string name, hsize_t len, T *data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        hid_t memtype_id = -1, hid_t filetype_id=-1,
+        bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        int rank = 1;
+        hsize_t dims[1] = {len};
+        if (memtype_id == -1) memtype_id = hdf5_type(T{});
+        write_to_dataset_nd(name, rank, dims, data,
+            count, start,
+            memtype_id, filetype_id, flag_parallel, flag_hyperslab, flag_collective);
+    }
+    /// Write a multidimensional dataset. Data type of the new dataset is taken to be the type of
+    /// the input data if not explicitly specified with the filetype_id parameter.
+    template <typename T> void write_to_dataset_nd(std::string name, int rank, hsize_t *dims, T *data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        hid_t memtype_id = -1, hid_t filetype_id = -1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        memtype_id = hdf5_type(T{});
+        write_to_dataset_nd(name, rank, dims, (void*)data,
+            count, start,
+            memtype_id, filetype_id,
+            flag_parallel, flag_first_dim_parallel,
+            flag_hyperslab, flag_collective);
+    }
+    template <typename T> void write_to_dataset_nd(std::string name, std::vector<hsize_t> dims, T *data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        hid_t memtype_id = -1, hid_t filetype_id = -1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        write_to_dataset_nd(name, dims.size(), dims.data(),(void*)data,
+            count, start,
+            memtype_id, filetype_id,
+            flag_parallel, flag_first_dim_parallel,
+            flag_hyperslab, flag_collective);
+    }
+    //write dataset with hyperslab selection
+    void write_to_dataset_nd(std::string name, int rank, hsize_t *dims, void *data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        hid_t memtype_id = -1, hid_t filetype_id=-1,
         bool flag_parallel = true, bool flag_first_dim_parallel = true,
         bool flag_hyperslab = true, bool flag_collective = true);
 

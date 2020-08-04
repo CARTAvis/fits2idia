@@ -139,24 +139,16 @@ void H5OutputFile::_set_mpi_hyperslab(hid_t &dspace_id, hid_t &memspace_id,
     std::vector<unsigned long long> &mpi_hdf_dims_tot,
     bool flag_parallel, bool flag_hyperslab)
 {
-    if (flag_parallel) {
-        //then all threads create the same simple data space
-        //so the meta information is the same
-        if (flag_hyperslab) {
-            //allocate the space spanning the file
-            dspace_id = H5Screate_simple(rank, mpi_hdf_dims_tot.data(), NULL);
-            //allocate the memory space
-            //allocate the memory space
-            memspace_id = H5Screate_simple(rank, dims.data(), NULL);
-        }
-        else {
-            dspace_id = H5Screate_simple(rank, dims.data(), NULL);
-            memspace_id = dspace_id;
-        }
-    }
-    else {
-        dspace_id = H5Screate_simple(rank, dims.data(), NULL);
-        memspace_id = dspace_id;
+    // if parallel and doing parallel hyperslab
+    // then all threads create the same simple data space
+    // so the meta information is the same
+    if (flag_parallel && flag_hyperslab) {
+        /// close the previously allocated space
+        H5Sclose(dspace_id);
+        //allocate the space spanning the file
+        dspace_id = H5Screate_simple(rank, mpi_hdf_dims_tot.data(), NULL);
+        //allocate the memory space
+        memspace_id = H5Screate_simple(rank, dims.data(), NULL);
     }
 }
 
@@ -571,11 +563,10 @@ hid_t H5OutputFile::create_dataset(std::string fullname, hid_t type_id,
 
     // Create the dataspace where the data space might have a hyperslab
     // selection if using parallel hdf5
-#ifdef USEPARALLELHDF
-    _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
-#else
     dspace_id = H5Screate_simple(rank, dims.data(), NULL);
     memspace_id = dspace_id;
+#ifdef USEPARALLELHDF
+    _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
 #endif
 
 #ifdef USEHDFCOMPRESSION
@@ -613,6 +604,42 @@ herr_t H5OutputFile::create_link(std::string orgname, std::string linkname, bool
     }
 }
 
+//write dataset with hyperslab selection
+void H5OutputFile::write_to_dataset_nd(std::string name, int rank, hsize_t *dims, void *data,
+    const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+    hid_t memtype_id, hid_t filetype_id,
+    bool flag_parallel, bool flag_first_dim_parallel,
+    bool flag_hyperslab, bool flag_collective)
+{
+    // Open the dataset
+    hid_t dspace_id, memspace_id, prop_id, dset_id;
+    herr_t ret;
+    prop_id = H5P_DEFAULT;
+    dset_id = H5Dopen(file_id, name.c_str(), H5P_DEFAULT);
+    // create simple data space
+    dspace_id = H5Screate_simple(rank, dims, NULL);
+    memspace_id = dspace_id;
+    ///\todo question of what to do in the case of a parallel data space regarding hyperslab
+    ///selection
+#ifdef USEPARALLELHDF
+#endif
+    ///\todo question regarding compression since data set could be created with
+    /// some compression or chunked data. Should already be set
+
+    //set local hyperslab
+    if (!count.empty() && !start.empty()) {
+        ret = H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET, start.data(), NULL, count.data(), NULL);
+        if (ret < 0) io_error(std::string("Failed to select hyperslab for writing to dataset: ")+name);
+    }
+    ///\todo question of what to do in terms of mpi transfer properties
+#ifdef USEPARALLELHDF
+#endif
+    ret = H5Dwrite(dset_id, memtype_id, memspace_id, dspace_id, prop_id, data);
+    if (ret < 0) io_error(std::string("Failed to write dataset: ")+name);
+    if (memspace_id != dspace_id) H5Sclose(memspace_id);
+    H5Sclose(dspace_id);
+    H5Dclose(dset_id);
+}
 
 void H5OutputFile::write_dataset(std::string name, hsize_t len, std::string data,
     bool flag_parallel, bool flag_collective)
@@ -685,6 +712,7 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
 #endif
     hid_t dspace_id, dset_id, prop_id, memspace_id, ret;
     std::vector<hsize_t> chunks(rank);
+    prop_id = H5P_DEFAULT;
     // Get HDF5 data type of the array in memory
     if (memtype_id == -1) {
         throw std::runtime_error("Write data set called with void pointer but no type info passed.");
@@ -707,11 +735,10 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
     );
 
     // Create the dataspace
-#ifdef USEPARALLELHDF
-    _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
-#else
     dspace_id = H5Screate_simple(rank, dims, NULL);
     memspace_id = dspace_id;
+#ifdef USEPARALLELHDF
+    _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
 #endif
 
     // Dataset creation properties
@@ -799,12 +826,11 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
         flag_parallel
     );
 
+    dspace_id = H5Screate_simple(rank, dims, NULL);
+    memspace_id = dspace_id;
     // Create the dataspace
 // #ifdef USEPARALLELHDF
 //     _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
-// #else
-//     dspace_id = H5Screate_simple(rank, dims, NULL);
-//     memspace_id = dspace_id;
 // #endif
 
     // Dataset creation properties
