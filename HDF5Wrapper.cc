@@ -291,7 +291,13 @@ void H5OutputFile::_get_attribute(std::vector<hid_t> &ids, const std::vector<std
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        unsigned int fields = H5O_INFO_ALL;
+        hid_t lapl_id = H5P_DEFAULT;
+#if H5_VERSION_GE(1,12,0)
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
+#else
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
+#endif
         if (object_info.type == H5O_TYPE_GROUP) {
             newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
         }
@@ -334,7 +340,13 @@ void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::vector<std::
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        unsigned int fields = H5O_INFO_ALL;
+        hid_t lapl_id = H5P_DEFAULT;
+#if H5_VERSION_GE(1,12,0)
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
+#else
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
+#endif
         if (object_info.type == H5O_TYPE_GROUP) {
             newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
         }
@@ -377,7 +389,13 @@ void H5OutputFile::_get_hdf5_id(std::vector<hid_t> &ids, const std::vector<std::
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, H5P_DEFAULT);
+        unsigned int fields = H5O_INFO_ALL;
+        hid_t lapl_id = H5P_DEFAULT;
+#if H5_VERSION_GE(1,12,0)
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
+#else
+        H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
+#endif
         if (object_info.type == H5O_TYPE_GROUP) {
             newid = H5Gopen(ids.back(),parts[0].c_str(),H5P_DEFAULT);
         }
@@ -425,7 +443,12 @@ void H5OutputFile::close_hdf_ids(std::vector<hid_t> &ids)
     H5O_info_t object_info;
     for (auto &id:ids)
     {
+        hid_t lapl_id = H5P_DEFAULT;
+#if H5_VERSION_GE(1,12,0)
+        H5Oget_info(id, &object_info, lapl_id);
+#else
         H5Oget_info(id, &object_info);
+#endif
         if (object_info.type == H5O_TYPE_GROUP) {
             H5Gclose(id);
         }
