@@ -283,9 +283,9 @@ void H5OutputFile::_get_attribute(std::vector<hid_t> &ids, const std::vector<std
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        unsigned int fields = H5O_INFO_ALL;
         hid_t lapl_id = H5P_DEFAULT;
 #if H5_VERSION_GE(1,12,0)
+        unsigned int fields = H5O_INFO_ALL;
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
 #else
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
@@ -332,9 +332,9 @@ void H5OutputFile::_get_dataset(std::vector<hid_t> &ids, const std::vector<std::
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        unsigned int fields = H5O_INFO_ALL;
         hid_t lapl_id = H5P_DEFAULT;
 #if H5_VERSION_GE(1,12,0)
+        unsigned int fields = H5O_INFO_ALL;
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
 #else
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
@@ -381,9 +381,9 @@ void H5OutputFile::_get_hdf5_id(std::vector<hid_t> &ids, const std::vector<std::
         //otherwise enter group and recursively call funciotn
         H5O_info_t object_info;
         hid_t newid;
-        unsigned int fields = H5O_INFO_ALL;
         hid_t lapl_id = H5P_DEFAULT;
 #if H5_VERSION_GE(1,12,0)
+        unsigned int fields = H5O_INFO_ALL;
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, fields, lapl_id);
 #else
         H5Oget_info_by_name(ids.back(), parts[0].c_str(), &object_info, lapl_id);
