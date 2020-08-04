@@ -84,6 +84,31 @@ protected:
         bool flag_parallel, bool flag_collective, bool flag_hyperslab)
 #endif
 
+    /// set chunks size for a dataset
+    void _set_chunks(std::vector<hsize_t> &chunks,
+        int rank, hsize_t *dims,
+    #ifdef USEPARALLELHDF
+        std::vector<hsize_t> &mpi_hdf_dims_tot,
+    #endif
+        bool flag_parallel
+    );
+    void _set_chunks(std::vector<hsize_t> &chunks,
+        std::vector<hsize_t> &dims,
+#ifdef USEPARALLELHDF
+        std::vector<hsize_t> &mpi_hdf_dims_tot,
+#endif
+        bool flag_parallel
+    )
+    {
+        _set_chunks(chunks, dims.size(), dims.data(),
+#ifdef USEPARALLELHDF
+            mpi_hdf_dims_tot,
+#endif
+            flag_parallel
+        );
+    }
+    hid_t _set_compression(int rank, std::vector<hsize_t> &chunks);
+
     /// tokenize a path given an input string
     std::vector<std::string> _tokenize(const std::string &s);
 
@@ -188,9 +213,9 @@ public:
         hid_t dspace_id = H5Screate_simple(rank, dims, NULL);
         return dspace_id;
     }
-    /// close data set
+    /// close data space
     herr_t close_dataspace(hid_t dspace_id) {
-        herr_t status = H5Dclose(dspace_id);
+        herr_t status = H5Sclose(dspace_id);
         return status;
     }
 
@@ -210,30 +235,38 @@ public:
           H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         return dset_id;
     }
-
+    /// create data set and return hid
+    /// and possibly close all groups, data spaces and data set itself after creation
     template <typename T> hid_t create_dataset(std::string path, std::string name, T&data,
         std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
+        bool flag_closedataset = true,
         bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
     {
         return create_dataset(path+"/"+name, hdf5_type(T{}), dims, chunkDims,
+            flag_closedataset,
             flag_parallel, flag_hyperslab, flag_collective);
     }
     hid_t create_dataset(std::string path, std::string name, hid_t datatype,
         std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
+        bool flag_closedataset = true,
         bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
     {
         return create_dataset(path+"/"+name, datatype, dims, chunkDims,
+            flag_closedataset,
             flag_parallel, flag_hyperslab, flag_collective);
     }
     template <typename T> hid_t create_dataset(std::string fullname, T&data,
         std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
+        bool flag_closedataset = true,
         bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
     {
         return create_dataset(fullname, hdf5_type(T{}), dims, chunkDims,
+            flag_closedataset,
             flag_parallel, flag_hyperslab, flag_collective);
     }
     hid_t create_dataset(std::string fullname, hid_t datatype,
       std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims = std::vector<hsize_t>(0),
+      bool flag_closedataset = true,
       bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true);
 
     /// close data set
@@ -251,18 +284,131 @@ public:
     ///\todo could provide HDF 1.12 viable APIs for external links handling of VOL
     herr_t create_link(std::string orgname, std::string linkname, bool ihard = true);
 
-    ///\todo add a write_to_dataset which is similar to below but provide the
-    ///dataset id. Does require storing the data space somewhere to close
-    ///it elsewhere.
+    /// writes to an existing data set
+    /// with a hyperslab selection defined by count, start
+    void write_to_dataset(std::string name, hsize_t len, std::string data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        bool flag_parallel = true, bool flag_collective = true);
+    void write_to_dataset(std::string name, hsize_t len, void *data,
+        const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
+        hid_t memtype_id=-1, hid_t filetype_id=-1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true);
 
     /// write 1D data sets of string or input data with defined data type
-    /// without hyperslab selection
+    /// without hyperslab selection, creates dataset, writes to it and closes
     void write_dataset(std::string name, hsize_t len, std::string data,
         bool flag_parallel = true, bool flag_collective = true);
     void write_dataset(std::string name, hsize_t len, void *data,
         hid_t memtype_id=-1, hid_t filetype_id=-1,
         bool flag_parallel = true, bool flag_first_dim_parallel = true,
         bool flag_hyperslab = true, bool flag_collective = true);
+    /// Write a new 1D dataset. Data type of the new dataset is taken to be the type of
+    /// the input data if not explicitly specified with the filetype_id parameter.
+    /// template function so defined here
+    template <typename T> void write_dataset(std::string name, hsize_t len, T *data,
+        hid_t memtype_id = -1, hid_t filetype_id=-1,
+        bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        int rank = 1;
+        hsize_t dims[1] = {len};
+        if (memtype_id == -1) memtype_id = hdf5_type(T{});
+        write_dataset_nd(name, rank, dims, data, memtype_id, filetype_id, flag_parallel, flag_hyperslab, flag_collective);
+    }
+    /// Write a multidimensional dataset. Data type of the new dataset is taken to be the type of
+    /// the input data if not explicitly specified with the filetype_id parameter.
+    template <typename T> void write_dataset_nd(std::string name, int rank, hsize_t *dims, T *data,
+        hid_t memtype_id = -1, hid_t filetype_id = -1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        memtype_id = hdf5_type(T{});
+        write_dataset_nd(name, rank, dims, (void*)data,
+            memtype_id, filetype_id,
+            flag_parallel, flag_first_dim_parallel,
+            flag_hyperslab, flag_collective);
+// #ifdef USEPARALLELHDF
+//         MPI_Comm comm = mpi_comm_write;
+//         MPI_Info info = MPI_INFO_NULL;
+// #endif
+//         hid_t dspace_id, dset_id, prop_id, memspace_id, ret;
+//         std::vector<hsize_t> chunks;
+//
+//         // Get HDF5 data type of the array in memory
+//         if (memtype_id == -1) memtype_id = hdf5_type(T{});
+//
+//         // Determine type of the dataset to create
+//         if(filetype_id < 0) filetype_id = memtype_id;
+//
+// #ifdef USEPARALLELHDF
+//         std::vector<unsigned long long> mpi_hdf_dims(rank*NProcsWrite), mpi_hdf_dims_tot(rank), dims_single(rank), dims_offset(rank);
+//         _set_mpi_dim_and_offset(comm, rank, dims, dims_single, dims_offset, mpi_hdf_dims, mpi_hdf_dims_tot, flag_parallel, flag_first_dim_parallel);
+// #endif
+//
+//         // Determine if going to compress data in chunks
+//         // Only chunk non-zero size datasets
+//         _set_chunks(chunks, rank, dims,
+// #ifdef USEPARALLELHDF
+//             mpi_hdf_dims_tot,
+// #endif
+//             flag_parallel
+//         );
+//
+//         // Create the dataspace
+// #ifdef USEPARALLELHDF
+//         _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
+// #else
+//         dspace_id = H5Screate_simple(rank, dims, NULL);
+//         memspace_id = dspace_id;
+// #endif
+//
+//         // Dataset creation properties
+//         prop_id = H5P_DEFAULT;
+// #ifdef USEHDFCOMPRESSION
+//         prop_id = _set_compression(rank, chunks);
+// #endif
+//         // Create the dataset
+//         dset_id = H5Dcreate(file_id, name.c_str(), filetype_id, dspace_id,
+//             H5P_DEFAULT, prop_id, H5P_DEFAULT);
+//         if(dset_id < 0) io_error(std::string("Failed to create dataset: ")+name);
+//         H5Pclose(prop_id);
+//
+//         prop_id = H5P_DEFAULT;
+//         bool iwrite = (dims[0] > 0);
+// #ifdef USEPARALLELHDF
+//         _set_mpi_dataset_properties(prop_id, iwrite,
+//             dspace_id, memspace_id,
+//             rank, dims, dims_offset,
+//             flag_parallel, flag_collective, flag_hyperslab);
+// #endif
+//         if (iwrite) {
+//             ret = H5Dwrite(dset_id, memtype_id, memspace_id, dspace_id, prop_id, data);
+//             if (ret < 0) io_error(std::string("Failed to write dataset: ")+name);
+//         }
+//         // Clean up (note that dtype_id is NOT a new object so don't need to close it)
+//         H5Pclose(prop_id);
+// #ifdef USEPARALLELHDF
+//         if (flag_hyperslab && flag_parallel) H5Sclose(memspace_id);
+// #endif
+//         H5Sclose(dspace_id);
+//         H5Dclose(dset_id);
+    }
+    template <typename T> void write_dataset_nd(std::string name, std::vector<hsize_t> dims, T *data,
+        hid_t memtype_id = -1, hid_t filetype_id = -1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true)
+    {
+        write_dataset_nd(name, dims.size(), dims.data(), data,
+            memtype_id, filetype_id,
+            flag_parallel, flag_first_dim_parallel,
+            flag_hyperslab, flag_collective);
+    }
+    //write dataset with hyperslab selection
+    void write_dataset_nd(std::string name, int rank, hsize_t *dims, void *data,
+        hid_t memtype_id = -1, hid_t filetype_id=-1,
+        bool flag_parallel = true, bool flag_first_dim_parallel = true,
+        bool flag_hyperslab = true, bool flag_collective = true);
+
     /// with a hyperslab selection defined by count, start
     void write_dataset(std::string name, hsize_t len, std::string data,
         const std::vector<hsize_t>& count, const std::vector<hsize_t>& start,
@@ -272,143 +418,6 @@ public:
         hid_t memtype_id=-1, hid_t filetype_id=-1,
         bool flag_parallel = true, bool flag_first_dim_parallel = true,
         bool flag_hyperslab = true, bool flag_collective = true);
-
-  /// Write a new 1D dataset. Data type of the new dataset is taken to be the type of
-  /// the input data if not explicitly specified with the filetype_id parameter.
-  /// template function so defined here
-  template <typename T> void write_dataset(std::string name, hsize_t len, T *data,
-     hid_t memtype_id = -1, hid_t filetype_id=-1,
-     bool flag_parallel = true, bool flag_hyperslab = true, bool flag_collective = true)
-  {
-     int rank = 1;
-     hsize_t dims[1] = {len};
-     if (memtype_id == -1) memtype_id = hdf5_type(T{});
-     write_dataset_nd(name, rank, dims, data, memtype_id, filetype_id, flag_parallel, flag_hyperslab, flag_collective);
-  }
-  /// Write a multidimensional dataset. Data type of the new dataset is taken to be the type of
-  /// the input data if not explicitly specified with the filetype_id parameter.
-  template <typename T> void write_dataset_nd(std::string name, int rank, hsize_t *dims, T *data,
-      hid_t memtype_id = -1, hid_t filetype_id = -1,
-      bool flag_parallel = true, bool flag_first_dim_parallel = true,
-      bool flag_hyperslab = true, bool flag_collective = true)
-  {
-#ifdef USEPARALLELHDF
-    MPI_Comm comm = mpi_comm_write;
-    MPI_Info info = MPI_INFO_NULL;
-#endif
-    hid_t dspace_id, dset_id, prop_id, memspace_id, ret;
-    std::vector<hsize_t> chunks(rank);
-
-    // Get HDF5 data type of the array in memory
-    if (memtype_id == -1) memtype_id = hdf5_type(T{});
-
-    // Determine type of the dataset to create
-    if(filetype_id < 0) filetype_id = memtype_id;
-
-#ifdef USEPARALLELHDF
-    std::vector<unsigned long long> mpi_hdf_dims(rank*NProcsWrite), mpi_hdf_dims_tot(rank), dims_single(rank), dims_offset(rank);
-    _set_mpi_dim_and_offset(comm, rank, dims, dims_single, dims_offset, mpi_hdf_dims, mpi_hdf_dims_tot, flag_parallel, flag_first_dim_parallel);
-#endif
-
-    // Determine if going to compress data in chunks
-    // Only chunk non-zero size datasets
-    int nonzero_size = 1;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i]==0) nonzero_size = 0;
-        }
-        else {
-            if(dims[i]==0) nonzero_size = 0;
-        }
-#else
-        if(dims[i]==0) nonzero_size = 0;
-#endif
-    }
-    // Only chunk datasets where we would have >1 chunk
-    int large_dataset = 0;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-        else {
-            if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-#else
-        if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-#endif
-    }
-    if(nonzero_size && large_dataset)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, mpi_hdf_dims_tot[i]);
-        }
-        else {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-        }
-#else
-        for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-#endif
-    }
-
-    // Create the dataspace
-#ifdef USEPARALLELHDF
-    _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
-#else
-    dspace_id = H5Screate_simple(rank, dims, NULL);
-    memspace_id = dspace_id;
-#endif
-
-    // Dataset creation properties
-    prop_id = H5P_DEFAULT;
-#ifdef USEHDFCOMPRESSION
-    // this defines compression
-    if(nonzero_size && large_dataset)
-    {
-        prop_id = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(prop_id, H5D_CHUNKED);
-        H5Pset_chunk(prop_id, rank, chunks.data());
-        H5Pset_deflate(prop_id, HDFDEFLATE);
-    }
-#endif
-    // Create the dataset
-    dset_id = H5Dcreate(file_id, name.c_str(), filetype_id, dspace_id,
-        H5P_DEFAULT, prop_id, H5P_DEFAULT);
-    if(dset_id < 0) io_error(std::string("Failed to create dataset: ")+name);
-    H5Pclose(prop_id);
-
-    prop_id = H5P_DEFAULT;
-    bool iwrite = (dims[0] > 0);
-#ifdef USEPARALLELHDF
-    _set_mpi_dataset_properties(prop_id, iwrite,
-        dspace_id, memspace_id,
-        rank, dims, dims_offset,
-        flag_parallel, flag_collective, flag_hyperslab);
-#endif
-    if (iwrite) {
-        ret = H5Dwrite(dset_id, memtype_id, memspace_id, dspace_id, prop_id, data);
-        if (ret < 0) io_error(std::string("Failed to write dataset: ")+name);
-    }
-
-    // Clean up (note that dtype_id is NOT a new object so don't need to close it)
-    H5Pclose(prop_id);
-#ifdef USEPARALLELHDF
-    if (flag_hyperslab && flag_parallel) H5Sclose(memspace_id);
-#endif
-    H5Sclose(dspace_id);
-    H5Dclose(dset_id);
-  }
-
-    //write dataset with hyperslab selection
-    void write_dataset_nd(std::string name, int rank, hsize_t *dims, void *data,
-        hid_t memtype_id = -1, hid_t filetype_id=-1,
-        bool flag_parallel = true, bool flag_first_dim_parallel = true,
-        bool flag_hyperslab = true, bool flag_collective = true);
-
     /// Write a new 1D dataset. Data type of the new dataset is taken to be the type of
     /// the input data if not explicitly specified with the filetype_id parameter.
     /// template function so defined here
@@ -423,16 +432,6 @@ public:
         write_dataset_nd(name, rank, dims, data,
             count, start, memtype_id, filetype_id,
             flag_parallel, flag_hyperslab, flag_collective);
-    }
-    template <typename T> void write_dataset_nd(std::string name, std::vector<hsize_t> dims, T *data,
-        hid_t memtype_id = -1, hid_t filetype_id = -1,
-        bool flag_parallel = true, bool flag_first_dim_parallel = true,
-        bool flag_hyperslab = true, bool flag_collective = true)
-    {
-        write_dataset_nd(name, dims.size(), dims.data(), data,
-            memtype_id, filetype_id,
-            flag_parallel, flag_first_dim_parallel,
-            flag_hyperslab, flag_collective);
     }
 
     /// Write a multidimensional dataset. Data type of the new dataset is taken to be the type of
@@ -475,48 +474,12 @@ public:
 
     // Determine if going to compress data in chunks
     // Only chunk non-zero size datasets
-    int nonzero_size = 1;
-    for(int i=0; i<rank; i++)
-    {
+    _set_chunks(chunks, rank, dims,
 #ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i]==0) nonzero_size = 0;
-        }
-        else {
-            if(dims[i]==0) nonzero_size = 0;
-        }
-#else
-        if(dims[i]==0) nonzero_size = 0;
+        mpi_hdf_dims_tot,
 #endif
-    }
-    // Only chunk datasets where we would have >1 chunk
-    int large_dataset = 0;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-        else {
-            if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-#else
-        if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-#endif
-    }
-    if(nonzero_size && large_dataset)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, mpi_hdf_dims_tot[i]);
-        }
-        else {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-        }
-#else
-        for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-#endif
-    }
+        flag_parallel
+    );
 
     // Create the dataspace
 #ifdef USEPARALLELHDF
@@ -529,14 +492,7 @@ public:
     // Dataset creation properties
     prop_id = H5P_DEFAULT;
 #ifdef USEHDFCOMPRESSION
-    // this defines compression
-    if(nonzero_size && large_dataset)
-    {
-        prop_id = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(prop_id, H5D_CHUNKED);
-        H5Pset_chunk(prop_id, rank, chunks.data());
-        H5Pset_deflate(prop_id, HDFDEFLATE);
-    }
+    prop_id = _set_compression(rank, chunks);
 #endif
     // Create the dataset
     dset_id = H5Dcreate(file_id, name.c_str(), filetype_id, dspace_id,

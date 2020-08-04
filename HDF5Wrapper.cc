@@ -183,6 +183,73 @@ void H5OutputFile::_set_mpi_dataset_properties(hid_t &prop_id, bool &iwrite,
 
 #endif
 
+void H5OutputFile::_set_chunks(std::vector<hsize_t> &chunks,
+    int rank, hsize_t *dims,
+#ifdef USEPARALLELHDF
+    std::vector<hsize_t> &mpi_hdf_dims_tot,
+#endif
+    bool flag_parallel
+)
+{
+    // check if data set has non-zero size and if it large
+    auto nonzero_size = true;
+    auto large_dataset = true;
+    for(auto i=0; i<rank; i++)
+    {
+#ifdef USEPARALLELHDF
+        if (flag_parallel)
+            if(mpi_hdf_dims_tot[i]==0) nonzero_size = false;
+            if(mpi_hdf_dims_tot[i] < HDFOUTPUTCHUNKSIZE) large_dataset = false;
+        }
+        else {
+            if(dims[i]==0) nonzero_size = false;
+            if(dims[i] < HDFOUTPUTCHUNKSIZE) large_dataset = false;
+        }
+#else
+        if(dims[i]==0) nonzero_size = false;
+        if(dims[i] < HDFOUTPUTCHUNKSIZE) large_dataset = false;
+#endif
+    }
+    if (!nonzero_size) {
+        chunks.clear();
+        return;
+    }
+
+    // now if chunks is empty and have large data set, set chunks to
+    // the suggested chunk size
+    if(nonzero_size && large_dataset && chunks.empty())
+    {
+        chunks.resize(rank, HDFOUTPUTCHUNKSIZE);
+    }
+    // Otherwise, set passed chunk size to min of extend if above
+    else if(nonzero_size && !chunks.empty())
+    {
+#ifdef USEPARALLELHDF
+        if (flag_parallel) {
+            for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], mpi_hdf_dims_tot[i]);
+        }
+        else {
+            for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], dims[i]);
+        }
+#else
+        for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], dims[i]);
+#endif
+    }
+}
+
+hid_t H5OutputFile::_set_compression(int rank, std::vector<hsize_t> &chunks)
+{
+#ifdef USEHDFCOMPRESSION
+    if (chunks.empty()) return H5P_DEFAULT;
+    hid_t prop_id = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(prop_id, H5D_CHUNKED);
+    H5Pset_chunk(prop_id, rank, chunks.data());
+    H5Pset_deflate(prop_id, HDFDEFLATE);
+#else
+    return H5P_DEFAULT;
+#endif
+}
+
 std::vector<std::string> H5OutputFile::_tokenize(const std::string &s)
 {
     std::string delims("/");
@@ -442,6 +509,7 @@ bool H5OutputFile::exists_dataset(const std::string &parent, const std::string &
 /// create a dataset
 hid_t H5OutputFile::create_dataset(std::string fullname, hid_t type_id,
   std::vector<hsize_t> dims, std::vector<hsize_t> chunkDims,
+  bool flag_closedataset,
   bool flag_parallel, bool flag_hyperslab, bool flag_collective)
 {
 #ifdef USEPARALLELHDF
@@ -455,57 +523,31 @@ hid_t H5OutputFile::create_dataset(std::string fullname, hid_t type_id,
     hid_t memspace_id, dspace_id, dset_id, prop_id = H5P_DEFAULT;
     auto rank = dims.size();
     std::vector<hsize_t> chunks = chunkDims;
+    std::vector<hid_t> ids;
 
-    /// not certain what to do with the open groups here.
     for (auto& groupname : splitPath)
     {
-      if (H5Lexists(curr_id, groupname.c_str(), H5P_DEFAULT) == 0)
-      {
-        curr_id = create_group(groupname);
-      }
-      else
-      {
-        curr_id = open_group(groupname);
-      }
+      if (H5Lexists(curr_id, groupname.c_str(), H5P_DEFAULT) == 0) curr_id = create_group(groupname);
+      else curr_id = open_group(groupname);
+      ids.push_back(curr_id);
     }
 
 #ifdef USEPARALLELHDF
     std::vector<unsigned long long> mpi_hdf_dims(rank*NProcsWrite), mpi_hdf_dims_tot(rank), dims_single(rank), dims_offset(rank);
-    if (flag_parallel) _set_mpi_dim_and_offset(comm, rank, dims, dims_single, dims_offset, mpi_hdf_dims, mpi_hdf_dims_tot, flag_first_dim_parallel);
+    _set_mpi_dim_and_offset(comm, rank, dims, dims_single, dims_offset, mpi_hdf_dims, mpi_hdf_dims_tot, flag_parallel, flag_first_dim_parallel);
 #endif
 
     // Determine if going to compress data in chunks
     // Only chunk non-zero size datasets
-    int nonzero_size = 1;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i]==0) nonzero_size = 0;
-        }
-        else {
-            if(dims[i]==0) nonzero_size = 0;
-        }
-#else
-        if(dims[i]==0) nonzero_size = 0;
-#endif
-    }
-    // Only chunk datasets where we would have >1 chunk
-    if(nonzero_size && !chunks.empty())
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], mpi_hdf_dims_tot[i]);
-        }
-        else {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], dims[i]);
-        }
-#else
-        for(auto i=0; i<rank; i++) chunks[i] = std::min(chunks[i], dims[i]);
-#endif
-    }
+    _set_chunks(chunks, dims,
+    #ifdef USEPARALLELHDF
+        mpi_hdf_dims_tot,
+    #endif
+        flag_parallel
+    );
 
-    // Create the dataspace
+    // Create the dataspace where the data space might have a hyperslab
+    // selection if using parallel hdf5
 #ifdef USEPARALLELHDF
     _set_mpi_hyperslab(dspace_id, memspace_id, rank, dims, mpi_hdf_dims_tot, flag_parallel, flag_hyperslab);
 #else
@@ -514,16 +556,20 @@ hid_t H5OutputFile::create_dataset(std::string fullname, hid_t type_id,
 #endif
 
 #ifdef USEHDFCOMPRESSION
-    if (!chunk.empty()) {
-      prop_id = H5Pcreate(H5P_DATASET_CREATE);
-      H5Pset_layout(prop_id, H5D_CHUNKED);
-      H5Pset_chunk(prop_id, rank, chunks.data());
-      H5Pset_deflate(prop_id, HDFDEFLATE);
-    }
+    prop_id = _set_compression(rank, chunks);
 #endif
 
     dset_id = H5Dcreate(file_id, dsetname.c_str(), type_id, dspace_id,
-      H5P_DEFAULT, prop_id, H5P_DEFAULT);
+        H5P_DEFAULT, prop_id, H5P_DEFAULT);
+    H5Pclose(prop_id);
+
+    if (flag_closedataset)
+    {
+        H5Sclose(dspace_id);
+        H5Dclose(dset_id);
+        reverse(ids.begin(),ids.end());
+        close_hdf_ids(ids);
+    }
     return dset_id;
 }
 
@@ -630,48 +676,12 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
 
     // Determine if going to compress data in chunks
     // Only chunk non-zero size datasets
-    int nonzero_size = 1;
-    for(int i=0; i<rank; i++)
-    {
+    _set_chunks(chunks, rank, dims,
 #ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i]==0) nonzero_size = 0;
-        }
-        else {
-            if(dims[i]==0) nonzero_size = 0;
-        }
-#else
-        if(dims[i]==0) nonzero_size = 0;
+        mpi_hdf_dims_tot,
 #endif
-    }
-    // Only chunk datasets where we would have >1 chunk
-    unsigned int large_dataset = 0;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-        else {
-            if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-#else
-        if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-#endif
-    }
-    if(nonzero_size && large_dataset)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, mpi_hdf_dims_tot[i]);
-        }
-        else {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-        }
-#else
-        for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-#endif
-    }
+        flag_parallel
+    );
 
     // Create the dataspace
 #ifdef USEPARALLELHDF
@@ -684,14 +694,7 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
     // Dataset creation properties
     prop_id = H5P_DEFAULT;
 #ifdef USEHDFCOMPRESSION
-    // this defines compression
-    if(nonzero_size && large_dataset)
-    {
-        prop_id = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(prop_id, H5D_CHUNKED);
-        H5Pset_chunk(prop_id, rank, chunks.data());
-        H5Pset_deflate(prop_id, HDFDEFLATE);
-    }
+    prop_id = _set_compression(rank, chunks);
 #endif
 
     // Create the dataset
@@ -766,48 +769,12 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
 
     // Determine if going to compress data in chunks
     // Only chunk non-zero size datasets
-    int nonzero_size = 1;
-    for(int i=0; i<rank; i++)
-    {
+    _set_chunks(chunks, rank, dims,
 #ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i]==0) nonzero_size = 0;
-        }
-        else {
-            if(dims[i]==0) nonzero_size = 0;
-        }
-#else
-        if(dims[i]==0) nonzero_size = 0;
+        mpi_hdf_dims_tot,
 #endif
-    }
-    // Only chunk datasets where we would have >1 chunk
-    unsigned int large_dataset = 0;
-    for(int i=0; i<rank; i++)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            if(mpi_hdf_dims_tot[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-        else {
-            if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-        }
-#else
-        if(dims[i] > HDFOUTPUTCHUNKSIZE) large_dataset = 1;
-#endif
-    }
-    if(nonzero_size && large_dataset)
-    {
-#ifdef USEPARALLELHDF
-        if (flag_parallel) {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, mpi_hdf_dims_tot[i]);
-        }
-        else {
-            for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-        }
-#else
-        for(auto i=0; i<rank; i++) chunks[i] = std::min((hsize_t) HDFOUTPUTCHUNKSIZE, dims[i]);
-#endif
-    }
+        flag_parallel
+    );
 
     // Create the dataspace
 // #ifdef USEPARALLELHDF
@@ -820,16 +787,8 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
     // Dataset creation properties
     prop_id = H5P_DEFAULT;
 #ifdef USEHDFCOMPRESSION
-    // this defines compression
-    if(nonzero_size && large_dataset)
-    {
-        prop_id = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(prop_id, H5D_CHUNKED);
-        H5Pset_chunk(prop_id, rank, chunks.data());
-        H5Pset_deflate(prop_id, HDFDEFLATE);
-    }
+    prop_id = _set_compression(rank, chunks);
 #endif
-
     // Create the dataset
     dset_id = H5Dcreate(file_id, name.c_str(), filetype_id, dspace_id,
         H5P_DEFAULT, prop_id, H5P_DEFAULT);
@@ -854,7 +813,6 @@ void H5OutputFile::write_dataset_nd(std::string name, int rank, hsize_t *dims, v
         ret = H5Dwrite(dset_id, memtype_id, memspace_id, dspace_id, prop_id, data);
         if (ret < 0) io_error(std::string("Failed to write dataset: ")+name);
     }
-
     // Clean up (note that dtype_id is NOT a new object so don't need to close it)
     H5Pclose(prop_id);
 #ifdef USEPARALLELHDF
