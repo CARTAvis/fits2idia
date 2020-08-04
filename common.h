@@ -14,7 +14,8 @@
 #include <iterator>
 #include <cstring>
 
-#include <H5Cpp.h>
+// #include <H5Cpp.h>
+#include <hdf5.h>
 #include <fitsio.h>
 
 #define SCHEMA_VERSION "0.3"
