@@ -1,4 +1,4 @@
-# cpp_hdf5converter
+# fits2idia
 
 C++ implementation of FITS to IDIA-HDF5 converter, optimised using OpenMP
 

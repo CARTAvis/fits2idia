@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(hdf_convert)
+project(fits2idia)
 
 set(default_build_type "Release")
 
@@ -34,5 +34,5 @@ set(SOURCE_FILES
     SlowConverter.cc
     Util.cc)
 
-add_executable(hdf_convert ${SOURCE_FILES})
-target_link_libraries(hdf_convert ${LINK_LIBS})
+add_executable(fits2idia ${SOURCE_FILES})
+target_link_libraries(fits2idia ${LINK_LIBS})
