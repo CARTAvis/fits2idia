@@ -1,3 +1,8 @@
+/* This file is part of the FITS to IDIA file format converter: https://github.com/idia-astro/fits2idia
+   Copyright 2019, 2020, 2021 the Inter-University Institute for Data Intensive Astronomy (IDIA)
+   SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
 #ifndef __IMAGE_H
 #define __IMAGE_H
 
