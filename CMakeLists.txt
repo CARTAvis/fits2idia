@@ -36,3 +36,7 @@ set(SOURCE_FILES
 
 add_executable(fits2idia ${SOURCE_FILES})
 target_link_libraries(fits2idia ${LINK_LIBS})
+
+install(TARGETS fits2idia
+    RUNTIME DESTINATION bin
+)
