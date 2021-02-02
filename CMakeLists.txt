@@ -1,9 +1,16 @@
-cmake_minimum_required(VERSION 2.9)
+cmake_minimum_required(VERSION 3.10)
 project(fits2idia)
 
 set(default_build_type "Release")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif ()
 
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 if (HDF5_FOUND)
@@ -11,13 +18,6 @@ if (HDF5_FOUND)
     set(LINK_LIBS ${LINK_LIBS} ${HDF5_LIBRARIES})
 else ()
     message(FATAL_ERROR "Could not find CFITSIO.")
-endif ()
-
-find_package(OpenMP)
-if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif ()
 
 FIND_PACKAGE(PkgConfig REQUIRED)
