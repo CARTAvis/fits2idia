@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(fits2idia)
 
-set(default_build_type "Release")
+set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 
 set(CMAKE_CXX_STANDARD 17)
 
