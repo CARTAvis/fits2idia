@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(fits2idia)
 
-set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
