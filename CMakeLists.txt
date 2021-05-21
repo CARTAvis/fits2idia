@@ -20,7 +20,7 @@ if (HDF5_FOUND)
     include_directories(${HDF5_INCLUDE_DIR})
     set(LINK_LIBS ${LINK_LIBS} ${HDF5_LIBRARIES})
 else ()
-    message(FATAL_ERROR "Could not find CFITSIO.")
+    message(FATAL_ERROR "Could not find HDF5.")
 endif ()
 
 FIND_PACKAGE(PkgConfig REQUIRED)
