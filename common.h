@@ -23,8 +23,8 @@
 #include <fitsio.h>
 
 #define SCHEMA_VERSION "0.3"
-#define HDF5_CONVERTER "hdf_convert"
-#define HDF5_CONVERTER_VERSION "0.1.13"
+#define HDF5_CONVERTER "fits2idia"
+#define HDF5_CONVERTER_VERSION "0.1.14"
 
 #define TILE_SIZE (hsize_t)512
 #define MIN_MIPMAP_SIZE (hsize_t)128

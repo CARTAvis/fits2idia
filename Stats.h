@@ -49,7 +49,7 @@ struct StatsCounter {
 };
 
 struct Stats {
-    Stats() {}
+    Stats();
     Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins = 0);
     ~Stats();
     
@@ -142,6 +142,9 @@ struct Stats {
     
     int64_t* histograms;
     int64_t* partialHistograms;
+    
+    bool buffersAllocated;
+    bool histogramBuffersAllocated;
 };
 
 #endif

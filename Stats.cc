@@ -5,16 +5,18 @@
 
 #include "Stats.h"
 
-Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : basicDatasetDims(basicDatasetDims), numBins(numBins), partialHistMultiplier(0) {}
+Stats::Stats() : basicDatasetDims({}), numBins(0), partialHistMultiplier(0), buffersAllocated(0), histogramBuffersAllocated(0) {}
+
+Stats::Stats(const std::vector<hsize_t>& basicDatasetDims, hsize_t numBins) : basicDatasetDims(basicDatasetDims), numBins(numBins), partialHistMultiplier(0), buffersAllocated(0), histogramBuffersAllocated(0) {}
 
 Stats::~Stats() {
-    if (!fullBasicBufferDims.empty()) {
+    if (buffersAllocated) {
         delete[] minVals;
         delete[] maxVals;
         delete[] sums;
         delete[] sumsSq;
         delete[] nanCounts;
-        if (numBins) {
+        if (histogramBuffersAllocated) {
             delete[] histograms;
             delete[] partialHistograms;
         }
@@ -47,24 +49,28 @@ void Stats::createDatasets(H5::Group group, std::string name) {
 void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier) {
     fullBasicBufferDims = dims;
     auto statsSize = product(dims);
-    
+        
     minVals = new float[statsSize];
     maxVals = new float[statsSize];
     sums = new double[statsSize];
     sumsSq = new double[statsSize];
     nanCounts = new int64_t[statsSize];
+    buffersAllocated = true;
     
     if (numBins) {
         histograms = new int64_t[statsSize * numBins];
         partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
         this->partialHistMultiplier = partialHistMultiplier;
+        histogramBuffersAllocated = true;
     }
 }
 
 void Stats::clearHistogramBuffers() {
-    auto statsSize = product(fullBasicBufferDims);
-    memset(histograms, 0, sizeof(int64_t) * statsSize * numBins);
-    memset(partialHistograms, 0, sizeof(int64_t) * statsSize * numBins * partialHistMultiplier);
+    if (histogramBuffersAllocated) {
+        auto statsSize = product(fullBasicBufferDims);
+        memset(histograms, 0, sizeof(int64_t) * statsSize * numBins);
+        memset(partialHistograms, 0, sizeof(int64_t) * statsSize * numBins * partialHistMultiplier);
+    }
 }
 
 void Stats::write() {

@@ -27,6 +27,7 @@ std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
 bool useChunks(const std::vector<hsize_t>& dims);
 
 void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName);
+void closeFitsFile(fitsfile* filePtr);
 void getFitsDims(fitsfile* filePtr, int& N, long* dims);
 void readFitsHeader(fitsfile* filePtr, int& numAttributes);
 void readFitsAttribute(fitsfile* filePtr, int i, std::string& name, std::string& value);

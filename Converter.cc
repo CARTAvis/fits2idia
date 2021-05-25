@@ -49,6 +49,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
 Converter::~Converter() {
     // TODO this is probably unnecessary; the file object destructor should close the file properly.
     outputFile.close();
+    closeFitsFile(inputFilePtr);
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress) {

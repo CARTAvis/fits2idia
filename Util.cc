@@ -79,6 +79,16 @@ void openFitsFile(fitsfile** filePtrPtr, const std::string& fileName) {
     }
 }
 
+void closeFitsFile(fitsfile* filePtr) {
+    int status(0);
+    
+    fits_close_file(filePtr, &status);
+    
+    if (status != 0) {
+        throw "Could not close FITS file";
+    }
+}
+
 void getFitsDims(fitsfile* filePtr, int& N, long* dims) {
     int status(0);
     

@@ -154,20 +154,15 @@ def compare_hdf5_hdf5(file1, file2, fail_msg, ignore_converter_attrs=True):
     if not ignore_converter_attrs:
         assert False, fail_msg
     else:
-        permitted_differences = [
-            "attribute: <SCHEMA_VERSION of </0>> and <SCHEMA_VERSION of </0>>",
-            "attribute: <HDF5_CONVERTER of </0>> and <HDF5_CONVERTER of </0>>",
-            "attribute: <HDF5_CONVERTER_VERSION of </0>> and <HDF5_CONVERTER_VERSION of </0>>",
-        ]
+        ignore_attributes = ("SCHEMA_VERSION", "HDF5_CONVERTER", "HDF5_CONVERTER_VERSION")
+        
         output = h5diff.stdout.decode('ascii')
-        lines = set(output.strip().split("\n"))
-        removed = 0
-        for d in permitted_differences:
-            if d in lines:
-                lines.remove(d)
-                removed += 1
-        if "%d differences found" % removed not in lines:
-            print(lines)
+        
+        for attribute in ignore_attributes:
+            output = re.sub(r"attribute: <%s of </0>> and <%s of </0>>\n\d+ differences found\n" % (attribute, attribute), "", output)
+            
+        if output:
+            print(output)
             print("(Permitted converter version attributes have been ignored.)")
             assert False, fail_msg
 
@@ -189,7 +184,7 @@ def make_image(outfile, *dims, **params):
     result = subprocess.run(cmd)
     assert result.returncode == 0, "Image generation failed."
     
-def convert(infile, outfile, slow=False, executable="hdf_convert"):
+def convert(infile, outfile, executable, slow=False):
     cmd = [executable]
     if slow:
         cmd.append("-s")
@@ -200,7 +195,7 @@ def convert(infile, outfile, slow=False, executable="hdf_convert"):
     result = subprocess.run(cmd)
     assert result.returncode == 0, "Conversion failed."
     
-def time(infile, slow=False, executable="hdf_convert"):
+def time(infile, executable, slow=False):
     os.system("sudo sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'")
     
     cmd = [executable]
@@ -221,9 +216,9 @@ def time(infile, slow=False, executable="hdf_convert"):
         
     return end - start
 
-def test_converter_correctness(infile):
-    convert(infile, "FAST.hdf5")
-    convert(infile, "SLOW.hdf5", True)
+def test_converter_correctness(infile, new_converter):
+    convert(infile, "FAST.hdf5", new_converter)
+    convert(infile, "SLOW.hdf5", new_converter, True)
     
     # Do this first so that we fail more quickly
     compare_hdf5_hdf5("FAST.hdf5", "SLOW.hdf5", "Fast and slow versions differ.", False)
@@ -234,9 +229,9 @@ def test_converter_correctness(infile):
     
     subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
 
-def test_new_old_converter(infile, slow, old_converter):
-    convert(infile, "OLD.hdf5", slow=slow, executable=old_converter)
-    convert(infile, "NEW.hdf5", slow=slow)
+def test_new_old_converter(infile, slow, old_converter, new_converter):
+    convert(infile, "OLD.hdf5", old_converter, slow)
+    convert(infile, "NEW.hdf5", new_converter, slow)
     
     compare_hdf5_hdf5("OLD.hdf5", "NEW.hdf5", "Old and new versions differ.", True)
 
@@ -338,32 +333,20 @@ IMAGE_SETS = {
     "DUMMY":  dummy_image_set(),
 
 }
-
-def test_correctness(*image_sets):
-    for image_set in image_sets:
-        for dims, params in image_set:
-            make_image("test.fits", *dims, **params)
-            test_converter_correctness("test.fits")
-        
-def test_consistency(old_converter, *image_sets, **kwargs):
-    for image_set in image_sets:
-        for dims, params in image_set:
-            make_image("test.fits", *dims, **params)
-            test_new_old_converter("test.fits", kwargs["slow"], old_converter)
             
-def test_speed(*image_sets, **kwargs):
-    executables = ["hdf_convert"]
-    if "compare" in kwargs:
-        executables.append(kwargs["compare"])
+def test_speed(args, *image_sets):
+    executables = [args.executable]
+    if "compare" in args:
+        executables.append(args.compare)
     
     times = defaultdict(lambda: defaultdict(list))
     
-    for i in range(kwargs["repeat"]):
+    for i in range(args.repeat):
         for executable in executables:
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
-                    t = time("test.fits", slow=kwargs["slow"], executable=executable)
+                    t = time("test.fits", new_converter, kwargs["slow"])
                     if t is not None:
                         times[dims][executable].append(t)
     
@@ -408,17 +391,18 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--slow', action='store_true', help='Use the slow converter versions when comparing converters or timing converter(s).')
     parser.add_argument('-i', '--image-set', nargs="+", help="The image set(s) to use. Any combination of %s. By default a small dummy set is used." % ", ".join(repr(o) for o in IMAGE_SETS) , default=["DUMMY"])
     parser.add_argument('-r', '--repeat', type=int, help="The number of times to repeat timed conversions (default: 3).", default=3)
+    parser.add_argument("executable", help="The path to the executable to test.")
     args = parser.parse_args()
     
     image_sets = (IMAGE_SETS[i] for i in args.image_set)
     
     if args.time:
-        if args.compare:
-            test_speed(*image_sets, compare=args.compare, repeat=args.repeat, slow=args.slow)
-        else:
-            test_speed(*image_sets, slow=args.slow)
+        test_speed(args, *image_sets)
     else:
-        if args.compare:
-            test_consistency(args.compare, *image_sets, slow=args.slow)
-        else:
-            test_correctness(*image_sets)
+        for image_set in image_sets:
+            for dims, params in image_set:
+                make_image("test.fits", *dims, **params)
+                if args.compare:
+                    test_new_old_converter("test.fits", args.slow, args.compare, args.executable)
+                else:
+                    test_converter_correctness("test.fits", args.executable)
