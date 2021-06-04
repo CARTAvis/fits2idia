@@ -16,7 +16,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     std::ostringstream usage;
     usage << "IDIA FITS to HDF5 converter version " << HDF5_CONVERTER_VERSION 
     << " using IDIA schema version " << SCHEMA_VERSION << std::endl
-    << "Usage: hdf_convert [-o output_filename] [-s] [-p] [-m] input_filename" << std::endl << std::endl
+    << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
