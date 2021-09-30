@@ -15,7 +15,8 @@ To install:
 
 ## Commandline options
 
-Run the executable with no parameters to see a list of options. The most important are:
+Run the executable with no parameters to see a list of options. The most 
+important are:
 
 ```
 -o      Output filename
@@ -26,6 +27,10 @@ Run the executable with no parameters to see a list of options. The most importa
 
 ## Configuration
 
-A system administrator may set a memory usage limit in the `/etc/fits2idiarc` configuration file.
-The executable will not attempt to convert a file if the predicted memory usage exceeds this limit.
-A value of `0` means that there is no limit. Use a very small value (like `1`) to disable all conversions.
+A system administrator may set a memory usage limit in the `/etc/fits2idiarc`
+configuration file. The executable will not attempt to convert a file if the
+predicted memory usage exceeds this limit. A value of `0` means that there is no
+limit. Use a very small value (like `1`) to disable all conversions.
+
+An example configuration file is provided in the `static` directory, and is 
+installed by the Ubuntu package to `usr/share/doc/fits2idia/examples`.
