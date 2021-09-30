@@ -8,35 +8,29 @@
 // TODO do we need these?
 FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
 
-void FastConverter::reportMemoryUsage() {
-    std::unordered_map<std::string, hsize_t> sizes;
-
-    sizes["Main dataset"] = depth * height * width * sizeof(float);
-    sizes["Mipmaps"] = MipMaps::size(standardDims, {depth, height, width});
-    sizes["XY stats"] = Stats::size({depth}, numBins);
+MemoryUsage FastConverter::calculateMemoryUsage() {
+    MemoryUsage m;
+    
+    m.sizes["Main dataset"] = depth * height * width * sizeof(float);
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {depth, height, width});
+    m.sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
-        sizes["Rotation"] = sizes["Main dataset"];
-        sizes["XYZ stats"] = Stats::size({}, numBins, depth);
-        sizes["Z stats"] = Stats::size({height, width});
+        m.sizes["Rotation"] = m.sizes["Main dataset"];
+        m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
+        m.sizes["Z stats"] = Stats::size({height, width});
     }
     
-    hsize_t total(0);
-    
-    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
-    
-    for (auto& kv : sizes) {
-        std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
-        total += kv.second;
+    for (auto& kv : m.sizes) {
+        m.total += kv.second;
     }
     
-    std::string note = "";
     if (depth > 1) {
-        total -= std::min(sizes["Mipmaps"], sizes["Rotation"]);
-        note = " (Rotated dataset and mipmaps are not allocated at the same time.)";
+        m.total -= std::min(m.sizes["Mipmaps"], m.sizes["Rotation"]);
+        m.note = " (Rotated dataset and mipmaps are not allocated at the same time.)";
     }
-
-    std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << note << std::endl;
+    
+    return m;
 }
 
 void FastConverter::copyAndCalculate() {

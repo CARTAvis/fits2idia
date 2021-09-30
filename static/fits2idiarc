@@ -1,0 +1,4 @@
+# Refuse to convert a file if the estimated memory use exceeds this limit in bytes.
+# Must be a positive integer. A value of 0 means that there is no limit.
+# Set to a small number (like 1) to disable all conversions.
+memory_limit = 0
