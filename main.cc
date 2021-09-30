@@ -4,6 +4,9 @@
 */
 
 #include <getopt.h>
+#include <regex>
+#include <fstream>
+#include <sstream>
 #include "Converter.h"
 
 bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory) {
@@ -96,6 +99,25 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    hsize_t memoryLimit(0);
+    
+    std::ifstream rcFile("/etc/fits2idiarc");
+    if (rcFile.fail()){
+        DEBUG(std::cout << "No system configuration file found." << std::endl;);
+    } else {
+        std::string line;
+        while (std::getline(rcFile, line)){
+            if (std::regex_match(line, std::regex("#.*"))) {
+                continue;
+            }
+            std::smatch match;
+            if (std::regex_match(line, match, std::regex(" *memory_limit *= *(\\d+) *"))) {
+                std::stringstream sstream(match[1]);
+                sstream >> memoryLimit;
+            }
+        }
+    }
+    
     std::unique_ptr<Converter> converter;
         
     try {
@@ -104,6 +126,14 @@ int main(int argc, char** argv) {
         if (onlyReportMemory) {
             converter->reportMemoryUsage();
             return 0;
+        }
+        
+        if (memoryLimit > 0) {
+            hsize_t predictedTotal = converter->calculateMemoryUsage().total;
+            if (predictedTotal > memoryLimit) {
+                std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
+                return 1;
+            }
         }
     
         DEBUG(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);

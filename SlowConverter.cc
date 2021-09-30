@@ -7,35 +7,29 @@
 
 SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
 
-void SlowConverter::reportMemoryUsage() {
-    std::unordered_map<std::string, hsize_t> sizes;
+MemoryUsage SlowConverter::calculateMemoryUsage() {
+    MemoryUsage m;
 
-    sizes["Main dataset"] = height * width * sizeof(float);
-    sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width});
-    sizes["XY stats"] = Stats::size({depth}, numBins);
+    m.sizes["Main dataset"] = height * width * sizeof(float);
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width});
+    m.sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {
-        sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
-        sizes["XYZ stats"] = Stats::size({}, numBins, depth);
-        sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
+        m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
+        m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
+        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
     }
     
-    hsize_t total(0);
-    
-    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
-    
-    for (auto& kv : sizes) {
-        std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
-        total += kv.second;
+    for (auto& kv : m.sizes) {
+        m.total += kv.second;
     }
     
-    std::string note = "";
     if (depth > 1) {
-        total -= std::min(sizes["Main dataset"], sizes["Rotation"] + sizes["Z stats"]);
-        note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
+        m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
+        m.note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
     }
 
-    std::cout << "TOTAL:\t" << total * 1e-9 << "GB" << note << std::endl;
+    return m;
 }
 
 void SlowConverter::copyAndCalculate() {

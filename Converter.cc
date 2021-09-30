@@ -64,8 +64,20 @@ void Converter::copyAndCalculate() {
     // implemented in subclasses
 }
 
-void Converter::reportMemoryUsage() {
+MemoryUsage Converter::calculateMemoryUsage() {
     // implemented in subclasses
+}
+
+void Converter::reportMemoryUsage() {
+    MemoryUsage m = calculateMemoryUsage();
+
+    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
+    
+    for (auto& kv : m.sizes) {
+        std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
+    }
+
+    std::cout << "TOTAL:\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
 }
 
 void Converter::convert() {

@@ -12,6 +12,14 @@
 #include "Timer.h"
 #include "Util.h"
 
+struct MemoryUsage {
+    MemoryUsage() : total(0) {}
+    
+    std::unordered_map<std::string, hsize_t> sizes;
+    hsize_t total;
+    std::string note;
+};
+
 class Converter {
 public:
     Converter() {}
@@ -20,7 +28,8 @@ public:
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
     void convert();
-    virtual void reportMemoryUsage();
+    void reportMemoryUsage();
+    virtual MemoryUsage calculateMemoryUsage();
     
 protected:
     virtual void copyAndCalculate();
@@ -66,7 +75,7 @@ protected:
 class FastConverter : public Converter {
 public:
     FastConverter(std::string inputFileName, std::string outputFileName, bool progress);
-    void reportMemoryUsage() override;
+    MemoryUsage calculateMemoryUsage() override;
     
 protected:
     void copyAndCalculate() override;
@@ -76,7 +85,7 @@ protected:
 class SlowConverter : public Converter {
 public:
     SlowConverter(std::string inputFileName, std::string outputFileName, bool progress);
-    void reportMemoryUsage() override;
+    MemoryUsage calculateMemoryUsage() override;
     
 protected:
     void copyAndCalculate() override;
