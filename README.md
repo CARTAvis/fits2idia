@@ -14,9 +14,9 @@ Packages for the last two Ubuntu LTS releases are available from [the CARTA PPA]
 
 ### RPM package
 
-RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL or CentOS 7 and 8. Please select the correct `.repo` file for your release (`el7` or `el8`) and architecture (the default x86_64 or `aarch64`), and substitute the name into the command below.
+RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL or CentOS 7 and 8.
 
-    sudo curl https://packages.cartavis.org/YOUR_RELEASE.repo --output /etc/yum.repos.d/cartavis.repo
+    sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
     sudo yum install fits2idia
 
 ### macOS (using Homebrew)
