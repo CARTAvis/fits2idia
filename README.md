@@ -4,6 +4,43 @@ C++ implementation of FITS to IDIA-HDF5 converter, optimised using OpenMP
 
 ## Installation
 
+### Ubuntu package
+
+Packages for the last two Ubuntu LTS releases are available from the [CARTA PPA](https://launchpad.net/~cartavis-team/+archive/ubuntu/carta). Currently Bionic (18.04) and Focal (20.04) are officially supported.
+
+    sudo add-apt-repository ppa:cartavis-team/carta
+    sudo apt update
+    sudo apt install fits2idia
+
+### RPM package
+
+RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL 7 or CentOS 7, and RHEL 8 or AlmaLinux 8 (or equivalent).
+
+RHEL 7 / CentOS 7:
+
+    sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
+    sudo yum -y install fits2idia
+
+RHEL 8 / AlmaLinux 8:
+
+    sudo yum -y install yum-utils
+    sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+    sudo yum-config-manager --enable powertools
+    sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
+    sudo yum -y install fits2idia
+
+### macOS (using Homebrew)
+
+    brew install cartavis/tap/fits2idia
+
+### AppImage
+
+    wget https://github.com/CARTAvis/fits2idia/releases/latest/download/fits2idia.AppImage.zip
+    unzip fits2idia.AppImage.zip
+
+### Building from source
+
 Dependencies: CFITSIO, HDF5, HDF5 C++ bindings
 
 To install:
