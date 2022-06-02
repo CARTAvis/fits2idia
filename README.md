@@ -16,13 +16,13 @@ Packages for the last two Ubuntu LTS releases are available from the [CARTA PPA]
 
 RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL 7 or CentOS 7, and RHEL 8 or AlmaLinux 8 (or equivalent).
 
-RHEL7 / CentOS7:
+RHEL 7 / CentOS 7:
 
     sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
     sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
     sudo yum -y install fits2idia
 
-RHEL8 / AlmaLinux 8:
+RHEL 8 / AlmaLinux 8:
 
     sudo yum -y install yum-utils
     sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
