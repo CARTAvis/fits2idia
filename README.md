@@ -6,7 +6,7 @@ C++ implementation of FITS to IDIA-HDF5 converter, optimised using OpenMP
 
 ### Ubuntu package
 
-Packages for the last two Ubuntu LTS releases are available from [the CARTA PPA](https://launchpad.net/~cartavis-team/+archive/ubuntu/carta). Currently Bionic (18.04) and Focal (20.04) are officially supported.
+Packages for the last two Ubuntu LTS releases are available from the [CARTA PPA](https://launchpad.net/~cartavis-team/+archive/ubuntu/carta). Currently Bionic (18.04) and Focal (20.04) are officially supported.
 
     sudo add-apt-repository ppa:cartavis-team/carta
     sudo apt update
@@ -14,10 +14,21 @@ Packages for the last two Ubuntu LTS releases are available from [the CARTA PPA]
 
 ### RPM package
 
-RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL or CentOS 7 and 8.
+RPM packages are available from the [CARTA RPM package repository](https://packages.cartavis.org/). We officially support the latest versions of RHEL 7 or CentOS 7, and RHEL 8 or AlmaLinux 8 (or equivalent).
 
+RHEL7 / CentOS7:
+
+    sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
     sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
-    sudo yum install fits2idia
+    sudo yum -y install fits2idia
+
+RHEL8 / AlmaLinux 8:
+
+    sudo yum -y install yum-utils
+    sudo yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+    sudo yum-config-manager --enable powertools
+    sudo yum-config-manager --add-repo https://packages.cartavis.org/cartavis.repo
+    sudo yum -y install fits2idia
 
 ### macOS (using Homebrew)
 
