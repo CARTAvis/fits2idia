@@ -36,7 +36,10 @@ RHEL 8 / AlmaLinux 8:
 
 ### AppImage
 
-AppImages built for the `x86_64` and `aarch64` architectures can be downloaded from the [latest release page](https://github.com/CARTAvis/fits2idia/releases/latest). They are tarred and gzipped; after downloading, unpack them with `tar -xzf <FILENAME>.tgz`.
+AppImages built for the `x86_64` and `aarch64` architectures can be downloaded from the [latest release page](https://github.com/CARTAvis/fits2idia/releases/latest).
+
+    wget https://github.com/CARTAvis/fits2idia/releases/latest/download/fits2idia.AppImage.`arch`.tgz
+    tar -xzf fits2idia.AppImage.`arch`.tgz
 
 ### Building from source
 
