@@ -60,14 +60,6 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
-void Converter::copyAndCalculate() {
-    // implemented in subclasses
-}
-
-MemoryUsage Converter::calculateMemoryUsage() {
-    // implemented in subclasses
-}
-
 void Converter::reportMemoryUsage() {
     MemoryUsage m = calculateMemoryUsage();
 

@@ -29,10 +29,10 @@ public:
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
     void convert();
     void reportMemoryUsage();
-    virtual MemoryUsage calculateMemoryUsage();
+    virtual MemoryUsage calculateMemoryUsage() = 0;
     
 protected:
-    virtual void copyAndCalculate();
+    virtual void copyAndCalculate() = 0;
     
     Timer timer;
     bool progress;
