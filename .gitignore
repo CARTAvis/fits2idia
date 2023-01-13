@@ -1,3 +1,7 @@
 cmake-build-*/
 .idea/
 build/
+
+# Doxygen
+docs/html
+
