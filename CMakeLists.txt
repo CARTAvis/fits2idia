@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(fits2idia)
 
+include_directories(src)
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 endif()
@@ -44,13 +46,13 @@ endif ()
 
 set(SOURCE_FILES
     ${SOURCE_FILES}
-    main.cc
-    Stats.cc
-    MipMap.cc
-    Converter.cc
-    FastConverter.cc
-    SlowConverter.cc
-    Util.cc)
+    src/main.cc
+    src/Stats.cc
+    src/MipMap.cc
+    src/Converter.cc
+    src/FastConverter.cc
+    src/SlowConverter.cc
+    src/Util.cc)
 
 add_executable(fits2idia ${SOURCE_FILES})
 target_link_libraries(fits2idia ${LINK_LIBS})
