@@ -3,8 +3,7 @@ name: doxygen
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - dev
 
 jobs:
   deploy:
@@ -13,4 +12,4 @@ jobs:
       - uses: DenverCoder1/doxygen-github-pages-action@v1.2.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          config_file: Doxyfile
+          config_file: docs/Doxyfile
