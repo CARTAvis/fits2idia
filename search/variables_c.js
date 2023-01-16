@@ -1,0 +1,21 @@
+var searchData=
+[
+  ['sizes_282',['sizes',['../structMemoryUsage.html#a9799889a9b336599e4aeff443fcc75e1',1,'MemoryUsage']]],
+  ['ssqdset_283',['ssqDset',['../structStats.html#aec7efac6855334f793438fd4c6a271ca',1,'Stats']]],
+  ['standardcube_284',['standardCube',['../classConverter.html#a14c0b8585ae6801350a8fe35995bd784',1,'Converter']]],
+  ['standarddataset_285',['standardDataSet',['../classConverter.html#a86305225979ca112b4f7a9f1cece307f',1,'Converter']]],
+  ['standarddims_286',['standardDims',['../classConverter.html#a0c62c4dade59a3caf87a411887c69e92',1,'Converter::standardDims()'],['../structMipMaps.html#a0675889baa264da4261f99b8863c85a2',1,'MipMaps::standardDims()']]],
+  ['starttime_287',['startTime',['../structTimerCounter.html#a950ae52c1bddc9ca5a6ca98164da49b0',1,'TimerCounter']]],
+  ['statsxy_288',['statsXY',['../classConverter.html#ad4fe86560c87d38e89913af0ae458dd5',1,'Converter']]],
+  ['statsxyz_289',['statsXYZ',['../classConverter.html#a3bc9b21c4826f1875584f7b2dfd57f4c',1,'Converter']]],
+  ['statsz_290',['statsZ',['../classConverter.html#a5c31e418b9cb652f532c6ead3ef11746',1,'Converter']]],
+  ['stokes_291',['stokes',['../classConverter.html#aecb60dcc0a230b31f4d36a1b4cbc368f',1,'Converter::stokes()'],['../structMipMap.html#a5a1063d2aace2ec37def03b3d231aa4a',1,'MipMap::stokes()']]],
+  ['sum_292',['sum',['../structStatsCounter.html#ad3a2cdb066a50ee45be76667fcfe71fd',1,'StatsCounter']]],
+  ['sumdset_293',['sumDset',['../structStats.html#a9c227e11a1c0d9e502e873f2722fa109',1,'Stats']]],
+  ['sums_294',['sums',['../structStats.html#a51fbcadf7798fa5403123d8221938611',1,'Stats']]],
+  ['sumsq_295',['sumSq',['../structStatsCounter.html#a0d2702ad57f2b94462b3faaf85e18e80',1,'StatsCounter']]],
+  ['sumssq_296',['sumsSq',['../structStats.html#a1804c23a282cb8e5ee17b089244d2cce',1,'Stats']]],
+  ['swizzleddataset_297',['swizzledDataSet',['../classConverter.html#a10a920de688a22061dbe93ab834e8af1',1,'Converter']]],
+  ['swizzleddims_298',['swizzledDims',['../classConverter.html#a898cc809bd7508e81dcd59d4feb514ca',1,'Converter']]],
+  ['swizzledname_299',['swizzledName',['../classConverter.html#a9f048b2b80fe599990036b2b2aa6011c',1,'Converter']]]
+];
