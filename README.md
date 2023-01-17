@@ -73,3 +73,7 @@ limit. Use a very small value (like `1`) to disable all conversions.
 
 An example configuration file is provided in the `static` directory, and is 
 installed by the Ubuntu package to `usr/share/doc/fits2idia/examples`.
+
+## For developers
+
+Automatically generated Doxygen documentation can be found at [cartavis.org/fits2idia](https://cartavis.org/fits2idia/).
