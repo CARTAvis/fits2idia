@@ -7,7 +7,7 @@
 
 // MipMap
 
-MipMap::MipMap(const std::vector<hsize_t>& datasetDims, int mip) : datasetDims(datasetDims), mip(mip) {}
+MipMap::MipMap(const std::vector<hsize_t>& datasetDims, int mipXY, int mipZ) : datasetDims(datasetDims), mipXY(mipXY), mipZ(mipZ) {}
 
 MipMap::~MipMap() {
     if (!bufferDims.empty()) {
@@ -21,7 +21,17 @@ void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDim
     floatType.setOrder(H5T_ORDER_LE);
     
     std::ostringstream mipMapName;
-    mipMapName << "MipMaps/DATA/DATA_XY_" << mip;
+    
+    mipMapName << "MipMaps/DATA/DATA_";
+    
+    if (mipXY == mipZ)
+        mipMapName << "XYZ_" << mipXY;
+    else if (mipXY < 2)
+        mipMapName << "Z_" << mipZ;
+    else if (mipZ < 2)
+        mipMapName << "XY_" << mipXY;
+    else
+        mipMapName << "XYZ_" << mipXY << "_" << mipXY << "_" << mipZ;
     
     if (useChunks(datasetDims)) {
         createHdf5Dataset(dataset, group, mipMapName.str(), floatType, datasetDims, chunkDims);
@@ -66,29 +76,54 @@ void MipMap::resetBuffers() {
 MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& chunkDims) : standardDims(standardDims), chunkDims(chunkDims) {
     auto dims = standardDims;
     int N = dims.size();
-    int mip = 1;
+    int mipXY = 1;
+    int mipZ = 1;
     
     // We keep going until we have a mipmap which fits entirely within the minimum size
-    while (dims[N - 1] > MIN_MIPMAP_SIZE || dims[N - 2] > MIN_MIPMAP_SIZE) {
-        mip *= 2;
-        dims = mipDims(dims, 2);
-        mipMaps.push_back(MipMap(dims, mip));
-    }
+    do {
+        if (N > 2) {
+            do {
+                if (mipXY > 1 || mipZ > 1)
+                    mipMaps.push_back(MipMap(dims, mipXY, mipZ));
+                mipZ *= 2;
+                dims = mipDims(dims, 1, 2);
+            } while (2 * dims[N - 3] > MIN_MIPMAP_SIZE);
+            mipZ = 1;
+            dims[N - 3] = standardDims[N - 3];
+        } else if (mipXY > 1)
+            mipMaps.push_back(MipMap(dims, mipXY, mipZ));
+        mipXY *= 2;
+        dims = mipDims(dims, 2, 1);
+    } while (2 * dims[N - 1] > MIN_MIPMAP_SIZE || 2 * dims[N - 2] > MIN_MIPMAP_SIZE);
+
 }
 
 hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims) {
     hsize_t size = 0;
-    int mip = 1;
+    int mipXY = 1;
+    int mipZ = 1;
     auto datasetDims = standardDims;
     auto bufferDims = standardBufferDims;
     int N = standardDims.size();
     
-    while (datasetDims[N - 1] > MIN_MIPMAP_SIZE || datasetDims[N - 2] > MIN_MIPMAP_SIZE) {
-        mip *= 2;
-        datasetDims = mipDims(datasetDims, 2);
-        bufferDims = mipDims(bufferDims, 2);
-        size += (sizeof(double) + sizeof(int)) * product(bufferDims);
-    }
+    do {
+        if (N > 2) {
+            do {
+                if (mipXY > 1 || mipZ > 1)
+                    size += (sizeof(double) + sizeof(int)) * product(bufferDims);
+                mipZ *= 2;
+                datasetDims = mipDims(datasetDims, 1, 2);
+                bufferDims = mipDims(bufferDims, 1, 2);
+            } while (2 * datasetDims[N - 3] > MIN_MIPMAP_SIZE);
+            mipZ = 1;
+            datasetDims[N - 3] = standardDims[N - 3];
+            bufferDims[N - 3] = standardBufferDims[N - 3];
+        } else if (mipXY > 1)
+            size += (sizeof(double) + sizeof(int)) * product(bufferDims);
+        mipXY *= 2;
+        datasetDims = mipDims(datasetDims, 2, 1);
+        bufferDims = mipDims(bufferDims, 2, 1);
+    } while (2 * datasetDims[N - 1] > MIN_MIPMAP_SIZE || 2 * datasetDims[N - 2] > MIN_MIPMAP_SIZE);
 
     return size;
 }
@@ -102,7 +137,7 @@ void MipMaps::createDatasets(H5::Group group) {
 
 void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {
     for (auto& mipMap : mipMaps) {
-        auto dims = mipDims(standardBufferDims, mipMap.mip);
+        auto dims = mipDims(standardBufferDims, mipMap.mipXY, mipMap.mipZ);
         mipMap.createBuffers(dims);
     }
 }

@@ -12,18 +12,18 @@
 // A single mipmap
 struct MipMap {
     MipMap() {};
-    MipMap(const std::vector<hsize_t>& datasetDims, int mip);
+    MipMap(const std::vector<hsize_t>& datasetDims, int mipXY, int mipZ);
     ~MipMap();
     
     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
     
-    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
-        hsize_t mipIndex = totalChannelOffset * width * height + (y / mip) * width + (x / mip);
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
+        hsize_t mipIndex = (z / mipZ) * width * height + (y / mipXY) * width + (x / mipXY);
         vals[mipIndex] += val;
         count[mipIndex]++;
     }
-
+    
     void calculate() {
         for (hsize_t mipIndex = 0; mipIndex < bufferSize; mipIndex++) {
             if (count[mipIndex]) {
@@ -38,7 +38,8 @@ struct MipMap {
     void resetBuffers();
     
     std::vector<hsize_t> datasetDims;
-    int mip;
+    int mipXY;
+    int mipZ;
     
     H5::DataSet dataset;
     
@@ -65,9 +66,9 @@ struct MipMaps {
     void createDatasets(H5::Group group);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
     
-    void accumulate(double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset) {
+    void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
         for (auto& mipMap : mipMaps) {
-            mipMap.accumulate(val, x, y, totalChannelOffset);
+            mipMap.accumulate(val, x, y, z);
         }
     }
 
