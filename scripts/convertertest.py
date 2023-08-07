@@ -19,7 +19,7 @@ from numpy.testing import assert_equal, assert_allclose, assert_almost_equal
 def pprint_sparse_diff(one, two, tolerance=1e-6):
     return "\n".join(["%r: %g" % (i, v) for i, v in np.ndenumerate(np.abs(one - two)) if v > tolerance])
 
-def compare_fits_hdf5(fitsname, hdf5name):
+def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
 
     fitsfile = fits.open(fitsname)
     hdf5file = h5py.File(hdf5name)
@@ -119,21 +119,45 @@ def compare_fits_hdf5(fitsname, hdf5name):
     
     if "MipMaps" in hdf5file["0"]:
         for mname, mipmap in sorted(hdf5file["0/MipMaps"]["DATA"].items(), key=lambda x: x[1].size, reverse=True):
-            factor = int(re.match(r"DATA_XY_(\d+)", mname).group(1))
+            if (re.search("_XYZ_", mname)):
+                factors = re.findall(r"_(\d+)", mname)
+                if (len(factors) == 3):
+                    xyfactor = int(factors[0])
+                    zfactor = int(factors[2])
+                elif (len(factors) == 1):
+                    xyfactor = zfactor = int(factors[0])
+                else:
+                    assert False, "Wrong number of mipmap factors found: {}".format(mname)
+            elif (re.search("_XY_", mname)):
+                xyfactor = int(re.match(r"DATA_XY_(\d+)", mname).group(1))
+                zfactor = 1
+            elif (re.search("_Z_", mname)):
+                zfactor = int(re.match(r"DATA_Z_(\d+)", mname).group(1))
+                xyfactor = 1
+            else:
+                assert False, "Unknown mipmap found: {}".format(mname)
+
             mheight, mwidth = mipmap.shape[-2:]
-            
-            assert mwidth == np.ceil(width / factor) and mheight == np.ceil(height / factor), "Dimensions of mipmap %s are incorrect. Expected: %r Got: %r" % (mname, d.shape[:-2] + (mheight, mwidth), mipmap.shape)
-        
+
+            assert mwidth == np.ceil(width / xyfactor) and mheight == np.ceil(height / xyfactor) , "Dimensions of mipmap %s are incorrect. Expected: %r Got: %r" % (mname, d.shape[:-2] + (mheight, mwidth), mipmap.shape)
+
+            if (zmips and len(mipmap.shape) > 2):
+                mdepth = mipmap.shape[-3]
+                assert mdepth == np.ceil(depth / zfactor)
+
             # check mipmap contents
             
             def assert_mipmap_channel_equal(name, channel, d, got):
                 got = np.array(got)
-                expected = np.array([[np.nanmean(d[y*factor:(y+1)*factor, x*factor:(x+1)*factor]) for x in range(mwidth)] for y in range(mheight)])
+                if zmips and len(mipmap.shape) > 2:
+                    expected = np.array([[[np.nanmean(d[z*zfactor:(z+1)*zfactor, y*xyfactor:(y+1)*xyfactor, x*xyfactor:(x+1)*xyfactor]) for x in range(mwidth)] for y in range(mheight)] for z in range(mdepth)])
+                else:
+                    expected = np.array([[np.nanmean(d[y*xyfactor:(y+1)*xyfactor, x*xyfactor:(x+1)*xyfactor]) for x in range(mwidth)] for y in range(mheight)])
                 assert_allclose(expected, got, rtol=1e-5, atol=1e-7, equal_nan=True, err_msg = "Mipmap %s channel %r is incorrect. \nEXPECTED:\n%r\nGOT:\n%r\nDIFF:\n%s" % (name, channel, expected, got, pprint_sparse_diff(expected, got)))
             
             d = np.array(hdf5data)
-            rest = mipmap.shape[:-2]
-            
+            rest = mipmap.shape[:-3] if zmips else mipmap.shape[:-2]
+
             if rest:
                 for i in np.ndindex(rest):
                     assert_mipmap_channel_equal(mname, i, d[i], mipmap[i])
@@ -142,7 +166,9 @@ def compare_fits_hdf5(fitsname, hdf5name):
 
         # check that the last mipmap is small enough
         assert mheight <= 128 and mwidth <= 128, "Smallest mipmap (%s) does not fit in 128x128 tile (dims: (%d, %d))" % (mname, mwidth, mheight)
-    
+        if (zmips and len(mipmap.shape) > 2):
+            assert mdepth <= 128
+
     fitsfile.close()
     hdf5file.close()
 
@@ -184,10 +210,12 @@ def make_image(outfile, *dims, **params):
     result = subprocess.run(cmd)
     assert result.returncode == 0, "Image generation failed."
     
-def convert(infile, outfile, executable, slow=False):
+def convert(infile, outfile, executable, slow=False, zMips=False):
     cmd = [executable]
     if slow:
         cmd.append("-s")
+    if zMips:
+        cmd.append("-z")
     cmd.extend(["-o", outfile, infile])
     
     print(*cmd)
@@ -280,6 +308,21 @@ def large_mipmap_image_set():
                 image_set.append((dims, params))
     return image_set
 
+def depth_mipmap_image_set():
+    image_set = []
+
+    # A few 3d images to test z mipmaps
+    for dims in ((130, 130), (130, 130, 130), (130, 130, 130, 2)):
+        for nans in (("pixel",),):
+            for nan_density in (50,):
+                params = {
+                    "--nans": nans,
+                    "--nan-density": nan_density
+                }
+
+                image_set.append((dims, params))
+    return image_set
+
 def large_timer_image_set(slow=False):
     if slow:
         return [
@@ -326,6 +369,7 @@ IMAGE_SETS = {
     "SMALL_NANS": small_nans_image_set(),
     "SMALL_DIMS": small_dims_image_set(),
     "LARGE_MIPMAP": large_mipmap_image_set(),
+    "DEPTH_MIPMAP": depth_mipmap_image_set(),
     "LARGE_TIMER_SQUARE_FAST": large_timer_image_set(slow=False),
     "LARGE_TIMER_SQUARE_SLOW": large_timer_image_set(slow=True),
     "WIDE_TIMER_SQUARE":  wide_timer_image_set(),
@@ -333,7 +377,7 @@ IMAGE_SETS = {
     "DUMMY":  dummy_image_set(),
 
 }
-            
+
 def test_speed(args, *image_sets):
     executables = [args.executable]
     if "compare" in args:
@@ -346,7 +390,7 @@ def test_speed(args, *image_sets):
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
-                    t = time("test.fits", new_converter, kwargs["slow"])
+                    t = time("test.fits", executable, args.slow)
                     if t is not None:
                         times[dims][executable].append(t)
     
@@ -384,6 +428,11 @@ def test_speed(args, *image_sets):
                     print('-', end='\t')
             print()
 
+def test_zmips_converter(infile, new_converter):
+    convert(infile, "ZMIPS.hdf5", new_converter, False, True)
+    compare_fits_hdf5(infile, "ZMIPS.hdf5", True)
+    subprocess.run(["rm", "test.fits", "ZMIPS.hdf5"])
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test for the HDF5 converter")
     parser.add_argument('-c', '--compare', help='A path to another converter executable to use as a reference. If a reference converter is given, random files converted using the fast algorithm with both converters will be compared to each other. If none is given, the output of the converter at the default path will be checked for correctness (THIS IS SLOW), and its fast and slow algorithm outputs will be compared for consistency.')
@@ -391,18 +440,21 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--slow', action='store_true', help='Use the slow converter versions when comparing converters or timing converter(s).')
     parser.add_argument('-i', '--image-set', nargs="+", help="The image set(s) to use. Any combination of %s. By default a small dummy set is used." % ", ".join(repr(o) for o in IMAGE_SETS) , default=["DUMMY"])
     parser.add_argument('-r', '--repeat', type=int, help="The number of times to repeat timed conversions (default: 3).", default=3)
+    parser.add_argument('-z', '--zmips', action='store_true', help='Test if HDF5 conversion for depth MipMaps produces valid result.')
     parser.add_argument("executable", help="The path to the executable to test.")
     args = parser.parse_args()
     
     image_sets = (IMAGE_SETS[i] for i in args.image_set)
     
     if args.time:
-        test_speed(args, *image_sets)
+        test_speed(args, *image_sets, args.executable)
     else:
         for image_set in image_sets:
             for dims, params in image_set:
                 make_image("test.fits", *dims, **params)
                 if args.compare:
                     test_new_old_converter("test.fits", args.slow, args.compare, args.executable)
+                elif args.zmips:
+                    test_zmips_converter("test.fits", args.executable);
                 else:
                     test_converter_correctness("test.fits", args.executable)

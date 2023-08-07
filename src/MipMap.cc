@@ -73,7 +73,7 @@ void MipMap::resetBuffers() {
 
 // MipMaps
 
-MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& chunkDims) : standardDims(standardDims), chunkDims(chunkDims) {
+MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& chunkDims, bool zMips) : standardDims(standardDims), chunkDims(chunkDims) {
     auto dims = standardDims;
     int N = dims.size();
     int mipXY = 1;
@@ -81,7 +81,7 @@ MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& 
     
     // We keep going until we have a mipmap which fits entirely within the minimum size
     do {
-        if (N > 2) {
+        if (N > 2 && zMips) {
             do {
                 if (mipXY > 1 || mipZ > 1)
                     mipMaps.push_back(MipMap(dims, mipXY, mipZ));

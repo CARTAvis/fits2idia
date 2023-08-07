@@ -6,7 +6,7 @@
 #include "Converter.h"
 
 // TODO do we need these?
-FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
+FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : Converter(inputFileName, outputFileName, progress, zMips) {}
 
 MemoryUsage FastConverter::calculateMemoryUsage() {
     MemoryUsage m;

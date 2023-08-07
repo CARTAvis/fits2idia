@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
+SlowConverter::SlowConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : Converter(inputFileName, outputFileName, progress, zMips) {}
 
 MemoryUsage SlowConverter::calculateMemoryUsage() {
     MemoryUsage m;

@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory, bool& zMips) {
     extern int optind;
     extern char *optarg;
     
@@ -19,15 +19,16 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     std::ostringstream usage;
     usage << "IDIA FITS to HDF5 converter version " << HDF5_CONVERTER_VERSION 
     << " using IDIA schema version " << SCHEMA_VERSION << std::endl
-    << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] input_filename" << std::endl << std::endl
+    << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-p\tPrint progress output (by default the program is silent)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
-    << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl;
+    << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
+    << "-z\tCalculate mipmaps for depth" << std::endl;
     
-    while ((opt = getopt(argc, argv, ":o:spqm")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:spqmz")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -45,6 +46,9 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'm':
                 // only print memory usage and exit
                 onlyReportMemory = true;
+                break;
+            case 'z':
+                zMips = true;
                 break;
             case ':':
                 err = true;
@@ -94,8 +98,9 @@ int main(int argc, char** argv) {
     bool slow(false);
     bool progress(false);
     bool onlyReportMemory(false);
+    bool zMips(false);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips)) {
         return 1;
     }
     
@@ -121,7 +126,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, progress);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, progress, zMips);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();
