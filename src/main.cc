@@ -26,8 +26,8 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-p\tPrint progress output (by default the program is silent)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
-    << "-z\tCalculate mipmaps for depth" << std::endl;
-    
+    << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
+
     while ((opt = getopt(argc, argv, ":o:spqmz")) != -1) {
         switch (opt) {
             case 'o':
@@ -103,7 +103,12 @@ int main(int argc, char** argv) {
     if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips)) {
         return 1;
     }
-    
+
+    if (slow && zMips){
+        std::cerr << "Currently unable to include depth in mipmap calculation for -s mode." << std::endl;
+        return -1;
+    }
+
     hsize_t memoryLimit(0);
     
     std::ifstream rcFile("/etc/fits2idiarc");
