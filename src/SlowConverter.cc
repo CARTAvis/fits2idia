@@ -11,7 +11,7 @@ MemoryUsage SlowConverter::calculateMemoryUsage() {
     MemoryUsage m;
 
     m.sizes["Main dataset"] = height * width * sizeof(float);
-    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width});
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
     m.sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {

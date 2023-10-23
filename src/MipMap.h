@@ -61,7 +61,8 @@ struct MipMaps {
     MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& chunkDims, bool zMips);
     
     // We need the dataset dimensions to work out how many mipmaps we have
-    static hsize_t size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims);
+    static hsize_t size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims, bool zMips);
+    
     
     void createDatasets(H5::Group group);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);

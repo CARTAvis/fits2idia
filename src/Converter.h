@@ -36,6 +36,7 @@ protected:
     
     Timer timer;
     bool progress;
+    bool zMips;
     
     std::string tempOutputFileName;
     std::string outputFileName;

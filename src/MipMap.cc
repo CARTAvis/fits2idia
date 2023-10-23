@@ -98,7 +98,7 @@ MipMaps::MipMaps(std::vector<hsize_t> standardDims, const std::vector<hsize_t>& 
 
 }
 
-hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims) {
+hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vector<hsize_t>& standardBufferDims, bool zMips) {
     hsize_t size = 0;
     int mipXY = 1;
     int mipZ = 1;
@@ -107,7 +107,7 @@ hsize_t MipMaps::size(const std::vector<hsize_t>& standardDims, const std::vecto
     int N = standardDims.size();
     
     do {
-        if (N > 2) {
+        if (N > 2 && zMips) {
             do {
                 if (mipXY > 1 || mipZ > 1)
                     size += (sizeof(double) + sizeof(int)) * product(bufferDims);
