@@ -6,13 +6,13 @@
 #include "Converter.h"
 
 // TODO do we need these?
-FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress) : Converter(inputFileName, outputFileName, progress) {}
+FastConverter::FastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : Converter(inputFileName, outputFileName, progress, zMips) {}
 
 MemoryUsage FastConverter::calculateMemoryUsage() {
     MemoryUsage m;
     
     m.sizes["Main dataset"] = depth * height * width * sizeof(float);
-    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {depth, height, width});
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {depth, height, width}, zMips);
     m.sizes["XY stats"] = Stats::size({depth}, numBins);
     
     if (depth > 1) {

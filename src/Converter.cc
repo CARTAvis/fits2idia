@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress) : timer(), progress(progress) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -39,7 +39,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
     }
     
     // MIPMAPS
-    mipMaps = MipMaps(standardDims, tileDims);
+    mipMaps = MipMaps(standardDims, tileDims, zMips);
     
     // Prepare output file
     this->outputFileName = outputFileName;
@@ -52,11 +52,11 @@ Converter::~Converter() {
     closeFitsFile(inputFilePtr);
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress, bool zMips) {
     if (slow) {
-        return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress));
+        return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
     } else {
-        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress));
+        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));
     }
 }
 

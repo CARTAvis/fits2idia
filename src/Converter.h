@@ -23,10 +23,10 @@ struct MemoryUsage {
 class Converter {
 public:
     Converter() {}
-    Converter(std::string inputFileName, std::string outputFileName, bool progress);
+    Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress, bool zMips);
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
@@ -36,6 +36,7 @@ protected:
     
     Timer timer;
     bool progress;
+    bool zMips;
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -74,7 +75,7 @@ protected:
 
 class FastConverter : public Converter {
 public:
-    FastConverter(std::string inputFileName, std::string outputFileName, bool progress);
+    FastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
     
 protected:
@@ -84,7 +85,7 @@ protected:
 
 class SlowConverter : public Converter {
 public:
-    SlowConverter(std::string inputFileName, std::string outputFileName, bool progress);
+    SlowConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
     
 protected:
