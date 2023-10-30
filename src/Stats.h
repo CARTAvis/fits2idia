@@ -19,6 +19,14 @@ struct StatsCounter {
         sum += val;
         sumSq += val * val;
     }
+    
+    void reset() {
+        minVal = std::numeric_limits<float>::max();
+        maxVal = -std::numeric_limits<float>::max();
+        sum = 0;
+        sumSq = 0;
+        nanCount = 0;
+    }
 
     void accumulateFiniteLazy(float val) {
         if (val < minVal) {

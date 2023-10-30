@@ -26,7 +26,7 @@ public:
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress, bool zMips);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips);
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
@@ -82,6 +82,15 @@ protected:
     void copyAndCalculate() override;
 };
 
+
+class SmartConverter : public Converter {
+public:
+    SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    MemoryUsage calculateMemoryUsage() override;
+    
+protected:
+    void copyAndCalculate() override;
+};
 
 class SlowConverter : public Converter {
 public:
