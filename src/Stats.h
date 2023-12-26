@@ -48,6 +48,14 @@ struct StatsCounter {
     void accumulateNonFinite() {
         nanCount++;
     }
+    
+    void accumulateFromCounter(StatsCounter otherCounter) {
+        minVal = fmin(otherCounter.minVal, otherCounter.minVal);
+        maxVal = fmax(otherCounter.maxVal, otherCounter.maxVal);
+        sum += otherCounter.sum;
+        sumSq += otherCounter.sumSq;
+        nanCount += otherCounter.nanCount;
+    }
 
     float minVal;
     float maxVal;
