@@ -133,14 +133,7 @@ void SmartConverter::copyAndCalculate() {
                     }
                 }
 #pragma omp critical
-                {
-                    counterXY.minVal = fmin(counterXY.minVal, counterX.minVal); //an "accumulatestatstocounter" would be better here like below
-                    counterXY.maxVal = fmax(counterXY.maxVal, counterX.maxVal);
-                    counterXY.sum += counterX.sum;
-                    counterXY.sumSq += counterX.sumSq;
-                    counterXY.nanCount += counterX.nanCount;
-                }
-
+                counterXY.accumulateFromCounter(counterX);      // Accumulate to slice XY stats from thread-local X stats
             } // end of XY loop
             
             // Final correction of XY min and max
