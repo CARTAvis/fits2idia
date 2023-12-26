@@ -33,11 +33,6 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
 }
 
 void SmartConverter::copyAndCalculate() {
-    
-    int NUM_STRIPES = omp_get_max_threads();
-    std::mutex* location_mutexes = new std::mutex[NUM_STRIPES];
-    std::cout<< "NUM_STRIPES: " << NUM_STRIPES << std::endl;
-    
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
@@ -48,7 +43,6 @@ void SmartConverter::copyAndCalculate() {
     standardCube = new float[cubeSize];
     
     // Allocate one stokes of stats at a time
-    //statsXY.createBuffers({depth}, height);
     statsXY.createBuffers({depth});
     
     if (depth > 1) {
@@ -95,6 +89,8 @@ void SmartConverter::copyAndCalculate() {
             auto indexXY = c;
             std::function<void(float)> accumulate;
             
+            //
+            
             auto lazy_accumulate = [&] (float val) {
                 counterXY.accumulateFiniteLazy(val);
             };
@@ -106,13 +102,8 @@ void SmartConverter::copyAndCalculate() {
             
             accumulate = first_accumulate;
             
-            //hsize_t  y;
             hsize_t  y,x;
-            
-            // for each mipmap index in  highest resolution mipmap
-            
-            
-#pragma omp parallel for default(none) private (y, counterX) shared (counterXY, mipMaps, location_mutexes)
+#pragma omp parallel for default(none) private (y, counterX) shared (counterXY, mipMaps)
             for (y = 0; y < height; y++) {
                 counterX.reset();
                 for (hsize_t x = 0; x < width; x++) {
@@ -125,9 +116,8 @@ void SmartConverter::copyAndCalculate() {
                         counterX.accumulateFinite(val);
                         
                         // Accumulate mipmaps
-                        mipMaps.accumulateWithLock(val, x, y, 0, location_mutexes);   //possible race condiion here...should do by row? Or maybe for loop by mipindex
-                        //accumulate to mipmap row buffer
-                        //accumulate 2D mipmap
+                        mipMaps.accumulate(val, x, y, 0);   //possible race condiion here...
+                        
                     } else {
                         counterX.accumulateNonFinite();
                     }
@@ -215,13 +205,11 @@ void SmartConverter::copyAndCalculate() {
             
             auto doChannelHistogram = [&] (float val) {
                 // XY histogram
-                //statsXY.accumulatePartialHistogram(val, chanMin, chanRange, c);
                 statsXY.accumulateHistogram(val, chanMin, chanRange, c);
             };
             
             auto doCubeHistogram = [&] (float val) {
                 // XYZ histogram
-                //statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, 0);
                 statsXYZ.accumulateHistogram(val, cubeMin, cubeRange, 0);
             };
             
@@ -249,9 +237,6 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
-            //need a partial histogram multiplier here... I think number of rows in the dataset. THen the partials can be done row by row
-            
-            
             for (hsize_t p = 0; p < width * height; p++) {
                 auto& val = standardCube[p];
                     if (std::isfinite(val)) {
@@ -259,23 +244,6 @@ void SmartConverter::copyAndCalculate() {
                         cubeHistogramFunc(val);
                     }
             } // end of XY loop
-            /*
-            hsize_t y;
-#pragma omp parallel for default(none) private (y) shared (standardCube, channelHistogramFunc, cubeHistogramFunc)
-            for (y = 0; y < height; y++) {
-                for (hsize_t x = 0; x < width; x++) {
-                    auto p = y * width + x;
-                    auto& val = standardCube[p];
-                    if (std::isfinite(val)) {
-                        channelHistogramFunc(val);
-                        cubeHistogramFunc(val);
-                    }
-                }
-#pragma omp critical
-                statsXY.consolidatePartialHistogram();
-            } // end of XY loop
-            statsXYZ.consolidatePartialHistogram();
-            */
         } // end of second channel loop (XY and XYZ histograms)
         
         PROGRESS(std::endl);
