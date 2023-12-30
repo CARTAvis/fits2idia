@@ -85,7 +85,7 @@ void SmartConverter::copyAndCalculate() {
             TIMER(timer.start(timerLabelStatsMipmaps););
 
             StatsCounter counterXY;
-            StatsCounter counterX;
+            StatsCounter counterRegion;
             auto indexXY = c;
             std::function<void(float)> accumulate;
             
@@ -102,28 +102,38 @@ void SmartConverter::copyAndCalculate() {
             
             accumulate = first_accumulate;
             
-            hsize_t  y,x;
-#pragma omp parallel for default(none) private (y, counterX) shared (counterXY, mipMaps)
-            for (y = 0; y < height; y++) {
-                counterX.reset();
-                for (hsize_t x = 0; x < width; x++) {
-                    auto pos = y * width + x; // relative to channel slice
-                    auto& val = standardCube[pos];
-
-
-                    if (std::isfinite(val)) {
-                        // XY statistics
-                        counterX.accumulateFinite(val);
-                        
-                        // Accumulate mipmaps
-                        mipMaps.accumulate(val, x, y, 0);   //possible race condiion here...
-                        
-                    } else {
-                        counterX.accumulateNonFinite();
+                
+            int mipIndex;
+            int REGION_MULTIPLIER = 32;
+            int adjustedStandardCubeSize = cubeSize / REGION_MULTIPLIER / REGION_MULTIPLIER;
+            
+#pragma omp parallel for default(none) private (mipIndex, counterRegion) shared (standardCube, adjustedStandardCubeSize, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
+            for (mipIndex = 0; mipIndex < adjustedStandardCubeSize; mipIndex += 1 ) {
+                counterRegion.reset();
+                hsize_t x0,y0,z0;
+                MipIndexToXYZ(mipIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
+                for (int y = y0; y < y0 + REGION_MULTIPLIER; y++) {
+                    for (int x = x0; x < x0 + REGION_MULTIPLIER; x++) {
+                        auto pos = y * width + x;
+                        if (x >= width || y >= height) {    //check if we are out of bounds
+                            continue;
+                        }
+                        //std::cout << "pos: " << pos << std::endl;
+                        auto& val = standardCube[pos];
+                        if (std::isfinite(val)) {
+                            // XY statistics
+                            counterRegion.accumulateFinite(val);
+                    
+                            // Accumulate mipmaps
+                            mipMaps.accumulate(val, x, y, 0); //This should not conflict with the other threads
+                            
+                        } else {
+                            counterRegion.accumulateNonFinite();
+                        }
                     }
                 }
 #pragma omp critical
-                counterXY.accumulateFromCounter(counterX);      // Accumulate to slice XY stats from thread-local X stats
+                counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
             } // end of XY loop
             
             // Final correction of XY min and max
