@@ -43,10 +43,10 @@ void SmartConverter::copyAndCalculate() {
     standardCube = new float[cubeSize];
     
     // Allocate one stokes of stats at a time
-    statsXY.createBuffers({depth});
+    statsXY.createBuffers({depth}, height);
     
     if (depth > 1) {
-        statsXYZ.createBuffers({}, depth);
+        statsXYZ.createBuffers({});
     }
     
     mipMaps.createBuffers({1, height, width});
@@ -213,9 +213,9 @@ void SmartConverter::copyAndCalculate() {
                 continue;
             }
             
-            auto doChannelHistogram = [&] (float val) {
+            auto doChannelHistogram = [&] (float val, hsize_t offset) {
                 // XY histogram
-                statsXY.accumulateHistogram(val, chanMin, chanRange, c);
+                statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
             };
             
             auto doCubeHistogram = [&] (float val) {
@@ -227,11 +227,15 @@ void SmartConverter::copyAndCalculate() {
                 UNUSED(val);
             };
             
-            std::function<void(float)> channelHistogramFunc = doChannelHistogram;
+            auto doNothingOffset = [&] (float val, hsize_t offset) {
+                UNUSED(val);
+            };
+            
+            std::function<void(float,hsize_t)> channelHistogramFunc = doChannelHistogram;
             std::function<void(float)> cubeHistogramFunc = doCubeHistogram;
             
             if (!chanHist) {
-                channelHistogramFunc = doNothing;
+                channelHistogramFunc = doNothingOffset;
             }
             
             if (!cubeHist) {
@@ -246,14 +250,22 @@ void SmartConverter::copyAndCalculate() {
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
-            
-            for (hsize_t p = 0; p < width * height; p++) {
-                auto& val = standardCube[p];
+
+            hsize_t y ;
+#pragma omp parallel for default(none) private(y) shared (standardCube, height, width, channelHistogramFunc, cubeHistogramFunc)
+            for (y = 0; y < height; y++) {
+                for (hsize_t x = 0; x < width; x++) {
+                    auto pos = y * width + x;
+                    auto& val = standardCube[pos];
                     if (std::isfinite(val)) {
-                        channelHistogramFunc(val);
+                        channelHistogramFunc(val, y);
                         cubeHistogramFunc(val);
                     }
+                }
             } // end of XY loop
+            
+            statsXY.consolidatePartialHistogram(c);
+            
         } // end of second channel loop (XY and XYZ histograms)
         
         PROGRESS(std::endl);

@@ -105,6 +105,7 @@ struct Stats {
     // Histograms
     
     void clearHistogramBuffers();
+    void clearPartialHistogramBuffer();
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
@@ -120,6 +121,15 @@ struct Stats {
         for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
             for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
                 histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
+            }
+        }
+    }
+    
+    void consolidatePartialHistogram(hsize_t mainOffset) {
+        for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
+            for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
+                histograms[mainOffset * numBins + binIndex] += partialHistograms[offset * numBins + binIndex];
+                partialHistograms[offset * numBins + binIndex] = 0;     //reset partial histogram after consolidation
             }
         }
     }
