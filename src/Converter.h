@@ -24,7 +24,7 @@ class Converter {
 public:
     Converter() {}
     Converter(std::string inputFileName, std::string outputFileName, bool progress);
-    ~Converter();
+    virtual ~Converter();
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress);
     void convert();
