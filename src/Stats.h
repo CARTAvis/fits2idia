@@ -50,8 +50,8 @@ struct StatsCounter {
     }
     
     void accumulateFromCounter(StatsCounter otherCounter) {
-        minVal = fmin(otherCounter.minVal, otherCounter.minVal);
-        maxVal = fmax(otherCounter.maxVal, otherCounter.maxVal);
+        minVal = fmin(minVal, otherCounter.minVal);
+        maxVal = fmax(maxVal, otherCounter.maxVal);
         sum += otherCounter.sum;
         sumSq += otherCounter.sumSq;
         nanCount += otherCounter.nanCount;
