@@ -104,7 +104,6 @@ void SmartConverter::copyAndCalculate() {
             
             accumulate = first_accumulate;
             
-                
             int mipIndex;
             StatsCounter counterRegion;
             
@@ -299,6 +298,7 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
         
+        hsize_t sliceSize = product(trimAxes({stokes, depth, REGION_MULTIPLIER, REGION_MULTIPLIER}, N));
         float* standardSlice = new float[sliceSize];
         
         int numThreads = omp_get_max_threads();
