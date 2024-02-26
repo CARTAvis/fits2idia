@@ -37,6 +37,8 @@ void SmartConverter::copyAndCalculate() {
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
+    const hsize_t REGION_MULTIPLIER = 32;
+    
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
@@ -85,7 +87,7 @@ void SmartConverter::copyAndCalculate() {
             TIMER(timer.start(timerLabelStatsMipmaps););
 
             StatsCounter counterXY;
-            StatsCounter counterRegion;
+            
             auto indexXY = c;
             std::function<void(float)> accumulate;
             
@@ -104,8 +106,11 @@ void SmartConverter::copyAndCalculate() {
             
                 
             int mipIndex;
-            int REGION_MULTIPLIER = 32;
-            int adjustedStandardCubeSize = cubeSize / REGION_MULTIPLIER / REGION_MULTIPLIER;
+            StatsCounter counterRegion;
+            
+            int regionRows = std::ceil(height / (float)REGION_MULTIPLIER);
+            int regionCols = std::ceil(width / (float)REGION_MULTIPLIER);
+            int adjustedStandardCubeSize = regionRows * regionCols;
             
 #pragma omp parallel for default(none) private (mipIndex, counterRegion) shared (standardCube, adjustedStandardCubeSize, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
             for (mipIndex = 0; mipIndex < adjustedStandardCubeSize; mipIndex += 1 ) {
@@ -121,11 +126,11 @@ void SmartConverter::copyAndCalculate() {
                         //std::cout << "pos: " << pos << std::endl;
                         auto& val = standardCube[pos];
                         if (std::isfinite(val)) {
-                            // XY statistics
+                            // region statistics
                             counterRegion.accumulateFinite(val);
                     
                             // Accumulate mipmaps
-                            mipMaps.accumulate(val, x, y, 0); //This should not conflict with the other threads
+                            mipMaps.accumulate(val, x, y, 0); //This will not conflict with the other threads as regions are separate
                             
                         } else {
                             counterRegion.accumulateNonFinite();
@@ -134,7 +139,7 @@ void SmartConverter::copyAndCalculate() {
                 }
 #pragma omp critical
                 counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
-            } // end of XY loop
+            } // end of region loop
             
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
@@ -294,11 +299,17 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
         
-        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         float* standardSlice = new float[sliceSize];
-        float* rotatedSlice = new float[sliceSize];
         
-        statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        int numThreads = omp_get_max_threads();
+        
+        // Create a vector of float pointers for each thread
+        std::vector<float*> rotatedSlices(numThreads);
+        for (int i = 0; i < numThreads; i++) {
+            rotatedSlices[i] = new float[sliceSize];
+        }
+        
+        statsZ.createBuffers({REGION_MULTIPLIER, REGION_MULTIPLIER});
         
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
@@ -306,88 +317,108 @@ void SmartConverter::copyAndCalculate() {
             
             hsize_t tileCount(0);
             
-            for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
-                for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
-                    tileCount++;
-                    hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
-                    hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
-                    
-                    DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
-                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-                    
-                    // read tile slice
-                    DEBUG(std::cout << " Reading main dataset..." << std::flush;);
-                    TIMER(timer.start("Read"););
-                    
-                    auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
-                    auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
-                    auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
-                    
-                    readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
-                    
-                    // rotate tile slice
-                    DEBUG(std::cout << " Calculating rotation..." << std::flush;);
-                    TIMER(timer.start("Rotation"););
-                    
-                    for (hsize_t i = 0; i < depth; i++) {
-                        for (hsize_t j = 0; j < ySize; j++) {
-                            for (hsize_t k = 0; k < xSize; k++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
-                                
-                                // rotation
-                                auto destIndex = i + depth * j + (ySize * depth) * k;
-                                rotatedSlice[destIndex] = val;
-                            }
-                        }
-                    }
-                    
-                    // A separate pass over the same slice depth-last 
-                    DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
-                    TIMER(timer.start("Z statistics"););
-                    
+            int mipIndex;
+            
+            int mipRows = std::ceil(height / (float)REGION_MULTIPLIER);
+            int mipCols = std::ceil(width / (float)REGION_MULTIPLIER);
+            int adjustedStandardCubeSize = mipRows * mipCols;
+            
+#pragma omp parallel for default(none) private (mipIndex) shared (s, statsZ, tileProgressStride, standardSlice, rotatedSlices, adjustedStandardCubeSize, mipMaps, tileCount, cubeSize, REGION_MULTIPLIER, std::cout)
+            for (mipIndex = 0; mipIndex < adjustedStandardCubeSize; mipIndex += 1 ) {
+                // Get the thread id
+                int threadId = omp_get_thread_num();
+                
+                // Use the thread's own rotatedSlice
+                float* rotatedSlice = rotatedSlices[threadId];
+                
+                hsize_t x0,y0,z0;
+                MipIndexToXYZ(mipIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
+                hsize_t xOffset = x0;
+                hsize_t yOffset = y0;
+                tileCount++;
+                hsize_t xSize = std::min(REGION_MULTIPLIER, width - xOffset);
+                hsize_t ySize = std::min(REGION_MULTIPLIER, height - yOffset);
+                
+                DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
+                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+                
+                // read tile slice
+                DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+                TIMER(timer.start("Read"););
+                
+                auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
+                auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
+                auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
+                
+                readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                
+                // rotate tile slice
+                DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+                TIMER(timer.start("Rotation"););
+                
+                //depth is going all the way, but ysize and xsize are not!
+                for (hsize_t i = 0; i < depth; i++) {
                     for (hsize_t j = 0; j < ySize; j++) {
                         for (hsize_t k = 0; k < xSize; k++) {
-                            StatsCounter counterZ;
-                            auto indexZ = k + xSize * j;
+                            auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                            auto& val = standardSlice[sourceIndex];
                             
-                            for (hsize_t i = 0; i < depth; i++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
-                                
-                                if (std::isfinite(val)) {
-                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
-                                    counterZ.accumulateFinite(val);
-                                } else {
-                                    counterZ.accumulateNonFinite();
-                                }
-                            }
-                            
-                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
+                            // rotation
+                            auto destIndex = i + depth * j + (ySize * depth) * k;
+                            rotatedSlice[destIndex] = val;
                         }
                     }
-                    
-                    // write tile slice
-                    DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
-                    TIMER(timer.start("Write"););
-                    
-                    auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
-                    auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
-                    auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
-                    
-                    writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                    
-                    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
-                    // write Z statistics
-                    statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                 }
-            }
+                
+                // A separate pass over the same slice depth-last
+                DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
+                TIMER(timer.start("Z statistics"););
+                StatsCounter counterZ;
+                for (hsize_t j = 0; j < ySize; j++) {
+                    for (hsize_t k = 0; k < xSize; k++) {
+                        counterZ.reset();
+                        auto indexZ = k + xSize * j;
+                        
+                        for (hsize_t i = 0; i < depth; i++) {
+                            auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                            auto& val = standardSlice[sourceIndex];
+                            
+                            if (std::isfinite(val)) {
+                                // Not lazy; too much risk of encountering an ascending / descending sequence.
+                                counterZ.accumulateFinite(val);
+                            } else {
+                                counterZ.accumulateNonFinite();
+                            }
+                        }
+#pragma omp critical
+                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
+                    }
+                }
+                
+                // write tile slice
+                DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+                TIMER(timer.start("Write"););
+                
+                auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
+                auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
+                auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
+                
+                writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                
+                DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+                // write Z statistics
+                statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                
+                
+                }
             PROGRESS(std::endl);
         }
         
         TIMER(timer.start("Free"););
         DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
         delete[] standardSlice;
-        delete[] rotatedSlice;
+        for (int i = 0; i < numThreads; i++) {
+            delete[] rotatedSlices[i];
+        }
     }
 }
