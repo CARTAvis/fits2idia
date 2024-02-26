@@ -309,7 +309,7 @@ void SmartConverter::copyAndCalculate() {
             rotatedSlices[i] = new float[sliceSize];
         }
         
-        statsZ.createBuffers({REGION_MULTIPLIER, REGION_MULTIPLIER});
+        statsZ.createBuffers({height, width});
         
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
@@ -390,8 +390,9 @@ void SmartConverter::copyAndCalculate() {
                                 counterZ.accumulateNonFinite();
                             }
                         }
+                        hsize_t index = (xOffset + k) + width * (yOffset + j);
 #pragma omp critical
-                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
+                            statsZ.copyStatsFromCounter(index, depth, counterZ);
                     }
                 }
                 
@@ -406,11 +407,11 @@ void SmartConverter::copyAndCalculate() {
                 writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
                 
                 DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
-                // write Z statistics
-                statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
-                
+              
                 
                 }
+                // write Z statistics
+                statsZ.write();
             PROGRESS(std::endl);
         }
         
