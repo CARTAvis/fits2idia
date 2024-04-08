@@ -380,7 +380,7 @@ IMAGE_SETS = {
 
 def test_speed(args, *image_sets):
     executables = [args.executable]
-    if "compare" in args:
+    if args.compare is not None:
         executables.append(args.compare)
     
     times = defaultdict(lambda: defaultdict(list))
@@ -447,7 +447,7 @@ if __name__ == "__main__":
     image_sets = (IMAGE_SETS[i] for i in args.image_set)
     
     if args.time:
-        test_speed(args, *image_sets, args.executable)
+        test_speed(args, *image_sets)
     else:
         for image_set in image_sets:
             for dims, params in image_set:
