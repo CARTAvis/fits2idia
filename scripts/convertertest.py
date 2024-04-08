@@ -44,7 +44,7 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
 
     axes = {v: k for k, v in enumerate(reversed(axis_names))}
     dims = {v: fitsdata.shape[k] for k, v in enumerate(reversed(axis_names))}
-    
+
     width, height, depth, stokes = dims["X"], dims["Y"], dims.get("Z", 1), dims.get("W", 1)
 
     # CHECK SWIZZLES
@@ -57,7 +57,7 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
         swizzled_name = "ZYXW"
 
     if swizzled_name:
-        swizzled_shape = tuple(dims[a] for a in reversed(swizzled_name))    
+        swizzled_shape = tuple(dims[a] for a in reversed(swizzled_name))
         assert swizzled_name in hdf5file["0/SwizzledData"], "No swizzled dataset found."
         assert hdf5file["0/SwizzledData"][swizzled_name].shape == swizzled_shape, "Swizzled dataset has incorrect dimensions."
 
@@ -68,34 +68,34 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
     if ndim >= 3 and dims["Z"] > 1:
         stats.append("Z")
         stats.append("XYZ")
-        
+
     for s in stats:
         assert s in hdf5file["0/Statistics"], "%s statistics missing." % s
-        
+
         sdata = hdf5file["0/Statistics"][s]
         stats_axis = tuple(axes[a] for a in s)
-        
+
         # CHECK BASIC STATS
-        
+
         def assert_close(stat, func, data=fitsdata):
             if stat in sdata:
                 assert_allclose(sdata[stat], func(data, axis=stats_axis), rtol=1e-5, err_msg = "%s/%s is incorrect. DIFF: %r" % (s, stat, func(data, axis=stats_axis) - sdata[stat]))
-        
+
         assert_close("SUM", np.nansum, fitsdata.astype(np.float64))
         assert_close("SUM_SQ", np.nansum, fitsdata.astype(np.float64)**2)
         assert_close("MEAN", np.nanmean)
         assert_close("MIN", np.nanmin)
         assert_close("MAX", np.nanmax)
-        
+
         assert (np.count_nonzero(np.isnan(fitsdata), axis=stats_axis) == sdata["NAN_COUNT"]).all(), "%s/NAN_COUNT is incorrect." % s
-        
+
         if s in ["XY", "XYZ"]:
             # CHECK HISTOGRAMS
-            
+
             hist = np.array(sdata["HISTOGRAM"])
             num_bins = int(max(np.sqrt(width * height), 2))
             d = np.array(hdf5data)
-            
+
             # Note: we produce a zero histogram for datasets with only one not-nan value. Numpy changes the bounds when calculating the histogram for a single value, so it always bins it somewhere.
             if ndim == len(s):
                 d = d[~np.isnan(d)]
@@ -106,17 +106,17 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
                 rest_shape = tuple(dims[a] for a in reversed(axis_names) if a not in s)
                 rest_merged_shape = np.multiply.reduce(rest_shape)
                 hist_shape = rest_shape + (num_bins,)
-                                            
+
                 reference = np.apply_along_axis(lambda a: np.histogram(a[~np.isnan(a)].astype(np.float64), bins=num_bins)[0] if a[~np.isnan(a)].size > 1 else np.zeros(num_bins), 1, d.reshape(rest_merged_shape, stats_merged_shape)).reshape(hist_shape)
-            
+
             diff = reference - hist
-            
+
             assert hist.shape == reference.shape, "%s histogram shape %r does not match expected shape %r" % (s, hist.shape, reference.shape)
             # Note: we can't replicate the converter's binning exactly because of a precision issue, so there are occasional off-by-one bin increments.
             assert diff.sum() == 0 and diff[diff != 0].size / diff.size < 0.01, "Too many %s histogram values do not match expected values.\nSum of difference: %d\nDifference:\n%s" % (s, diff.sum(), pprint_sparse_diff(hist, reference))
-    
+
     # CHECK MIPMAPS
-    
+
     if "MipMaps" in hdf5file["0"]:
         for mname, mipmap in sorted(hdf5file["0/MipMaps"]["DATA"].items(), key=lambda x: x[1].size, reverse=True):
             if (re.search("_XYZ_", mname)):
@@ -146,7 +146,7 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
                 assert mdepth == np.ceil(depth / zfactor)
 
             # check mipmap contents
-            
+
             def assert_mipmap_channel_equal(name, channel, d, got):
                 got = np.array(got)
                 if zmips and len(mipmap.shape) > 2:
@@ -154,7 +154,7 @@ def compare_fits_hdf5(fitsname, hdf5name, zmips=False):
                 else:
                     expected = np.array([[np.nanmean(d[y*xyfactor:(y+1)*xyfactor, x*xyfactor:(x+1)*xyfactor]) for x in range(mwidth)] for y in range(mheight)])
                 assert_allclose(expected, got, rtol=1e-5, atol=1e-7, equal_nan=True, err_msg = "Mipmap %s channel %r is incorrect. \nEXPECTED:\n%r\nGOT:\n%r\nDIFF:\n%s" % (name, channel, expected, got, pprint_sparse_diff(expected, got)))
-            
+
             d = np.array(hdf5data)
             rest = mipmap.shape[:-3] if zmips else mipmap.shape[:-2]
 
@@ -176,17 +176,17 @@ def compare_hdf5_hdf5(file1, file2, fail_msg, ignore_converter_attrs=True):
     h5diff = subprocess.run(["h5diff", file1, file2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if h5diff.returncode == 0:
         return
-    
+
     if not ignore_converter_attrs:
         assert False, fail_msg
     else:
         ignore_attributes = ("SCHEMA_VERSION", "HDF5_CONVERTER", "HDF5_CONVERTER_VERSION")
-        
+
         output = h5diff.stdout.decode('ascii')
-        
+
         for attribute in ignore_attributes:
             output = re.sub(r"attribute: <%s of </0>> and <%s of </0>>\n\d+ differences found\n" % (attribute, attribute), "", output)
-            
+
         if output:
             print(output)
             print("(Permitted converter version attributes have been ignored.)")
@@ -204,68 +204,89 @@ def make_image(outfile, *dims, **params):
                 cmd.append(str(values))
     cmd.append("--")
     cmd.extend(str(d) for d in dims)
-    
+
     print(*cmd)
-    
+
     result = subprocess.run(cmd)
     assert result.returncode == 0, "Image generation failed."
-    
-def convert(infile, outfile, executable, slow=False, zMips=False):
+
+def convert(infile, outfile, executable, slow=False, smart=False, z_mips=False, mem_limit_in_mb=200):
     cmd = [executable]
     if slow:
+        if smart:
+            raise "Only slow or smart can be selected at once."
         cmd.append("-s")
-    if zMips:
+    if smart:
+        cmd.append("-r" + str(mem_limit_in_mb))
+    if z_mips:
         cmd.append("-z")
     cmd.extend(["-o", outfile, infile])
-    
+
     print(*cmd)
-    
+
     result = subprocess.run(cmd)
     assert result.returncode == 0, "Conversion failed."
-    
-def time(infile, executable, slow=False):
+
+def time(infile, executable, slow=False, smart=False, mem_limit_in_mb=4000):
     os.system("sudo sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'")
-    
+
     cmd = [executable]
     if slow:
         cmd.append("-s")
     cmd.extend(["-o", "TIMED.hdf5", infile])
-    
+
+    if smart:
+        cmd.append("-r" + str(mem_limit_in_mb))
+
     print(*cmd)
-    
+
     start = timer()
     result = subprocess.run(cmd)
     end = timer()
-    
+
     if result.returncode > 0:
         return None
 
     subprocess.run(["rm", "test.fits", "TIMED.hdf5"])
-        
+
     return end - start
 
 def test_converter_correctness(infile, new_converter):
     convert(infile, "FAST.hdf5", new_converter)
     convert(infile, "SLOW.hdf5", new_converter, True)
-    
+    convert(infile, "SMART.hdf5", new_converter, smart=True, mem_limit_in_mb=200)
+
     # Do this first so that we fail more quickly
     compare_hdf5_hdf5("FAST.hdf5", "SLOW.hdf5", "Fast and slow versions differ.", False)
-    
+
+    compare_hdf5_hdf5("FAST.hdf5", "SMART.hdf5", "Fast and smart versions differ.", False)
+
+    compare_hdf5_hdf5("SLOW.hdf5", "SMART.hdf5", "Slow and smart versions differ.", False)
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         compare_fits_hdf5("test.fits", "FAST.hdf5")
-    
-    subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5"])
+
+    subprocess.run(["rm", "test.fits", "FAST.hdf5", "SLOW.hdf5", "SMART.hdf5"])
 
 def test_new_old_converter(infile, slow, old_converter, new_converter):
     convert(infile, "OLD.hdf5", old_converter, slow)
     convert(infile, "NEW.hdf5", new_converter, slow)
-    
+
     compare_hdf5_hdf5("OLD.hdf5", "NEW.hdf5", "Old and new versions differ.", True)
+
+# Test the smart converter for several levels of memory limits
+def test_smart_converter_levels(infile, executable):
+    for mem_limit_in_mb in [0, 5, 50, 100, 500]:
+        out_file = "SMART_" + str(mem_limit_in_mb) + "_.hdf5"
+        convert(infile, out_file, executable, smart=True, mem_limit_in_mb=mem_limit_in_mb)
+        if mem_limit_in_mb > 0:
+            compare_hdf5_hdf5("SMART_0_.hdf5", out_file, "Smart converter with memory limit %dMB differs from smart converter with no limit." % mem_limit_in_mb, True)
+    compare_fits_hdf5(infile, "SMART_0_.hdf5")
 
 def small_nans_image_set():
     image_set = []
-    
+
     for N in (2, 3, 4):
         for nans in itertools.chain((None, ("image",)), itertools.chain.from_iterable(itertools.combinations(("pixel", "row", "column", "channel", "stokes"), n) for n in range(1, 5+1))):
             for nan_density in (0, 33, 66, 100):
@@ -274,12 +295,12 @@ def small_nans_image_set():
                     dims.append(random.randint(50, 100))
                 if N > 3:
                     dims.append(random.randint(1, 4))
-                    
+
                 params = {
                     "--nans": nans,
                     "--nan-density": nan_density
                 }
-                
+
                 image_set.append((dims, params))
     return image_set
 
@@ -295,7 +316,7 @@ def small_dims_image_set():
 
 def large_mipmap_image_set():
     image_set = []
-    
+
     # A few bigger images to test multiple mipmaps
     for dims in ((5000, 200), (5000, 200, 10), (5000, 200, 10, 2)):
         for nans in (("pixel",),):
@@ -304,7 +325,7 @@ def large_mipmap_image_set():
                     "--nans": nans,
                     "--nan-density": nan_density
                 }
-                
+
                 image_set.append((dims, params))
     return image_set
 
@@ -382,25 +403,25 @@ def test_speed(args, *image_sets):
     executables = [args.executable]
     if args.compare is not None:
         executables.append(args.compare)
-    
+
     times = defaultdict(lambda: defaultdict(list))
-    
+
     for i in range(args.repeat):
         for executable in executables:
             for image_set in image_sets:
                 for dims, _ in image_set: # we only care about the dimensions
                     make_image("test.fits", *dims)
-                    t = time("test.fits", executable, args.slow)
+                    t = time("test.fits", executable, args.slow, args.smart)
                     if t is not None:
                         times[dims][executable].append(t)
-    
+
     winners = {}
     xs = set()
     zs = set()
-    
+
     print("Image dimensions", *executables, sep='\t')
     print()
-    
+
     for dims in sorted(times):
         best = [np.min(times[dims][e]) for e in executables]
         print(*dims, *best, sep='\t')
@@ -408,17 +429,17 @@ def test_speed(args, *image_sets):
         xs.add(x)
         zs.add(z)
         winners[(x, z)] = "A" if min(best) == best[0] else "B"
-    
+
     if len(executables) > 1:
         xs = sorted(xs)
         zs = sorted(zs)
-        
+
         for label, path in zip(["A", "B"], executables):
             print("%s: %s" % (label, path))
         print()
-        
+
         print('X \ Z', *zs, sep='\t')
-        
+
         for x in xs:
             print(x, end='\t')
             for z in zs:
@@ -438,14 +459,15 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--compare', help='A path to another converter executable to use as a reference. If a reference converter is given, random files converted using the fast algorithm with both converters will be compared to each other. If none is given, the output of the converter at the default path will be checked for correctness (THIS IS SLOW), and its fast and slow algorithm outputs will be compared for consistency.')
     parser.add_argument('-t', '--time', action='store_true', help='Time the converter(s) instead of checking the output.')
     parser.add_argument('-s', '--slow', action='store_true', help='Use the slow converter versions when comparing converters or timing converter(s).')
+    parser.add_argument('-m', '--smart', action='store_true', help='Use the smart converter versions when comparing converters or timing converter(s).')
     parser.add_argument('-i', '--image-set', nargs="+", help="The image set(s) to use. Any combination of %s. By default a small dummy set is used." % ", ".join(repr(o) for o in IMAGE_SETS) , default=["DUMMY"])
     parser.add_argument('-r', '--repeat', type=int, help="The number of times to repeat timed conversions (default: 3).", default=3)
     parser.add_argument('-z', '--zmips', action='store_true', help='Test if HDF5 conversion for depth MipMaps produces valid result.')
     parser.add_argument("executable", help="The path to the executable to test.")
     args = parser.parse_args()
-    
+
     image_sets = (IMAGE_SETS[i] for i in args.image_set)
-    
+
     if args.time:
         test_speed(args, *image_sets)
     else:
@@ -456,5 +478,7 @@ if __name__ == "__main__":
                     test_new_old_converter("test.fits", args.slow, args.compare, args.executable)
                 elif args.zmips:
                     test_zmips_converter("test.fits", args.executable);
+                elif args.smart:
+                    test_smart_converter_levels("test.fits", args.executable)
                 else:
                     test_converter_correctness("test.fits", args.executable)
