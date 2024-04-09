@@ -125,7 +125,7 @@ struct Stats {
         }
     }
     
-    void consolidatePartialHistogram(hsize_t mainOffset) {
+    void consolidateAndClearPartialHistogram(hsize_t mainOffset) {
         for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
             for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
                 histograms[mainOffset * numBins + binIndex] += partialHistograms[offset * numBins + binIndex];

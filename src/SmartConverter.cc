@@ -5,7 +5,10 @@
 
 #include "Converter.h"
 
-SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : Converter(inputFileName, outputFileName, progress, zMips) {}
+SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMip, int memoryLimitInMb = 0) : Converter(inputFileName, outputFileName, progress, zMips)
+{
+    this->memoryLimitInMb = memoryLimitInMb;
+}
 
 MemoryUsage SmartConverter::calculateMemoryUsage() {
     MemoryUsage m;
@@ -37,10 +40,22 @@ void SmartConverter::copyAndCalculate() {
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
+    // 32 has produced best results in testing
     const hsize_t REGION_MULTIPLIER = 32;
     
-    // Allocate one channel at a time, and no swizzled data
-    hsize_t cubeSize = height * width;
+    // Allocate one batch of slices at a time, and no swizzled data.
+    // Batch size in slices determined by memory limit.
+    // If limit not set, use 4GB.
+    
+    hsize_t memoryLimitInBytes = std::max(memoryLimitInMb, 4000) * 1024 * 1024;
+    hsize_t sliceSizeInPixels = height * width;
+    hsize_t batchLimitInPixels = memoryLimitInBytes / sizeof(float);
+    hsize_t batchLimitInSlices = std::ceil((float)batchLimitInPixels / (float)sliceSizeInPixels);
+    
+    // Increment over the full depth if the batch size is larger than the depth
+    hsize_t sliceIncrement = std::min(batchLimitInSlices, depth);
+    
+    hsize_t cubeSize = height * width * sliceIncrement;
     TIMER(timer.start("Allocate"););
     standardCube = new float[cubeSize];
     
@@ -48,13 +63,14 @@ void SmartConverter::copyAndCalculate() {
     statsXY.createBuffers({depth}, height);
     
     if (depth > 1) {
-        statsXYZ.createBuffers({});
+        statsXYZ.createBuffers({}, height);
     }
     
     mipMaps.createBuffers({1, height, width});
 
-    std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
-    std::vector<hsize_t> memDims = {height, width};
+    std::vector<hsize_t> count = trimAxes({1, sliceIncrement, height, width}, N);
+    std::vector<hsize_t> memDims = {sliceIncrement, height, width};
+    
     
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
@@ -67,13 +83,29 @@ void SmartConverter::copyAndCalculate() {
         
         StatsCounter counterXYZ;
         
-        for (hsize_t c = 0; c < depth; c++) {
+        // "working" versions of these variables are used to handle the last increment of slices that may be smaller than the batch size
+        hsize_t workingIncrement = sliceIncrement;
+        hsize_t workingCubeSize = cubeSize;
+        std::vector<hsize_t> workingCount = count;
+        std::vector<hsize_t> workingMemDims = memDims;
+        
+        for (hsize_t c = 0; c < depth; c = c + workingIncrement) {
+            hsize_t leftOverSlices = depth - c;
+            size_t actualIncrement = std::min(sliceIncrement, leftOverSlices);
+            
+            // If the last increment is smaller than the batch size, adjust the "working" variables
+            if (actualIncrement < sliceIncrement) {
+                workingIncrement = leftOverSlices;
+                workingCubeSize = height * width * leftOverSlices;
+                workingCount = trimAxes({1, leftOverSlices, height, width}, N);
+                workingMemDims = {leftOverSlices, height, width};
+            }
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, workingCubeSize, standardCube);
             
             // Write the standard dataset
             
@@ -81,14 +113,16 @@ void SmartConverter::copyAndCalculate() {
             TIMER(timer.start("Write"););
             
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
-            writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            writeHdf5Data(standardDataSet, standardCube, workingMemDims, workingCount, start);
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
 
+            for(int slice = 0; slice < actualIncrement; slice++) {
+            
             StatsCounter counterXY;
             
-            auto indexXY = c;
+            auto indexXY = c + slice;
             std::function<void(float)> accumulate;
             
             //
@@ -104,27 +138,28 @@ void SmartConverter::copyAndCalculate() {
             
             accumulate = first_accumulate;
             
-            int mipIndex;
+            int regionIndex;
             StatsCounter counterRegion;
             
-            int regionRows = std::ceil(height / (float)REGION_MULTIPLIER);
-            int regionCols = std::ceil(width / (float)REGION_MULTIPLIER);
-            int adjustedStandardCubeSize = regionRows * regionCols;
+            int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
+            int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
+            int cubeSizeInRegions = regionRows * regionCols;
             
-#pragma omp parallel for default(none) private (mipIndex, counterRegion) shared (standardCube, adjustedStandardCubeSize, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
-            for (mipIndex = 0; mipIndex < adjustedStandardCubeSize; mipIndex += 1 ) {
+#pragma omp parallel for default(none) private (regionIndex, counterRegion) shared (slice, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
+            for (regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
                 counterRegion.reset();
                 hsize_t x0,y0,z0;
-                MipIndexToXYZ(mipIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
-                for (int y = y0; y < y0 + REGION_MULTIPLIER; y++) {
-                    for (int x = x0; x < x0 + REGION_MULTIPLIER; x++) {
-                        auto pos = y * width + x;
+                RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER,
+                    1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
+                for (hsize_t y = y0; y < y0 + REGION_MULTIPLIER; y++) {
+                    for (hsize_t x = x0; x < x0 + REGION_MULTIPLIER; x++) {
+                        auto pos = y * width + x + slice * width * height;
                         if (x >= width || y >= height) {    //check if we are out of bounds
                             continue;
                         }
-                        //std::cout << "pos: " << pos << std::endl;
                         auto& val = standardCube[pos];
                         if (std::isfinite(val)) {
+                            
                             // region statistics
                             counterRegion.accumulateFinite(val);
                     
@@ -158,13 +193,14 @@ void SmartConverter::copyAndCalculate() {
             // Write the mipmaps
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
             TIMER(timer.start("Write"););
-            mipMaps.write(s, c);
+            mipMaps.write(s, c + slice);
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
             TIMER(timer.start(timerLabelStatsMipmaps););
             mipMaps.resetBuffers();
             
+        }
         } // end of first channel loop
         
         PROGRESS(std::endl);
@@ -201,11 +237,31 @@ void SmartConverter::copyAndCalculate() {
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         
-        for (hsize_t c = depth; c-- > 0; ) {
+        
+        for (hssize_t c = depth - workingIncrement; c > -1; c = c - sliceIncrement) {
+            
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
-            auto indexXY = c;
-                            
+            
+            
+            // read one batch of slices
+            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            TIMER(timer.start("Read"););
+            
+
+            readFitsData(inputFilePtr, c, s, workingCubeSize, standardCube);
+
+            DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
+            TIMER(timer.start("Histograms"););
+
+           
+            
+        for (hsize_t slice = 0; slice < workingIncrement; slice++) {
+            
+            auto indexXY = c + slice;
+            
+            workingCubeSize = height * width * workingIncrement;
+            
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
@@ -222,9 +278,9 @@ void SmartConverter::copyAndCalculate() {
                 statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
             };
             
-            auto doCubeHistogram = [&] (float val) {
+            auto doCubeHistogram = [&] (float val, hsize_t offset) {
                 // XYZ histogram
-                statsXYZ.accumulateHistogram(val, cubeMin, cubeRange, 0);
+                statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
             };
             
             auto doNothing = [&] (float val) {
@@ -236,40 +292,34 @@ void SmartConverter::copyAndCalculate() {
             };
             
             std::function<void(float,hsize_t)> channelHistogramFunc = doChannelHistogram;
-            std::function<void(float)> cubeHistogramFunc = doCubeHistogram;
+            std::function<void(float,hsize_t)> cubeHistogramFunc = doCubeHistogram;
             
             if (!chanHist) {
                 channelHistogramFunc = doNothingOffset;
             }
             
             if (!cubeHist) {
-                cubeHistogramFunc = doNothing;
+                cubeHistogramFunc = doNothingOffset;
             }
             
-            // read one channel
-            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
-            TIMER(timer.start("Read"););
-            
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
-
-            DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
-            TIMER(timer.start("Histograms"););
-
             hsize_t y ;
-#pragma omp parallel for default(none) private(y) shared (standardCube, height, width, channelHistogramFunc, cubeHistogramFunc)
-            for (y = 0; y < height; y++) {
-                for (hsize_t x = 0; x < width; x++) {
-                    auto pos = y * width + x;
-                    auto& val = standardCube[pos];
-                    if (std::isfinite(val)) {
-                        channelHistogramFunc(val, y);
-                        cubeHistogramFunc(val);
+            
+#pragma omp parallel for default(none) private(y) shared(slice, standardCube, height, width, channelHistogramFunc, cubeHistogramFunc)
+                for (y = 0; y < height; y++) {
+                    for (hsize_t x = 0; x < width; x++) {
+                        auto pos = y * width + x + slice * width * height;
+                        auto& val = standardCube[pos];
+                        if (std::isfinite(val)) {
+                            channelHistogramFunc(val, y);
+                            cubeHistogramFunc(val, y);
+                        }
                     }
-                }
-            } // end of XY loop
-            
-            statsXY.consolidatePartialHistogram(c);
-            
+                } // end of XY loop
+
+                statsXY.consolidateAndClearPartialHistogram(c + slice);
+                statsXYZ.consolidateAndClearPartialHistogram(0);
+            } //for loop of sliceincrement ends here
+            workingIncrement = sliceIncrement;
         } // end of second channel loop (XY and XYZ histograms)
         
         PROGRESS(std::endl);

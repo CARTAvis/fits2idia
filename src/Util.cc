@@ -255,11 +255,10 @@ void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>&
     dataset.read(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
 }
 
-void MipIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t mipX, hsize_t mipY, hsize_t mipZ) {
-    int mipHeight = height / mipY;
-    int mipWidth = width / mipX;
-    x = (mipIndex % (mipWidth * mipHeight)) % mipWidth * mipX;
-    y = (mipIndex % (mipWidth * mipHeight)) / mipWidth * mipY;
-    z = mipIndex / (mipWidth * mipHeight) * mipZ;
-    
+void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t factorX, hsize_t factorY, hsize_t factorZ) {
+    int mipHeight = (height + factorY - 1)/ factorY;      //round result up
+    int mipWidth = (width + factorX - 1) / factorX;       //round result up
+    x = (mipIndex % (mipWidth * mipHeight)) % mipWidth * factorX;
+    y = (mipIndex % (mipWidth * mipHeight)) / mipWidth * factorY;
+    z = mipIndex / (mipWidth * mipHeight) * factorZ;
 }

@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb) {
     extern int optind;
     extern char *optarg;
     
@@ -29,7 +29,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:srpqmz")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:sr::pqmz")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -40,7 +40,14 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 break;
             case 'r':
                 // use smart method
-                smart = true;
+                if (optarg) { // If an argument is provided
+                    int arg = std::stoi(optarg); // Convert the argument to an integer
+                    if (arg < 1) {
+                        break;  // use fast mode if the limit is less than 1 mb
+                    }
+                    smart = true; // Enable smart mode
+                    memoryLimitInMb = arg; // Assign the argument to the memory limit for smart mode
+                } //else, fast mode will be used by default because memory limit is not concern for user
                 break;
             case 'p':
                 progress = true;
@@ -105,8 +112,9 @@ int main(int argc, char** argv) {
     bool progress(false);
     bool onlyReportMemory(false);
     bool zMips(false);
+    int memoryLimitInMb(0);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, progress, onlyReportMemory, zMips)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, progress, onlyReportMemory, zMips, memoryLimitInMb)) {
         return 1;
     }
 
@@ -137,7 +145,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips, memoryLimitInMb);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();

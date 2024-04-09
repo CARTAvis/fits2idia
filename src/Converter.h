@@ -11,6 +11,7 @@
 #include "MipMap.h"
 #include "Timer.h"
 #include "Util.h"
+#include "omp.h"
 
 struct MemoryUsage {
     MemoryUsage() : total(0) {}
@@ -24,9 +25,11 @@ class Converter {
 public:
     Converter() {}
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips, int memoryLimitInMb);
     ~Converter();
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb);
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
@@ -86,7 +89,11 @@ protected:
 class SmartConverter : public Converter {
 public:
     SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMip, int memoryLimitInMb);
     MemoryUsage calculateMemoryUsage() override;
+    
+private:
+    int memoryLimitInMb;
     
 protected:
     void copyAndCalculate() override;
