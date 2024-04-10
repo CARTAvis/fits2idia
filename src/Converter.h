@@ -26,7 +26,7 @@ public:
     Converter() {}
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips, int memoryLimitInMb);
-    ~Converter();
+    virtual ~Converter();
     
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips);
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb);

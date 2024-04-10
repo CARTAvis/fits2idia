@@ -1,0 +1,23 @@
+name: Add new issues and pull requests to CartaVis Board project
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+  pull_request:
+    types:
+      - opened
+      - reopened
+
+jobs:
+  add-to-project:
+    name: Add issue to project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@v0.6.1
+        with:
+          # You can target a project in a different organization
+          # to the issue
+          project-url: https://github.com/orgs/CARTAvis/projects/11
+          github-token: ${{ secrets.ADD_TO_CARTA_BOARD_PROJECT_PAT }}
