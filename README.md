@@ -60,6 +60,7 @@ important are:
 ```
 -o      Output filename
 -s      Use slower but less memory-intensive method (enable if memory allocation fails)
+-r      Use smart mode with an optional indicated size of max memory allocation in MB (example: -r2000) 
 -p      Print progress output (by default the program is silent)
 -m      Report predicted memory usage and exit without performing the conversion
 -z      Include calculation of mipmaps along 3rd axis of dataset
