@@ -45,15 +45,14 @@ void SmartConverter::copyAndCalculate() {
     
     // Allocate one batch of slices at a time, and no swizzled data.
     // Batch size in slices determined by memory limit.
-    // If limit not set, use 4GB.
-    
-    hsize_t memoryLimitInBytes = std::max(memoryLimitInMb, 4000) * 1024 * 1024;
+  
+    hsize_t memoryLimitInBytes = memoryLimitInMb * 1024 * 1024;
     hsize_t sliceSizeInPixels = height * width;
-    hsize_t batchLimitInPixels = memoryLimitInBytes / sizeof(float);
-    hsize_t batchLimitInSlices = std::ceil((float)batchLimitInPixels / (float)sliceSizeInPixels);
+    hsize_t memoryLimitInPixels = memoryLimitInBytes / sizeof(float);
+    hsize_t memoryLimitInSlices = std::ceil((float)memoryLimitInPixels / (float)sliceSizeInPixels);
     
-    // Increment over the full depth if the batch size is larger than the depth
-    hsize_t sliceIncrement = std::min(batchLimitInSlices, depth);
+    // Increment over the full depth if the memory size limit is larger than the depth
+    hsize_t sliceIncrement = std::min(memoryLimitInSlices, depth);
     
     hsize_t cubeSize = height * width * sliceIncrement;
     TIMER(timer.start("Allocate"););
@@ -237,25 +236,23 @@ void SmartConverter::copyAndCalculate() {
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         
-        
-        for (hssize_t c = depth - workingIncrement; c > -1; c = c - sliceIncrement) {
+        hsize_t startingSlice = depth - workingIncrement;
+        for (hssize_t c = startingSlice; c > -1; c = c - sliceIncrement) {
             
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             
+            // skip first batch of slices to prevent unnecessary file read
+            if (c < startingSlice) {
+                DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+                TIMER(timer.start("Read"););
+                readFitsData(inputFilePtr, c, s, workingCubeSize, standardCube);
+            }
             
-            // read one batch of slices
-            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
-            TIMER(timer.start("Read"););
-            
-
-            readFitsData(inputFilePtr, c, s, workingCubeSize, standardCube);
-
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
 
-           
-            
+
         for (hsize_t slice = 0; slice < workingIncrement; slice++) {
             
             auto indexXY = c + slice;
@@ -319,7 +316,7 @@ void SmartConverter::copyAndCalculate() {
                 statsXY.consolidateAndClearPartialHistogram(c + slice);
                 statsXYZ.consolidateAndClearPartialHistogram(0);
             } //for loop of sliceincrement ends here
-            workingIncrement = sliceIncrement;
+            workingIncrement = sliceIncrement; //reset workingIncrement to sliceIncrement for remainder of depth
         } // end of second channel loop (XY and XYZ histograms)
         
         PROGRESS(std::endl);
@@ -341,17 +338,28 @@ void SmartConverter::copyAndCalculate() {
     TIMER(timer.start("Free"););
     
     delete[] standardCube;
-            
+    
     // Swizzle
     if (depth > 1) {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
         PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
         
-        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
-        float* standardSlice = new float[sliceSize];
-        float* rotatedSlice = new float[sliceSize];
+        hsize_t tileSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        if (2 * tileSize > memoryLimitInPixels) {
+            hsize_t memoryRequiredInMb = 2 * tileSize * sizeof(float) / 1024 / 1024;
+            std::cerr << "Memory limit too low for tiled rotation. Minimum: " << std::to_string(memoryRequiredInMb) << " mb.";
+            std::exit(EXIT_FAILURE);
+        }
+        hsize_t memoryLimitInTiles = std::floor((float)memoryLimitInPixels / (float)tileSize / 2); //divide by 2 because we have standard and rotated slices
+        float widthInTiles = (float)width / (float)TILE_SIZE;
+        float heightInTiles = (float)height / (float)TILE_SIZE;
+        hsize_t TotalFullTiles = std::ceil(widthInTiles) * std::ceil(heightInTiles);
+        hsize_t maxTilesAtATime = std::min(TotalFullTiles, memoryLimitInTiles);
         
+        //Allocate memory for main and rotated dataset slices and Z statistics
+        float* standardSlice = new float[tileSize * maxTilesAtATime];
+        float* rotatedSlice = new float[tileSize * maxTilesAtATime];
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
         for (unsigned int s = 0; s < stokes; s++) {
@@ -360,82 +368,78 @@ void SmartConverter::copyAndCalculate() {
             
             hsize_t tileCount(0);
             
-            for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
-                for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
-                    tileCount++;
-                    hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
-                    hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
-                    
-                    DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
-                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-                    
-                    // read tile slice
-                    DEBUG(std::cout << " Reading main dataset..." << std::flush;);
-                    TIMER(timer.start("Read"););
-                    
-                    auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
-                    auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
-                    auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
-                    
-                    readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
-                    
-                    // rotate tile slice
-                    DEBUG(std::cout << " Calculating rotation..." << std::flush;);
-                    TIMER(timer.start("Rotation"););
-                    
-                    for (hsize_t i = 0; i < depth; i++) {
-                        for (hsize_t j = 0; j < ySize; j++) {
-                            for (hsize_t k = 0; k < xSize; k++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
-                                
-                                // rotation
-                                auto destIndex = i + depth * j + (ySize * depth) * k;
-                                rotatedSlice[destIndex] = val;
-                            }
+            // Calculate excess pixels that won't fit into full tiles
+            hsize_t rightStripeWidthInPixels = width % TILE_SIZE;
+            hsize_t bottomStripeHeightInPixels = height % TILE_SIZE;
+            
+            hsize_t mainBlockWidthInTiles = (width - rightStripeWidthInPixels) / TILE_SIZE;
+            hsize_t mainBlockHeightInTiles = (height - bottomStripeHeightInPixels) / TILE_SIZE;
+            
+            hsize_t xTileIncrement = 1;
+            hsize_t yTileIncrement = 1;
+            
+            // Main block of full tiles
+            if (!(mainBlockWidthInTiles == 0 && mainBlockHeightInTiles == 0)) {
+                if (maxTilesAtATime < mainBlockWidthInTiles) {
+                    hsize_t possibleIncrement = 1;
+                    while (possibleIncrement < maxTilesAtATime) {
+                        possibleIncrement++;
+                        if (mainBlockWidthInTiles % possibleIncrement == 0) {
+                            xTileIncrement = possibleIncrement;
                         }
                     }
-                    
-                    // A separate pass over the same slice depth-last
-                    DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
-                    TIMER(timer.start("Z statistics"););
-                    
-                    for (hsize_t j = 0; j < ySize; j++) {
-                        for (hsize_t k = 0; k < xSize; k++) {
-                            StatsCounter counterZ;
-                            auto indexZ = k + xSize * j;
-                            
-                            for (hsize_t i = 0; i < depth; i++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
-                                
-                                if (std::isfinite(val)) {
-                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
-                                    counterZ.accumulateFinite(val);
-                                } else {
-                                    counterZ.accumulateNonFinite();
-                                }
-                            }
-                            
-                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
-                        }
-                    }
-                    
-                    // write tile slice
-                    DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
-                    TIMER(timer.start("Write"););
-                    
-                    auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
-                    auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
-                    auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
-                    
-                    writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                    
-                    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
-                    // write Z statistics
-                    statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                 }
+                else {
+                    xTileIncrement = mainBlockWidthInTiles;
+                    hsize_t possibleIncrement = 1;
+                    while (possibleIncrement * xTileIncrement < maxTilesAtATime) {
+                        possibleIncrement++;
+                        if (mainBlockHeightInTiles % possibleIncrement == 0) {
+                            yTileIncrement = possibleIncrement;
+                        }
+                    }
+                }
+                DEBUG(std::cout << "+ Processing main block tiles at " << 0 << ", " << 0 << "..." << std::flush;);
+                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+                ReadRotateWrite(standardSlice, rotatedSlice, s, 0, 0, mainBlockWidthInTiles * TILE_SIZE, mainBlockHeightInTiles * TILE_SIZE,
+                    xTileIncrement * TILE_SIZE, yTileIncrement * TILE_SIZE);
+                tileCount += xTileIncrement * yTileIncrement;
             }
+            
+            // Bottom stripe of partial tiles
+            if (bottomStripeHeightInPixels > 0 && mainBlockWidthInTiles > 0) {
+                DEBUG(std::cout << "+ Processing bottom stripe of tiles at " << 0 << ", " << mainBlockHeightInTiles * TILE_SIZE << "..." << std::flush;);
+                yTileIncrement = 1;
+                if (maxTilesAtATime > mainBlockWidthInTiles)
+                    xTileIncrement = mainBlockWidthInTiles;
+                else
+                    xTileIncrement = maxTilesAtATime;
+                ReadRotateWrite(standardSlice, rotatedSlice, s, 0, mainBlockHeightInTiles * TILE_SIZE, mainBlockWidthInTiles * TILE_SIZE,
+                    height, xTileIncrement * TILE_SIZE, bottomStripeHeightInPixels);
+                tileCount += mainBlockWidthInTiles;
+                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+            }
+            
+            //Right-side stripe of partial tiles
+            if (rightStripeWidthInPixels > 0 && mainBlockHeightInTiles > 0) {
+                DEBUG(std::cout << "+ Processing right stripe of tiles at " << mainBlockWidthInTiles * TILE_SIZE << ", " << 0 << "..." << std::flush;);
+                xTileIncrement = 1;
+                if (maxTilesAtATime > mainBlockHeightInTiles)
+                    yTileIncrement = mainBlockHeightInTiles;
+                else
+                    yTileIncrement = maxTilesAtATime;
+                ReadRotateWrite(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE, 0, width,
+                    mainBlockHeightInTiles * TILE_SIZE, rightStripeWidthInPixels, yTileIncrement * TILE_SIZE);
+                tileCount += mainBlockHeightInTiles;
+                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+            }
+            
+            // Bottom-right partial tile that remains
+            DEBUG(std::cout << "+ Processing remainder partial tile in bottom right " << mainBlockWidthInTiles * TILE_SIZE << ", " << mainBlockHeightInTiles * TILE_SIZE << "..." << std::flush;);
+            ReadRotateWrite(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE, mainBlockHeightInTiles * TILE_SIZE, width,
+                height, rightStripeWidthInPixels, bottomStripeHeightInPixels);
+            tileCount++;
+            PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
             PROGRESS(std::endl);
         }
         
@@ -443,5 +447,84 @@ void SmartConverter::copyAndCalculate() {
         DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
         delete[] standardSlice;
         delete[] rotatedSlice;
+    }
+}
+void SmartConverter::ReadRotateWrite(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
+    hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement) {
+    
+    for (hsize_t yOffset = yStart; yOffset < yLimit; yOffset += yIncrement) {
+        // If remaining rows are less than the increment, adjust the size of the processed slice
+        hsize_t ySize = yOffset + yIncrement > yLimit ? yLimit - yOffset : yIncrement;
+        for (hsize_t xOffset = xStart; xOffset < xLimit; xOffset += xIncrement) {
+            // If remaining columns are less than the increment, adjust the size of the processed slice
+            hsize_t xSize = xOffset + xIncrement > xLimit ? xLimit - xOffset : xIncrement;
+            // read tile slice
+            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            TIMER(timer.start("Read"););
+            
+            auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
+            auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
+            auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
+            
+            readHdf5Data(standardDataSet, standardSliceToRead, standardMemDims, standardCount, standardStart);
+            
+            // rotate tile slice
+            DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+            TIMER(timer.start("Rotation"););
+            
+            hsize_t i;
+#pragma omp parallel for default(none) private (i) shared (depth, xSize, ySize, xStart, yStart, standardSliceToRead, rotatedSliceToWrite)
+            for (i = 0; i < depth; i++) {
+                for (hsize_t j = yStart; j < ySize; j++) {
+                    for (hsize_t k = xStart; k < xSize; k++) {
+                        auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                        auto& val = standardSliceToRead[sourceIndex];
+                
+                        // rotation
+                        auto destIndex = i + depth * j + (ySize * depth) * k;
+                        rotatedSliceToWrite[destIndex] = val;
+                    }
+                }
+            }
+            
+            // A separate pass over the same slice depth-last
+            DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
+            TIMER(timer.start("Z statistics"););
+            
+            for (hsize_t j = yStart; j < ySize; j++) {
+                for (hsize_t k = xStart; k < xSize; k++) {
+                    StatsCounter counterZ;
+                    auto indexZ = k + xSize * j;
+                    
+                    for (hsize_t i = 0; i < depth; i++) {
+                        auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                        auto& val = standardSliceToRead[sourceIndex];
+                        
+                        if (std::isfinite(val)) {
+                            // Not lazy; too much risk of encountering an ascending / descending sequence.
+                            counterZ.accumulateFinite(val);
+                        } else {
+                            counterZ.accumulateNonFinite();
+                        }
+                    }
+                    
+                    statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
+                }
+            }
+
+            // write tile slice
+            DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+            TIMER(timer.start("Write"););
+            
+            auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
+            auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
+            auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
+            
+            writeHdf5Data(swizzledDataSet, rotatedSliceToWrite, swizzledMemDims, swizzledCount, swizzledStart);
+            
+            DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+            // write Z statistics
+            statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+        }
     }
 }

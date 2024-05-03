@@ -97,6 +97,8 @@ private:
     
 protected:
     void copyAndCalculate() override;
+    void ReadRotateWrite(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
+        hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement);
 };
 
 class SlowConverter : public Converter {
