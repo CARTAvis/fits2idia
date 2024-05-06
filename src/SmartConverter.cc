@@ -475,8 +475,8 @@ void SmartConverter::ReadRotateWrite(float* standardSliceToRead, float* rotatedS
             hsize_t i;
 #pragma omp parallel for default(none) private (i) shared (depth, xSize, ySize, xStart, yStart, standardSliceToRead, rotatedSliceToWrite)
             for (i = 0; i < depth; i++) {
-                for (hsize_t j = yStart; j < ySize; j++) {
-                    for (hsize_t k = xStart; k < xSize; k++) {
+                for (hsize_t j = 0; j < ySize; j++) {
+                    for (hsize_t k = 0; k < xSize; k++) {
                         auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
                         auto& val = standardSliceToRead[sourceIndex];
                 
@@ -491,8 +491,8 @@ void SmartConverter::ReadRotateWrite(float* standardSliceToRead, float* rotatedS
             DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
             TIMER(timer.start("Z statistics"););
             
-            for (hsize_t j = yStart; j < ySize; j++) {
-                for (hsize_t k = xStart; k < xSize; k++) {
+            for (hsize_t j = 0; j < ySize; j++) {
+                for (hsize_t k = 0; k < xSize; k++) {
                     StatsCounter counterZ;
                     auto indexZ = k + xSize * j;
                     
