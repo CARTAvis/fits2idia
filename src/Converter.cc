@@ -55,7 +55,7 @@ Converter::~Converter() {
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb = 0) {
     if (slow) {
         return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
-    } else if (smart) {
+    } else if (smart && memoryLimitInMb > 0) {
         return std::unique_ptr<Converter>(new SmartConverter(inputFileName, outputFileName, progress, zMips, memoryLimitInMb));
     } else {
         return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));

@@ -42,13 +42,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 // use smart method
                 if (optarg) { // If an argument is provided
                     int arg = std::stoi(optarg); // Convert the argument to an integer
-                    if (arg < 1) {
-                        break;  // use fast mode if the limit is less than 1 mb
-                    }
                     smart = true; // Enable smart mode
                     memoryLimitInMb = arg; // Assign the argument to the memory limit for smart mode
                 } //else, fast mode will be used by default because memory limit is not concern for user
-                break;
+                memoryLimitInMb = 0; // Assign 0 to the memory limit for smart mode because no argument is provided
             case 'p':
                 progress = true;
                 break;
