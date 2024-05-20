@@ -345,111 +345,132 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
         
-        hsize_t tileSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        hsize_t tileSize = product(trimAxes({stokes, depth, std::min(width, TILE_SIZE) , std::min(height, TILE_SIZE)}, N));
+        
+        float* standardSlice;
+        float* rotatedSlice;
+        
+        
+        // if the memory limit is too low for a single tile at full-depth, handle partial tiles in z-direction
         if (2 * tileSize > memoryLimitInPixels) {
-            hsize_t memoryRequiredInMb = 2 * tileSize * sizeof(float) / 1024 / 1024;
-            std::cerr << "Memory limit too low for tiled rotation. Minimum: " << std::to_string(memoryRequiredInMb) << " mb.";
-            std::exit(EXIT_FAILURE);
-        }
-        hsize_t memoryLimitInTiles = std::floor((float)memoryLimitInPixels / (float)tileSize / 2); //divide by 2 because we have standard and rotated slices
-        float widthInTiles = (float)width / (float)TILE_SIZE;
-        float heightInTiles = (float)height / (float)TILE_SIZE;
-        hsize_t TotalFullTiles = std::ceil(widthInTiles) * std::ceil(heightInTiles);
-        hsize_t maxTilesAtATime = std::min(TotalFullTiles, memoryLimitInTiles);
-        
-        //Allocate memory for main and rotated dataset slices and Z statistics
-        float* standardSlice = new float[tileSize * maxTilesAtATime];
-        float* rotatedSlice = new float[tileSize * maxTilesAtATime];
-        statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
-        
-        for (unsigned int s = 0; s < stokes; s++) {
-            DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
-            PROGRESS("\tStokes " << s << "\t");
+            hsize_t maxSlicesAtOnce = memoryLimitInPixels / (2 * std::min(width, TILE_SIZE) * std::min(height, TILE_SIZE));
+            // Allocate memory for main and rotated dataset slices and Z statistics
+            standardSlice = new float[std::min(width, TILE_SIZE) * std::min(height, TILE_SIZE) * maxSlicesAtOnce];
+            rotatedSlice = new float[std::min(width, TILE_SIZE) * std::min(height, TILE_SIZE) * maxSlicesAtOnce];
+            statsZ.createBuffers({width, height});
             
-            hsize_t tileCount(0);
-            
-            // Calculate excess pixels that won't fit into full tiles
-            hsize_t rightStripeWidthInPixels = width % TILE_SIZE;
-            hsize_t bottomStripeHeightInPixels = height % TILE_SIZE;
-            
-            hsize_t mainBlockWidthInTiles = (width - rightStripeWidthInPixels) / TILE_SIZE;
-            hsize_t mainBlockHeightInTiles = (height - bottomStripeHeightInPixels) / TILE_SIZE;
-            
-            hsize_t xTileIncrement = 1;
-            hsize_t yTileIncrement = 1;
-            
-            // Main block of full tiles
-            if (!(mainBlockWidthInTiles == 0 && mainBlockHeightInTiles == 0)) {
-                if (maxTilesAtATime < mainBlockWidthInTiles) {
-                    hsize_t possibleIncrement = 1;
-                    while (possibleIncrement < maxTilesAtATime) {
-                        possibleIncrement++;
-                        if (mainBlockWidthInTiles % possibleIncrement == 0) {
-                            xTileIncrement = possibleIncrement;
+            for (unsigned int s = 0; s < stokes; s++) {
+                DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
+                PROGRESS("\tStokes " << s << "\t");
+
+                hsize_t tileCount(0);
+                ReadRotateWritePartialDepth(standardSlice, rotatedSlice, s, 0, 0, 0, width, height, depth, std::min(width, TILE_SIZE), std::min(height, TILE_SIZE), maxSlicesAtOnce);
+                
+            }
+            // otherwise, handle full-depth groups of tiles at a time that fit within the memory limit
+        } else {
+            hsize_t memoryLimitInTiles =
+                std::floor((float)memoryLimitInPixels / (float)tileSize / 2); // divide by 2 because we have standard and rotated slices
+            float widthInTiles = (float)width / (float)TILE_SIZE;
+            float heightInTiles = (float)height / (float)TILE_SIZE;
+            hsize_t TotalFullTiles = std::ceil(widthInTiles) * std::ceil(heightInTiles);
+            hsize_t maxTilesAtATime = std::min(TotalFullTiles, memoryLimitInTiles);
+
+            // Allocate memory for main and rotated dataset slices and Z statistics
+            standardSlice = new float[tileSize * maxTilesAtATime];
+            rotatedSlice = new float[tileSize * maxTilesAtATime];
+            statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+
+            for (unsigned int s = 0; s < stokes; s++) {
+                DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
+                PROGRESS("\tStokes " << s << "\t");
+
+                hsize_t tileCount(0);
+
+                // Calculate excess pixels that won't fit into full tiles
+                hsize_t rightStripeWidthInPixels = width % TILE_SIZE;
+                hsize_t bottomStripeHeightInPixels = height % TILE_SIZE;
+
+                hsize_t mainBlockWidthInTiles = (width - rightStripeWidthInPixels) / TILE_SIZE;
+                hsize_t mainBlockHeightInTiles = (height - bottomStripeHeightInPixels) / TILE_SIZE;
+
+                hsize_t xTileIncrement = 1;
+                hsize_t yTileIncrement = 1;
+
+                // Main block of full tiles
+                if (!(mainBlockWidthInTiles == 0 && mainBlockHeightInTiles == 0)) {
+                    if (maxTilesAtATime < mainBlockWidthInTiles) {
+                        hsize_t possibleIncrement = 1;
+                        while (possibleIncrement < maxTilesAtATime) {
+                            possibleIncrement++;
+                            if (mainBlockWidthInTiles % possibleIncrement == 0) {
+                                xTileIncrement = possibleIncrement;
+                            }
+                        }
+                    } else {
+                        xTileIncrement = mainBlockWidthInTiles;
+                        hsize_t possibleIncrement = 1;
+                        while (possibleIncrement * xTileIncrement < maxTilesAtATime) {
+                            possibleIncrement++;
+                            if (mainBlockHeightInTiles % possibleIncrement == 0) {
+                                yTileIncrement = possibleIncrement;
+                            }
                         }
                     }
+                    DEBUG(std::cout << "+ Processing main block tiles at " << 0 << ", " << 0 << "..." << std::flush;);
+                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+                    ReadRotateWriteFullDepth(standardSlice, rotatedSlice, s, 0, 0, mainBlockWidthInTiles * TILE_SIZE,
+                        mainBlockHeightInTiles * TILE_SIZE, xTileIncrement * TILE_SIZE, yTileIncrement * TILE_SIZE);
+                    tileCount += xTileIncrement * yTileIncrement;
                 }
-                else {
-                    xTileIncrement = mainBlockWidthInTiles;
-                    hsize_t possibleIncrement = 1;
-                    while (possibleIncrement * xTileIncrement < maxTilesAtATime) {
-                        possibleIncrement++;
-                        if (mainBlockHeightInTiles % possibleIncrement == 0) {
-                            yTileIncrement = possibleIncrement;
-                        }
-                    }
+
+                // Bottom stripe of partial tiles
+                if (bottomStripeHeightInPixels > 0 && mainBlockWidthInTiles > 0) {
+                    DEBUG(std::cout << "+ Processing bottom stripe of tiles at " << 0 << ", " << mainBlockHeightInTiles * TILE_SIZE << "..."
+                                    << std::flush;);
+                    yTileIncrement = 1;
+                    if (maxTilesAtATime > mainBlockWidthInTiles)
+                        xTileIncrement = mainBlockWidthInTiles;
+                    else
+                        xTileIncrement = maxTilesAtATime;
+                    ReadRotateWriteFullDepth(standardSlice, rotatedSlice, s, 0, mainBlockHeightInTiles * TILE_SIZE,
+                        mainBlockWidthInTiles * TILE_SIZE, height, xTileIncrement * TILE_SIZE, bottomStripeHeightInPixels);
+                    tileCount += mainBlockWidthInTiles;
+                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
                 }
-                DEBUG(std::cout << "+ Processing main block tiles at " << 0 << ", " << 0 << "..." << std::flush;);
+
+                // Right-side stripe of partial tiles
+                if (rightStripeWidthInPixels > 0 && mainBlockHeightInTiles > 0) {
+                    DEBUG(std::cout << "+ Processing right stripe of tiles at " << mainBlockWidthInTiles * TILE_SIZE << ", " << 0 << "..."
+                                    << std::flush;);
+                    xTileIncrement = 1;
+                    if (maxTilesAtATime > mainBlockHeightInTiles)
+                        yTileIncrement = mainBlockHeightInTiles;
+                    else
+                        yTileIncrement = maxTilesAtATime;
+                    ReadRotateWriteFullDepth(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE, 0, width,
+                        mainBlockHeightInTiles * TILE_SIZE, rightStripeWidthInPixels, yTileIncrement * TILE_SIZE);
+                    tileCount += mainBlockHeightInTiles;
+                    PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+                }
+
+                // Bottom-right partial tile that remains
+                DEBUG(std::cout << "+ Processing remainder partial tile in bottom right " << mainBlockWidthInTiles * TILE_SIZE << ", "
+                                << mainBlockHeightInTiles * TILE_SIZE << "..." << std::flush;);
+                ReadRotateWriteFullDepth(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE,
+                    mainBlockHeightInTiles * TILE_SIZE, width, height, rightStripeWidthInPixels, bottomStripeHeightInPixels);
+                tileCount++;
                 PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-                ReadRotateWrite(standardSlice, rotatedSlice, s, 0, 0, mainBlockWidthInTiles * TILE_SIZE, mainBlockHeightInTiles * TILE_SIZE,
-                    xTileIncrement * TILE_SIZE, yTileIncrement * TILE_SIZE);
-                tileCount += xTileIncrement * yTileIncrement;
+                PROGRESS(std::endl);
             }
-            
-            // Bottom stripe of partial tiles
-            if (bottomStripeHeightInPixels > 0 && mainBlockWidthInTiles > 0) {
-                DEBUG(std::cout << "+ Processing bottom stripe of tiles at " << 0 << ", " << mainBlockHeightInTiles * TILE_SIZE << "..." << std::flush;);
-                yTileIncrement = 1;
-                if (maxTilesAtATime > mainBlockWidthInTiles)
-                    xTileIncrement = mainBlockWidthInTiles;
-                else
-                    xTileIncrement = maxTilesAtATime;
-                ReadRotateWrite(standardSlice, rotatedSlice, s, 0, mainBlockHeightInTiles * TILE_SIZE, mainBlockWidthInTiles * TILE_SIZE,
-                    height, xTileIncrement * TILE_SIZE, bottomStripeHeightInPixels);
-                tileCount += mainBlockWidthInTiles;
-                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-            }
-            
-            //Right-side stripe of partial tiles
-            if (rightStripeWidthInPixels > 0 && mainBlockHeightInTiles > 0) {
-                DEBUG(std::cout << "+ Processing right stripe of tiles at " << mainBlockWidthInTiles * TILE_SIZE << ", " << 0 << "..." << std::flush;);
-                xTileIncrement = 1;
-                if (maxTilesAtATime > mainBlockHeightInTiles)
-                    yTileIncrement = mainBlockHeightInTiles;
-                else
-                    yTileIncrement = maxTilesAtATime;
-                ReadRotateWrite(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE, 0, width,
-                    mainBlockHeightInTiles * TILE_SIZE, rightStripeWidthInPixels, yTileIncrement * TILE_SIZE);
-                tileCount += mainBlockHeightInTiles;
-                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-            }
-            
-            // Bottom-right partial tile that remains
-            DEBUG(std::cout << "+ Processing remainder partial tile in bottom right " << mainBlockWidthInTiles * TILE_SIZE << ", " << mainBlockHeightInTiles * TILE_SIZE << "..." << std::flush;);
-            ReadRotateWrite(standardSlice, rotatedSlice, s, mainBlockWidthInTiles * TILE_SIZE, mainBlockHeightInTiles * TILE_SIZE, width,
-                height, rightStripeWidthInPixels, bottomStripeHeightInPixels);
-            tileCount++;
-            PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
-            PROGRESS(std::endl);
         }
-        
         TIMER(timer.start("Free"););
         DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
 }
-void SmartConverter::ReadRotateWrite(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
+void SmartConverter::ReadRotateWriteFullDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
     hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement) {
     
     for (hsize_t yOffset = yStart; yOffset < yLimit; yOffset += yIncrement) {
@@ -527,4 +548,87 @@ void SmartConverter::ReadRotateWrite(float* standardSliceToRead, float* rotatedS
             statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
         }
     }
+}
+
+//TODO: could probably generalize this function with the full depth version
+void SmartConverter::ReadRotateWritePartialDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart, hsize_t zStart,
+    hsize_t xLimit, hsize_t yLimit, hsize_t zLimit, hsize_t xIncrement, hsize_t yIncrement, hsize_t zIncrement) {
+    for (hsize_t zOffset = zStart; zOffset < zLimit; zOffset += zIncrement) {
+        // If remaining slices are less than the increment, adjust the size of the processed slice
+        hsize_t zSize = zOffset + zIncrement > zLimit ? zLimit - zOffset : zIncrement;
+        for (hsize_t yOffset = yStart; yOffset < yLimit; yOffset += yIncrement) {
+            // If remaining rows are less than the increment, adjust the size of the processed slice
+            hsize_t ySize = yOffset + yIncrement > yLimit ? yLimit - yOffset : yIncrement;
+            for (hsize_t xOffset = xStart; xOffset < xLimit; xOffset += xIncrement) {
+                // If remaining columns are less than the increment, adjust the size of the processed slice
+                hsize_t xSize = xOffset + xIncrement > xLimit ? xLimit - xOffset : xIncrement;
+                // read tile slice
+                DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+                TIMER(timer.start("Read"););
+
+                auto standardMemDims = trimAxes({1, zSize, ySize, xSize}, N);
+                auto standardCount = trimAxes({1, zSize, ySize, xSize}, N);
+                auto standardStart = trimAxes({s, zOffset, yOffset, xOffset}, N);
+
+                readHdf5Data(standardDataSet, standardSliceToRead, standardMemDims, standardCount, standardStart);
+
+                // rotate tile slice
+                DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+                TIMER(timer.start("Rotation"););
+
+                for (hsize_t i = 0; i < zSize; i++) {
+                    for (hsize_t j = 0; j < ySize; j++) {
+                        for (hsize_t k = 0; k < xSize; k++) {
+                            auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                            auto& val = standardSliceToRead[sourceIndex];
+
+                            // rotation
+                            auto destIndex = i + zSize * j + (ySize * zSize) * k;
+                            rotatedSliceToWrite[destIndex] = val;
+                        }
+                    }
+
+                    // A separate pass over the same slice depth-last
+                    DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
+                    TIMER(timer.start("Z statistics"););
+
+                    for (hsize_t j = 0; j < ySize; j++) {
+                        for (hsize_t k = 0; k < xSize; k++) {
+                            StatsCounter counterZ;
+                            auto indexZ = xOffset + k + width * (yOffset + j);
+
+                            for (hsize_t i = 0; i < zSize; i++) {
+                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                                auto& val = standardSliceToRead[sourceIndex];
+
+                                if (std::isfinite(val)) {
+                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
+                                    counterZ.accumulateFinite(val);
+                                } else {
+                                    counterZ.accumulateNonFinite();
+                                }
+                            }
+
+                            statsZ.accumulateStatsFromCounter(indexZ, counterZ);
+                        }
+                    }
+                }
+
+                // write tile slice
+                DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+                TIMER(timer.start("Write"););
+
+                auto swizzledMemDims = trimAxes({1, xSize, ySize, zSize}, N);
+                auto swizzledCount = trimAxes({1, xSize, ySize, zSize}, N);
+                auto swizzledStart = trimAxes({s, xOffset, yOffset, zOffset}, N);
+
+                writeHdf5Data(swizzledDataSet, rotatedSliceToWrite, swizzledMemDims, swizzledCount, swizzledStart);
+
+
+            }
+        }
+    }
+    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+    // write Z statistics
+    statsZ.write({height, width}, {1, height, width}, {s, 0, 0});
 }

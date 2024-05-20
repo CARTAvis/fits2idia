@@ -87,6 +87,16 @@ struct Stats {
         counter.nanCount += nanCounts[index];
     }
     
+    void accumulateStatsFromCounter(hsize_t index, const StatsCounter& counter) {
+        if (std::isfinite(counter.maxVal)) {
+            minVals[index] = fmin(counter.minVal, minVals[index]);
+            maxVals[index] = fmax(counter.maxVal, maxVals[index]);
+            sums[index] += counter.sum;
+            sumsSq[index] += counter.sumSq;
+        }
+        nanCounts[index] += counter.nanCount;
+    }
+    
     void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
         if ((hsize_t)counter.nanCount == totalVals) {
             minVals[index] = NAN;
