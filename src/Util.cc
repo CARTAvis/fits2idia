@@ -31,14 +31,16 @@ std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<
     return result;
 }
 
-std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mip) {
+std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mipXY, int mipZ) {
     int N = dims.size();
     auto mipDims = dims;
-    
-    for (auto i = std::max(0, N - 2); i < N; i++) {
-        mipDims[i] = std::ceil((float)mipDims[i] / mip);
+    if (mipXY > 1) {
+        for (auto i = std::max(0, N - 2); i < N; i++) {
+            mipDims[i] = std::ceil((float)mipDims[i] / mipXY);
+        }
     }
-    
+    if (mipZ > 1 && N > 2)
+        mipDims[N - 3] = std::ceil((float)mipDims[N - 3] / mipZ);
     return mipDims;
 }
 

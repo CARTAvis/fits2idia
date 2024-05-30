@@ -11,7 +11,7 @@
 std::vector<std::string> split(const std::string &str, char separator);
 std::vector<hsize_t> trimAxes(const std::vector<hsize_t>& dims, int N);
 std::vector<hsize_t> extend(const std::vector<hsize_t>& left, const std::vector<hsize_t>& right);
-std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mip);
+std::vector<hsize_t> mipDims(const std::vector<hsize_t>& dims, int mipXY, int mipZ);
 hsize_t product(const std::vector<hsize_t>& dims);
 
 template <typename T>
