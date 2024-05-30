@@ -1,9 +1,9 @@
 var structMipMap =
 [
     [ "MipMap", "structMipMap.html#a75813cd91156518375c7775ad28eab16", null ],
-    [ "MipMap", "structMipMap.html#a38282a0994e2ba5a12debb6b0d4ae2d5", null ],
+    [ "MipMap", "structMipMap.html#ae2b698ce2c782b30e7c493e64b4a1ee7", null ],
     [ "~MipMap", "structMipMap.html#a6c7a9a46e1aff1ca4614818a83cfaca0", null ],
-    [ "accumulate", "structMipMap.html#ab51c1dacff6745eb8dc58cb7b1f479cf", null ],
+    [ "accumulate", "structMipMap.html#ae52de6bce3c2eed6905589e223628708", null ],
     [ "calculate", "structMipMap.html#aca2aed753d499a05ec6b473d43995ea8", null ],
     [ "createBuffers", "structMipMap.html#ac8ce461abd824942b9d2b9a0cf1b32cf", null ],
     [ "createDataset", "structMipMap.html#af2c6a636b8d2cfc5c7fea468445637fd", null ],
@@ -16,7 +16,8 @@ var structMipMap =
     [ "datasetDims", "structMipMap.html#a127f55b6909931e6190c34324ad1c4d0", null ],
     [ "depth", "structMipMap.html#a000f4500b1a2fb18eb907a4ac9d26239", null ],
     [ "height", "structMipMap.html#a8b8558a0aa946ff7bf9a07aed21a8755", null ],
-    [ "mip", "structMipMap.html#abafc18bbbf1dc93e2c6fac3eea11895d", null ],
+    [ "mipXY", "structMipMap.html#af5dbc8168c01bb91fc5eb58b266fc289", null ],
+    [ "mipZ", "structMipMap.html#a157536263efa38ea21105130785c50f3", null ],
     [ "stokes", "structMipMap.html#a5a1063d2aace2ec37def03b3d231aa4a", null ],
     [ "vals", "structMipMap.html#af068d2e06a05eff2503d1d0b82201d23", null ],
     [ "width", "structMipMap.html#a370ab7e230aa353eb21f0a8b971cab3c", null ]

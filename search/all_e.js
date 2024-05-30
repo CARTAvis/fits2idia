@@ -2,9 +2,9 @@ var searchData=
 [
   ['schema_5fversion_98',['SCHEMA_VERSION',['../common_8h.html#a63097ab2796c81547effe901abd0ff3b',1,'common.h']]],
   ['seconds_99',['seconds',['../structTimerCounter.html#aded1e4ae6eb21daa55136022db2563cf',1,'TimerCounter']]],
-  ['size_100',['size',['../structStats.html#a993cdac7c839c6354dbe264b1c9c913a',1,'Stats::size()'],['../structMipMaps.html#ac92a944add158f9c9cf4d0120fbb2bd9',1,'MipMaps::size()']]],
+  ['size_100',['size',['../structStats.html#a993cdac7c839c6354dbe264b1c9c913a',1,'Stats::size()'],['../structMipMaps.html#ac25d8a0ac85d7fd026b901ad6572659e',1,'MipMaps::size()']]],
   ['sizes_101',['sizes',['../structMemoryUsage.html#a9799889a9b336599e4aeff443fcc75e1',1,'MemoryUsage']]],
-  ['slowconverter_102',['SlowConverter',['../classSlowConverter.html#ae56d30af68fbd2186b34fd1ee585ebaf',1,'SlowConverter::SlowConverter()'],['../classSlowConverter.html',1,'SlowConverter']]],
+  ['slowconverter_102',['SlowConverter',['../classSlowConverter.html#a3782a577bbfe9df05b21c4f8f32d136e',1,'SlowConverter::SlowConverter()'],['../classSlowConverter.html',1,'SlowConverter']]],
   ['slowconverter_2ecc_103',['SlowConverter.cc',['../SlowConverter_8cc.html',1,'']]],
   ['speed_104',['speed',['../structTimerCounter.html#a1b4b0bf7a178ec92cdf6c4703deedcc8',1,'TimerCounter']]],
   ['split_105',['split',['../Util_8cc.html#a19b14bd24f332d5d68ab9cfcf406a877',1,'split(const std::string &amp;str, char separator):&#160;Util.cc'],['../Util_8h.html#a19b14bd24f332d5d68ab9cfcf406a877',1,'split(const std::string &amp;str, char separator):&#160;Util.cc']]],

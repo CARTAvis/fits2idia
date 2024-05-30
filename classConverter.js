@@ -1,12 +1,12 @@
 var classConverter =
 [
     [ "Converter", "classConverter.html#a1de81f3e06093411e5d27ce882bc010f", null ],
-    [ "Converter", "classConverter.html#a072082b5d0926bb8e93185ad3eaefea5", null ],
+    [ "Converter", "classConverter.html#a81c2b8242e416f585fb949130067c849", null ],
     [ "~Converter", "classConverter.html#a9ecd05695a52c03158b81e544e13b996", null ],
     [ "calculateMemoryUsage", "classConverter.html#ac5e0c815d1462c0e1da5fcca19a78c03", null ],
     [ "convert", "classConverter.html#ab6c99a9eaa83aea8e2964365e6bbc66c", null ],
     [ "copyAndCalculate", "classConverter.html#afdfd2d6327c5c937a453d3717c5154ab", null ],
-    [ "getConverter", "classConverter.html#a681863d942247093b5f9961be367ec97", null ],
+    [ "getConverter", "classConverter.html#ae1867d5a2d17926b369a440c8d5f68fe", null ],
     [ "reportMemoryUsage", "classConverter.html#a388e01fd7fad49e6c7081f9dc79d8bd8", null ],
     [ "depth", "classConverter.html#aa33bf575361dcec6e3945f37a2c788a9", null ],
     [ "height", "classConverter.html#a595ef51f3e8736e91c23a85bc81be0bd", null ],
@@ -32,5 +32,6 @@ var classConverter =
     [ "tempOutputFileName", "classConverter.html#ae6db846d9c32e25e990ba18accfc7cbc", null ],
     [ "tileDims", "classConverter.html#a84ccdb8b7bb151b24968e5254c96651d", null ],
     [ "timer", "classConverter.html#a0c1dae07d5e9091667990203d6bcf816", null ],
-    [ "width", "classConverter.html#a0d37195cea864c9d62df362a335b137f", null ]
+    [ "width", "classConverter.html#a0d37195cea864c9d62df362a335b137f", null ],
+    [ "zMips", "classConverter.html#aa6204ab64068ef27835371d8a72ed8db", null ]
 ];

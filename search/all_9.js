@@ -11,12 +11,12 @@ var searchData=
   ['mindset_60',['minDset',['../structStats.html#af0b9ea106d927144a4c5ca5047e7a6a0',1,'Stats']]],
   ['minval_61',['minVal',['../structStatsCounter.html#a886c018b89cf904fc5e1110f924a19b7',1,'StatsCounter']]],
   ['minvals_62',['minVals',['../structStats.html#aa8ca1814ed642f2fc0ee803abcc8b04e',1,'Stats']]],
-  ['mip_63',['mip',['../structMipMap.html#abafc18bbbf1dc93e2c6fac3eea11895d',1,'MipMap']]],
-  ['mipdims_64',['mipDims',['../Util_8h.html#abf3f2f44765d44aa9bdb97699f569b14',1,'mipDims(const std::vector&lt; hsize_t &gt; &amp;dims, int mip):&#160;Util.cc'],['../Util_8cc.html#abf3f2f44765d44aa9bdb97699f569b14',1,'mipDims(const std::vector&lt; hsize_t &gt; &amp;dims, int mip):&#160;Util.cc']]],
-  ['mipmap_65',['MipMap',['../structMipMap.html#a75813cd91156518375c7775ad28eab16',1,'MipMap::MipMap()'],['../structMipMap.html#a38282a0994e2ba5a12debb6b0d4ae2d5',1,'MipMap::MipMap(const std::vector&lt; hsize_t &gt; &amp;datasetDims, int mip)'],['../structMipMap.html',1,'MipMap']]],
-  ['mipmap_2ecc_66',['MipMap.cc',['../MipMap_8cc.html',1,'']]],
-  ['mipmap_2eh_67',['MipMap.h',['../MipMap_8h.html',1,'']]],
-  ['mipmaps_68',['MipMaps',['../structMipMaps.html#aab8f83a64ff8ba5a017f363ee5341ff3',1,'MipMaps::MipMaps()'],['../structMipMaps.html#ac5c39adc7e1953f90873e674889940d1',1,'MipMaps::MipMaps(std::vector&lt; hsize_t &gt; standardDims, const std::vector&lt; hsize_t &gt; &amp;chunkDims)']]],
-  ['mipmaps_69',['mipMaps',['../classConverter.html#ab6b2ef40ef7bb467c5f0b064d0d35b98',1,'Converter::mipMaps()'],['../structMipMaps.html#a568e01ec455bedef16c01da1e8200861',1,'MipMaps::mipMaps()']]],
-  ['mipmaps_70',['MipMaps',['../structMipMaps.html',1,'']]]
+  ['mipdims_63',['mipDims',['../Util_8h.html#a68013ac42f0b745d169532e20bf6f0ca',1,'mipDims(const std::vector&lt; hsize_t &gt; &amp;dims, int mipXY, int mipZ):&#160;Util.cc'],['../Util_8cc.html#a68013ac42f0b745d169532e20bf6f0ca',1,'mipDims(const std::vector&lt; hsize_t &gt; &amp;dims, int mipXY, int mipZ):&#160;Util.cc']]],
+  ['mipmap_64',['MipMap',['../structMipMap.html#a75813cd91156518375c7775ad28eab16',1,'MipMap::MipMap()'],['../structMipMap.html#ae2b698ce2c782b30e7c493e64b4a1ee7',1,'MipMap::MipMap(const std::vector&lt; hsize_t &gt; &amp;datasetDims, int mipXY, int mipZ)'],['../structMipMap.html',1,'MipMap']]],
+  ['mipmap_2ecc_65',['MipMap.cc',['../MipMap_8cc.html',1,'']]],
+  ['mipmap_2eh_66',['MipMap.h',['../MipMap_8h.html',1,'']]],
+  ['mipmaps_67',['mipMaps',['../classConverter.html#ab6b2ef40ef7bb467c5f0b064d0d35b98',1,'Converter::mipMaps()'],['../structMipMaps.html#a568e01ec455bedef16c01da1e8200861',1,'MipMaps::mipMaps()']]],
+  ['mipmaps_68',['MipMaps',['../structMipMaps.html#aab8f83a64ff8ba5a017f363ee5341ff3',1,'MipMaps::MipMaps()'],['../structMipMaps.html#a7fb57e0d7d531d9b61a159a1be962032',1,'MipMaps::MipMaps(std::vector&lt; hsize_t &gt; standardDims, const std::vector&lt; hsize_t &gt; &amp;chunkDims, bool zMips)'],['../structMipMaps.html',1,'MipMaps']]],
+  ['mipxy_69',['mipXY',['../structMipMap.html#af5dbc8168c01bb91fc5eb58b266fc289',1,'MipMap']]],
+  ['mipz_70',['mipZ',['../structMipMap.html#a157536263efa38ea21105130785c50f3',1,'MipMap']]]
 ];

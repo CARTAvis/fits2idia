@@ -69,18 +69,18 @@
 <g id="node14" class="node">
 <title>Node14</title>
 <g id="a_node14"><a xlink:href="structStats.html" target="_top" xlink:title=" ">
-<polygon fill="none" stroke="black" points="463,-430.5 463,-449.5 504,-449.5 504,-430.5 463,-430.5"/>
-<text text-anchor="middle" x="483.5" y="-437.5" font-family="Helvetica,sans-Serif" font-size="10.00">Stats</text>
+<polygon fill="none" stroke="black" points="463,-433.5 463,-452.5 504,-452.5 504,-433.5 463,-433.5"/>
+<text text-anchor="middle" x="483.5" y="-440.5" font-family="Helvetica,sans-Serif" font-size="10.00">Stats</text>
 </a>
 </g>
 </g>
 <!-- Node4&#45;&gt;Node14 -->
 <g id="edge15" class="edge">
 <title>Node4&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M239.82,-279.85C285.69,-278.58 369.45,-282.75 424,-324 460.34,-351.48 475.75,-407.82 480.64,-430.36"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="239.41,-276.37 229.56,-280.25 239.68,-283.36 239.41,-276.37"/>
-<text text-anchor="middle" x="359" y="-338" font-family="Helvetica,sans-Serif" font-size="10.00"> maxVals</text>
-<text text-anchor="middle" x="359" y="-327" font-family="Helvetica,sans-Serif" font-size="10.00">minVals</text>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M239.6,-279.58C285.48,-277.92 369.57,-281.45 424,-323 461.4,-351.55 476.27,-410.28 480.82,-433.37"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="239.43,-276.09 229.6,-280.05 239.75,-283.08 239.43,-276.09"/>
+<text text-anchor="middle" x="359" y="-337" font-family="Helvetica,sans-Serif" font-size="10.00"> maxVals</text>
+<text text-anchor="middle" x="359" y="-326" font-family="Helvetica,sans-Serif" font-size="10.00">minVals</text>
 </g>
 <!-- Node5 -->
 <g id="node5" class="node">
@@ -103,7 +103,7 @@
 <!-- Node5&#45;&gt;Node14 -->
 <g id="edge16" class="edge">
 <title>Node5&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M258.42,-783.6C264.7,-780.7 270.74,-777.21 276,-773 287.84,-763.52 281.99,-753.26 294,-744 341.87,-707.08 383.01,-748.43 424,-704 459.65,-665.36 477.7,-492.21 481.66,-449.53"/>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M258.42,-783.6C264.7,-780.7 270.74,-777.21 276,-773 287.84,-763.52 281.99,-753.26 294,-744 341.87,-707.08 382.95,-748.38 424,-704 459.24,-665.9 477.54,-495.39 481.61,-452.71"/>
 <polygon fill="#9a32cd" stroke="#9a32cd" points="257.04,-780.38 249.12,-787.43 259.7,-786.86 257.04,-780.38"/>
 <text text-anchor="middle" x="359" y="-758" font-family="Helvetica,sans-Serif" font-size="10.00"> basicDatasetDims</text>
 <text text-anchor="middle" x="359" y="-747" font-family="Helvetica,sans-Serif" font-size="10.00">fullBasicBufferDims</text>
@@ -172,8 +172,8 @@
 <!-- Node6&#45;&gt;Node14 -->
 <g id="edge18" class="edge">
 <title>Node6&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M27.96,-735.35C32.87,-684.58 53.5,-548.59 136,-485 187.11,-445.61 360.03,-456.48 424,-448 436.91,-446.29 451.4,-444.31 462.74,-442.74"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="24.47,-735.07 27.09,-745.34 31.44,-735.68 24.47,-735.07"/>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M27.93,-735.32C32.78,-684.47 53.27,-548.29 136,-485 149.11,-474.97 391.16,-451.56 462.73,-444.84"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="24.44,-735.06 27.08,-745.32 31.42,-735.65 24.44,-735.06"/>
 <text text-anchor="middle" x="206" y="-499" font-family="Helvetica,sans-Serif" font-size="10.00"> numBins</text>
 <text text-anchor="middle" x="206" y="-488" font-family="Helvetica,sans-Serif" font-size="10.00">partialHistMultiplier</text>
 </g>
@@ -224,7 +224,7 @@
 <!-- Node8&#45;&gt;Node14 -->
 <g id="edge19" class="edge">
 <title>Node8&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M220.73,-637.47C236.36,-618.82 263.7,-589.99 294,-575 346.59,-548.99 376.67,-586.68 424,-552 459.57,-525.94 475.35,-471.76 480.48,-449.68"/>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M220.73,-637.47C236.36,-618.82 263.7,-589.99 294,-575 346.59,-548.99 376.47,-586.41 424,-552 458.79,-526.81 474.93,-474.45 480.32,-452.75"/>
 <polygon fill="#9a32cd" stroke="#9a32cd" points="218,-635.27 214.4,-645.24 223.43,-639.7 218,-635.27"/>
 <text text-anchor="middle" x="359" y="-633" font-family="Helvetica,sans-Serif" font-size="10.00"> histDset</text>
 <text text-anchor="middle" x="359" y="-622" font-family="Helvetica,sans-Serif" font-size="10.00">maxDset</text>
@@ -259,10 +259,11 @@
 <!-- Node9&#45;&gt;Node19 -->
 <g id="edge30" class="edge">
 <title>Node9&#45;&gt;Node19</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M230.91,-187.53C282.08,-197.72 399.51,-224.04 424,-255 452.23,-290.69 436.21,-413.86 442,-459 453.56,-549.11 474.27,-657.14 480.61,-689.44"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="231.27,-184.03 220.78,-185.55 229.93,-190.9 231.27,-184.03"/>
-<text text-anchor="middle" x="359" y="-269" font-family="Helvetica,sans-Serif" font-size="10.00"> count</text>
-<text text-anchor="middle" x="359" y="-258" font-family="Helvetica,sans-Serif" font-size="10.00">mip</text>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M230.87,-186.15C281.94,-193.42 399.21,-213.06 424,-243 439.57,-261.81 438.94,-437.78 442,-462 453.19,-550.62 473.97,-656.69 480.49,-689.11"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="231.14,-182.66 220.76,-184.75 230.18,-189.59 231.14,-182.66"/>
+<text text-anchor="middle" x="359" y="-268" font-family="Helvetica,sans-Serif" font-size="10.00"> count</text>
+<text text-anchor="middle" x="359" y="-257" font-family="Helvetica,sans-Serif" font-size="10.00">mipXY</text>
+<text text-anchor="middle" x="359" y="-246" font-family="Helvetica,sans-Serif" font-size="10.00">mipZ</text>
 </g>
 <!-- Node22 -->
 <g id="node22" class="node">
@@ -351,34 +352,35 @@
 <g id="node13" class="node">
 <title>Node13</title>
 <g id="a_node13"><a xlink:title=" ">
-<polygon fill="none" stroke="#bfbfbf" points="187,-342.5 187,-361.5 225,-361.5 225,-342.5 187,-342.5"/>
-<text text-anchor="middle" x="206" y="-349.5" font-family="Helvetica,sans-Serif" font-size="10.00">bool</text>
+<polygon fill="none" stroke="#bfbfbf" points="187,-343.5 187,-362.5 225,-362.5 225,-343.5 187,-343.5"/>
+<text text-anchor="middle" x="206" y="-350.5" font-family="Helvetica,sans-Serif" font-size="10.00">bool</text>
 </a>
 </g>
 </g>
 <!-- Node13&#45;&gt;Node2 -->
 <g id="edge13" class="edge">
 <title>Node13&#45;&gt;Node2</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M235.03,-349.29C284.8,-344.73 391.89,-336 482.5,-336 482.5,-336 482.5,-336 964.5,-336 1009.36,-336 1061.26,-336 1093.73,-336"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="234.66,-345.81 225.03,-350.23 235.31,-352.78 234.66,-345.81"/>
-<text text-anchor="middle" x="710.5" y="-339" font-family="Helvetica,sans-Serif" font-size="10.00"> progress</text>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M235.03,-350.13C284.79,-345.28 391.87,-336 482.5,-336 482.5,-336 482.5,-336 964.5,-336 1009.36,-336 1061.26,-336 1093.73,-336"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="234.63,-346.65 225.03,-351.12 235.32,-353.61 234.63,-346.65"/>
+<text text-anchor="middle" x="710.5" y="-350" font-family="Helvetica,sans-Serif" font-size="10.00"> progress</text>
+<text text-anchor="middle" x="710.5" y="-339" font-family="Helvetica,sans-Serif" font-size="10.00">zMips</text>
 </g>
 <!-- Node13&#45;&gt;Node14 -->
 <g id="edge20" class="edge">
 <title>Node13&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M235.03,-349.94C278.08,-347.98 361.97,-349.02 424,-380 447.43,-391.7 466.83,-416.61 476.29,-430.37"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="234.8,-346.45 225.01,-350.49 235.18,-353.44 234.8,-346.45"/>
-<text text-anchor="middle" x="359" y="-394" font-family="Helvetica,sans-Serif" font-size="10.00"> buffersAllocated</text>
-<text text-anchor="middle" x="359" y="-383" font-family="Helvetica,sans-Serif" font-size="10.00">histogramBuffersAllocated</text>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M235.14,-350.37C278.32,-347.61 362.4,-347.34 424,-379 448.37,-391.52 467.66,-418.59 476.77,-433.19"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="234.8,-346.89 225.08,-351.11 235.31,-353.87 234.8,-346.89"/>
+<text text-anchor="middle" x="359" y="-393" font-family="Helvetica,sans-Serif" font-size="10.00"> buffersAllocated</text>
+<text text-anchor="middle" x="359" y="-382" font-family="Helvetica,sans-Serif" font-size="10.00">histogramBuffersAllocated</text>
 </g>
 <!-- Node14&#45;&gt;Node2 -->
 <g id="edge14" class="edge">
 <title>Node14&#45;&gt;Node2</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M514.26,-436.8C601.31,-427.16 862.79,-396.18 1076,-350 1081.85,-348.73 1088.03,-347.17 1093.96,-345.55"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="513.62,-433.35 504.06,-437.92 514.39,-440.31 513.62,-433.35"/>
-<text text-anchor="middle" x="862" y="-423" font-family="Helvetica,sans-Serif" font-size="10.00"> statsXY</text>
-<text text-anchor="middle" x="862" y="-412" font-family="Helvetica,sans-Serif" font-size="10.00">statsXYZ</text>
-<text text-anchor="middle" x="862" y="-401" font-family="Helvetica,sans-Serif" font-size="10.00">statsZ</text>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M514.25,-439.6C601.3,-429.38 862.74,-396.75 1076,-350 1081.84,-348.72 1088.02,-347.15 1093.95,-345.53"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="513.59,-436.15 504.06,-440.79 514.4,-443.11 513.59,-436.15"/>
+<text text-anchor="middle" x="862" y="-424" font-family="Helvetica,sans-Serif" font-size="10.00"> statsXY</text>
+<text text-anchor="middle" x="862" y="-413" font-family="Helvetica,sans-Serif" font-size="10.00">statsXYZ</text>
+<text text-anchor="middle" x="862" y="-402" font-family="Helvetica,sans-Serif" font-size="10.00">statsZ</text>
 </g>
 <!-- Node15 -->
 <g id="node15" class="node">
@@ -392,7 +394,7 @@
 <!-- Node15&#45;&gt;Node14 -->
 <g id="edge17" class="edge">
 <title>Node15&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M240.87,-512.93C256.81,-507.14 276.2,-500.61 294,-496 350.8,-481.28 368.77,-492.81 424,-473 440.24,-467.17 457.26,-457.05 468.72,-449.55"/>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M240.87,-512.93C256.81,-507.14 276.2,-500.61 294,-496 350.8,-481.28 368.39,-491.71 424,-473 439.15,-467.91 455.22,-459.41 466.68,-452.76"/>
 <polygon fill="#9a32cd" stroke="#9a32cd" points="239.6,-509.67 231.44,-516.42 242.03,-516.24 239.6,-509.67"/>
 <text text-anchor="middle" x="359" y="-510" font-family="Helvetica,sans-Serif" font-size="10.00"> sums</text>
 <text text-anchor="middle" x="359" y="-499" font-family="Helvetica,sans-Serif" font-size="10.00">sumsSq</text>
@@ -416,8 +418,8 @@
 <!-- Node16&#45;&gt;Node14 -->
 <g id="edge21" class="edge">
 <title>Node16&#45;&gt;Node14</title>
-<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M246.03,-409.57C289.85,-405.65 362.82,-402.33 424,-415 438.49,-418 453.84,-424.71 465.18,-430.42"/>
-<polygon fill="#9a32cd" stroke="#9a32cd" points="245.44,-406.11 235.81,-410.54 246.1,-413.08 245.44,-406.11"/>
+<path fill="none" stroke="#9a32cd" stroke-dasharray="5,2" d="M245.49,-409.15C289.33,-404.78 362.81,-400.96 424,-415 439.58,-418.58 455.88,-426.8 467.3,-433.41"/>
+<polygon fill="#9a32cd" stroke="#9a32cd" points="245.12,-405.67 235.54,-410.2 245.86,-412.63 245.12,-405.67"/>
 <text text-anchor="middle" x="359" y="-440" font-family="Helvetica,sans-Serif" font-size="10.00"> histograms</text>
 <text text-anchor="middle" x="359" y="-429" font-family="Helvetica,sans-Serif" font-size="10.00">nanCounts</text>
 <text text-anchor="middle" x="359" y="-418" font-family="Helvetica,sans-Serif" font-size="10.00">partialHistograms</text>

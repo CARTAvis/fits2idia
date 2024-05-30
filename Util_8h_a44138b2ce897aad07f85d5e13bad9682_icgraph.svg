@@ -111,7 +111,7 @@
 <!-- Node9 -->
 <g id="node9" class="node">
 <title>Node9</title>
-<g id="a_node9"><a xlink:href="structMipMaps.html#ac92a944add158f9c9cf4d0120fbb2bd9" target="_top" xlink:title=" ">
+<g id="a_node9"><a xlink:href="structMipMaps.html#ac25d8a0ac85d7fd026b901ad6572659e" target="_top" xlink:title=" ">
 <polygon fill="none" stroke="black" points="253.5,-228.5 253.5,-247.5 339.5,-247.5 339.5,-228.5 253.5,-228.5"/>
 <text text-anchor="middle" x="296.5" y="-235.5" font-family="Helvetica,sans-Serif" font-size="10.00">MipMaps::size</text>
 </a>

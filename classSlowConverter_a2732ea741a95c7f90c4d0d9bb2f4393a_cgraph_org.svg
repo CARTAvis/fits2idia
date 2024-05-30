@@ -20,7 +20,7 @@
 <!-- Node2 -->
 <g id="node2" class="node">
 <title>Node2</title>
-<g id="a_node2"><a xlink:href="structMipMaps.html#ae1239035de009bfe349402884f3a0cd7" target="_top" xlink:title=" ">
+<g id="a_node2"><a xlink:href="structMipMaps.html#ad66bf67bc7eb9391e5fb99d5a5cb7da3" target="_top" xlink:title=" ">
 <polygon fill="none" stroke="black" points="235,-817.5 235,-836.5 359,-836.5 359,-817.5 235,-817.5"/>
 <text text-anchor="middle" x="297" y="-824.5" font-family="Helvetica,sans-Serif" font-size="10.00">MipMaps::accumulate</text>
 </a>
@@ -346,7 +346,7 @@
 <!-- Node14 -->
 <g id="node14" class="node">
 <title>Node14</title>
-<g id="a_node14"><a xlink:href="Util_8cc.html#abf3f2f44765d44aa9bdb97699f569b14" target="_top" xlink:title=" ">
+<g id="a_node14"><a xlink:href="Util_8cc.html#a68013ac42f0b745d169532e20bf6f0ca" target="_top" xlink:title=" ">
 <polygon fill="none" stroke="black" points="443,-304.5 443,-323.5 504,-323.5 504,-304.5 443,-304.5"/>
 <text text-anchor="middle" x="473.5" y="-311.5" font-family="Helvetica,sans-Serif" font-size="10.00">mipDims</text>
 </a>

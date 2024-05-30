@@ -8,7 +8,7 @@ var searchData=
   ['common_2eh_18',['common.h',['../common_8h.html',1,'']]],
   ['consolidatepartialhistogram_19',['consolidatePartialHistogram',['../structStats.html#a72232bc7c02bb605fc415af0f25f6c2f',1,'Stats']]],
   ['convert_20',['convert',['../classConverter.html#ab6c99a9eaa83aea8e2964365e6bbc66c',1,'Converter']]],
-  ['converter_21',['Converter',['../classConverter.html#a1de81f3e06093411e5d27ce882bc010f',1,'Converter::Converter()'],['../classConverter.html#a072082b5d0926bb8e93185ad3eaefea5',1,'Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress)'],['../classConverter.html',1,'Converter']]],
+  ['converter_21',['Converter',['../classConverter.html#a1de81f3e06093411e5d27ce882bc010f',1,'Converter::Converter()'],['../classConverter.html#a81c2b8242e416f585fb949130067c849',1,'Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips)'],['../classConverter.html',1,'Converter']]],
   ['converter_2ecc_22',['Converter.cc',['../Converter_8cc.html',1,'']]],
   ['converter_2eh_23',['Converter.h',['../Converter_8h.html',1,'']]],
   ['copyandcalculate_24',['copyAndCalculate',['../classConverter.html#afdfd2d6327c5c937a453d3717c5154ab',1,'Converter::copyAndCalculate()'],['../classSlowConverter.html#a2732ea741a95c7f90c4d0d9bb2f4393a',1,'SlowConverter::copyAndCalculate()'],['../classFastConverter.html#a29d7369baf5b71da8631de35096519c2',1,'FastConverter::copyAndCalculate()']]],

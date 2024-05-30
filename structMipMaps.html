@@ -97,7 +97,7 @@ $(document).ready(function(){initNavTree('structMipMaps.html',''); initResizable
 <div class="dynheader">
 Collaboration diagram for MipMaps:</div>
 <div class="dyncontent">
-<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps__coll__graph.svg" width="560" height="471"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
+<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps__coll__graph.svg" width="560" height="486"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
 </div>
 <center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
 <table class="memberdecls">
@@ -105,14 +105,14 @@ Collaboration diagram for MipMaps:</div>
 Public Member Functions</h2></td></tr>
 <tr class="memitem:aab8f83a64ff8ba5a017f363ee5341ff3"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#aab8f83a64ff8ba5a017f363ee5341ff3">MipMaps</a> ()</td></tr>
 <tr class="separator:aab8f83a64ff8ba5a017f363ee5341ff3"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac5c39adc7e1953f90873e674889940d1"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#ac5c39adc7e1953f90873e674889940d1">MipMaps</a> (std::vector&lt; hsize_t &gt; <a class="el" href="structMipMaps.html#a0675889baa264da4261f99b8863c85a2">standardDims</a>, const std::vector&lt; hsize_t &gt; &amp;<a class="el" href="structMipMaps.html#aef2e43509229aa90d66d2b92544effcc">chunkDims</a>)</td></tr>
-<tr class="separator:ac5c39adc7e1953f90873e674889940d1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7fb57e0d7d531d9b61a159a1be962032"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#a7fb57e0d7d531d9b61a159a1be962032">MipMaps</a> (std::vector&lt; hsize_t &gt; <a class="el" href="structMipMaps.html#a0675889baa264da4261f99b8863c85a2">standardDims</a>, const std::vector&lt; hsize_t &gt; &amp;<a class="el" href="structMipMaps.html#aef2e43509229aa90d66d2b92544effcc">chunkDims</a>, bool zMips)</td></tr>
+<tr class="separator:a7fb57e0d7d531d9b61a159a1be962032"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a70c15557e2d578da4010ab23618a55f8"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#a70c15557e2d578da4010ab23618a55f8">createDatasets</a> (H5::Group group)</td></tr>
 <tr class="separator:a70c15557e2d578da4010ab23618a55f8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a2dc892b175561f17a8dca34f562bdee5"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#a2dc892b175561f17a8dca34f562bdee5">createBuffers</a> (const std::vector&lt; hsize_t &gt; &amp;standardBufferDims)</td></tr>
 <tr class="separator:a2dc892b175561f17a8dca34f562bdee5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae1239035de009bfe349402884f3a0cd7"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#ae1239035de009bfe349402884f3a0cd7">accumulate</a> (double val, hsize_t x, hsize_t y, hsize_t totalChannelOffset)</td></tr>
-<tr class="separator:ae1239035de009bfe349402884f3a0cd7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad66bf67bc7eb9391e5fb99d5a5cb7da3"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#ad66bf67bc7eb9391e5fb99d5a5cb7da3">accumulate</a> (double val, hsize_t x, hsize_t y, hsize_t z)</td></tr>
+<tr class="separator:ad66bf67bc7eb9391e5fb99d5a5cb7da3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa2506b4101051310fa0e3b85da8eb6e2"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#aa2506b4101051310fa0e3b85da8eb6e2">calculate</a> ()</td></tr>
 <tr class="separator:aa2506b4101051310fa0e3b85da8eb6e2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a41b4f4458fc0ad329657f5f990c44363"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#a41b4f4458fc0ad329657f5f990c44363">write</a> (hsize_t stokesOffset, hsize_t channelOffset)</td></tr>
@@ -122,8 +122,8 @@ Public Member Functions</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
-<tr class="memitem:ac92a944add158f9c9cf4d0120fbb2bd9"><td class="memItemLeft" align="right" valign="top">static hsize_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#ac92a944add158f9c9cf4d0120fbb2bd9">size</a> (const std::vector&lt; hsize_t &gt; &amp;<a class="el" href="structMipMaps.html#a0675889baa264da4261f99b8863c85a2">standardDims</a>, const std::vector&lt; hsize_t &gt; &amp;standardBufferDims)</td></tr>
-<tr class="separator:ac92a944add158f9c9cf4d0120fbb2bd9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac25d8a0ac85d7fd026b901ad6572659e"><td class="memItemLeft" align="right" valign="top">static hsize_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structMipMaps.html#ac25d8a0ac85d7fd026b901ad6572659e">size</a> (const std::vector&lt; hsize_t &gt; &amp;<a class="el" href="structMipMaps.html#a0675889baa264da4261f99b8863c85a2">standardDims</a>, const std::vector&lt; hsize_t &gt; &amp;standardBufferDims, bool zMips)</td></tr>
+<tr class="separator:ac25d8a0ac85d7fd026b901ad6572659e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -160,8 +160,8 @@ Public Attributes</h2></td></tr>
 
 </div>
 </div>
-<a id="ac5c39adc7e1953f90873e674889940d1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac5c39adc7e1953f90873e674889940d1">&#9670;&nbsp;</a></span>MipMaps() <span class="overload">[2/2]</span></h2>
+<a id="a7fb57e0d7d531d9b61a159a1be962032"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7fb57e0d7d531d9b61a159a1be962032">&#9670;&nbsp;</a></span>MipMaps() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -176,7 +176,13 @@ Public Attributes</h2></td></tr>
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype">const std::vector&lt; hsize_t &gt; &amp;&#160;</td>
-          <td class="paramname"><em>chunkDims</em>&#160;</td>
+          <td class="paramname"><em>chunkDims</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool&#160;</td>
+          <td class="paramname"><em>zMips</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -188,15 +194,15 @@ Public Attributes</h2></td></tr>
 <div class="dynheader">
 Here is the call graph for this function:</div>
 <div class="dyncontent">
-<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ac5c39adc7e1953f90873e674889940d1_cgraph.svg" width="288" height="38"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
+<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_a7fb57e0d7d531d9b61a159a1be962032_cgraph.svg" width="288" height="38"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
 </div>
 </div>
 
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="ae1239035de009bfe349402884f3a0cd7"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae1239035de009bfe349402884f3a0cd7">&#9670;&nbsp;</a></span>accumulate()</h2>
+<a id="ad66bf67bc7eb9391e5fb99d5a5cb7da3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad66bf67bc7eb9391e5fb99d5a5cb7da3">&#9670;&nbsp;</a></span>accumulate()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -226,7 +232,7 @@ Here is the call graph for this function:</div>
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype">hsize_t&#160;</td>
-          <td class="paramname"><em>totalChannelOffset</em>&#160;</td>
+          <td class="paramname"><em>z</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -243,7 +249,7 @@ Here is the call graph for this function:</div>
 <div class="dynheader">
 Here is the caller graph for this function:</div>
 <div class="dyncontent">
-<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ae1239035de009bfe349402884f3a0cd7_icgraph.svg" width="467" height="88"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
+<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ad66bf67bc7eb9391e5fb99d5a5cb7da3_icgraph.svg" width="467" height="88"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
 </div>
 </div>
 
@@ -357,8 +363,8 @@ Here is the caller graph for this function:</div>
 
 </div>
 </div>
-<a id="ac92a944add158f9c9cf4d0120fbb2bd9"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac92a944add158f9c9cf4d0120fbb2bd9">&#9670;&nbsp;</a></span>size()</h2>
+<a id="ac25d8a0ac85d7fd026b901ad6572659e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac25d8a0ac85d7fd026b901ad6572659e">&#9670;&nbsp;</a></span>size()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -376,7 +382,13 @@ Here is the caller graph for this function:</div>
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype">const std::vector&lt; hsize_t &gt; &amp;&#160;</td>
-          <td class="paramname"><em>standardBufferDims</em>&#160;</td>
+          <td class="paramname"><em>standardBufferDims</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool&#160;</td>
+          <td class="paramname"><em>zMips</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -393,13 +405,13 @@ Here is the caller graph for this function:</div>
 <div class="dynheader">
 Here is the call graph for this function:</div>
 <div class="dyncontent">
-<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ac92a944add158f9c9cf4d0120fbb2bd9_cgraph.svg" width="255" height="88"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
+<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ac25d8a0ac85d7fd026b901ad6572659e_cgraph.svg" width="255" height="88"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
 </div>
 </div>
 <div class="dynheader">
 Here is the caller graph for this function:</div>
 <div class="dyncontent">
-<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ac92a944add158f9c9cf4d0120fbb2bd9_icgraph.svg" width="358" height="118"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
+<div class="center"><iframe scrolling="no" frameborder="0" src="structMipMaps_ac25d8a0ac85d7fd026b901ad6572659e_icgraph.svg" width="358" height="118"><p><b>This browser is not able to show SVG: try Firefox, Chrome, Safari, or Opera instead.</b></p></iframe>
 </div>
 </div>
 
