@@ -19,9 +19,14 @@ struct MipMap {
     void createBuffers(std::vector<hsize_t>& bufferDims);
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
-        hsize_t mipIndex = (z / mipZ) * width * height + (y / mipXY) * width + (x / mipXY);
+        hsize_t mipIndex;
+        XYZToMipIndex(x, y, z, mipIndex);
         vals[mipIndex] += val;
         count[mipIndex]++;
+    }
+    
+    void XYZToMipIndex(hsize_t x, hsize_t y, hsize_t z, hsize_t& mipIndex) {
+        mipIndex = (z / mipZ) * width * height + (y / mipXY) * width + (x / mipXY);
     }
     
     void calculate() {
@@ -68,7 +73,9 @@ struct MipMaps {
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
-        for (auto& mipMap : mipMaps) {
+        int n = mipMaps.size();
+        for (int i = 0; i < n; i++) {
+            auto& mipMap = mipMaps[i];
             mipMap.accumulate(val, x, y, z);
         }
     }

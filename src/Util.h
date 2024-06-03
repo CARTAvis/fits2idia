@@ -48,4 +48,7 @@ void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_
 
 void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
+void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t factorX, hsize_t factorY, hsize_t factorZ);
+
+
 #endif

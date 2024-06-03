@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory, bool& zMips) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb) {
     extern int optind;
     extern char *optarg;
     
@@ -22,13 +22,14 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-o\tOutput filename" << std::endl 
-    << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
+    << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl
+    << "-r\tUse smart method" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:spqmz")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:sr::pqmz")) != -1) {
         switch (opt) {
             case 'o':
                 outputFileName.assign(optarg);
@@ -37,6 +38,14 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                 // use slower but less memory-intensive method
                 slow = true;
                 break;
+            case 'r':
+                // use smart method
+                if (optarg) { // If an argument is provided
+                    int arg = std::stoi(optarg); // Convert the argument to an integer
+                    smart = true; // Enable smart mode
+                    memoryLimitInMb = arg; // Assign the argument to the memory limit for smart mode
+                } //else, fast mode will be used by default because memory limit is not concern for user
+                memoryLimitInMb = 0; // Assign 0 to the memory limit for smart mode because no argument is provided
             case 'p':
                 progress = true;
                 break;
@@ -96,11 +105,13 @@ int main(int argc, char** argv) {
     std::string inputFileName;
     std::string outputFileName;
     bool slow(false);
+    bool smart(false);
     bool progress(false);
     bool onlyReportMemory(false);
     bool zMips(false);
+    int memoryLimitInMb(0);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, progress, onlyReportMemory, zMips, memoryLimitInMb)) {
         return 1;
     }
 
@@ -131,7 +142,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, progress, zMips);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips, memoryLimitInMb);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();

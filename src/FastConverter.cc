@@ -75,10 +75,12 @@ void FastConverter::copyAndCalculate() {
 
         // First loop calculates stats for each XY slice and rotates the dataset
         
-#pragma omp parallel for
-        for (hsize_t i = 0; i < depth; i++) {
+        hsize_t i;
+        StatsCounter counterXY;
+#pragma omp parallel for default(none) private(i, counterXY) shared(channelProgressStride, std::cout)
+        for (i = 0; i < depth; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
-            StatsCounter counterXY;
+            counterXY.reset();
             
             auto& indexXY = i;
             std::function<void(float)> accumulate;
@@ -114,6 +116,7 @@ void FastConverter::copyAndCalculate() {
             }
             
             // Final correction of XY min and max
+
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
         
@@ -140,8 +143,9 @@ void FastConverter::copyAndCalculate() {
             PROGRESS("\tZ stats\t\t");
             TIMER(timer.start("Z statistics"););
 
-#pragma omp parallel for
-            for (hsize_t j = 0; j < height; j++) {
+            hsize_t j;
+#pragma omp parallel for default(none) private(j) shared(pixelProgressStride, std::cout)
+            for (j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
                     StatsCounter counterZ;
                     
@@ -188,8 +192,8 @@ void FastConverter::copyAndCalculate() {
         statsXY.clearHistogramBuffers();
         statsXYZ.clearHistogramBuffers();
 
-#pragma omp parallel for
-        for (hsize_t i = 0; i < depth; i++) {
+#pragma omp parallel for default(none) private(i) shared(channelProgressStride, std::cout, cubeHist, cubeMin, cubeRange)
+        for (i = 0; i < depth; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
             
             auto& indexXY = i;
@@ -277,8 +281,9 @@ void FastConverter::copyAndCalculate() {
         PROGRESS("\tMipmaps\t\t");
         TIMER(timer.start("Mipmaps"););
         
-#pragma omp parallel for
-        for (hsize_t c = 0; c < depth; c++) {
+        hsize_t c;
+#pragma omp parallel for default(none) private(c) shared(channelProgressStride, std::cout)
+        for (c = 0; c < depth; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
