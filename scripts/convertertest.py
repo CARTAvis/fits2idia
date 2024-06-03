@@ -344,6 +344,21 @@ def depth_mipmap_image_set():
                 image_set.append((dims, params))
     return image_set
 
+def depth_mipmap_image_set():
+    image_set = []
+
+    # A few 3d images to test z mipmaps
+    for dims in ((130, 130), (130, 130, 130), (130, 130, 130, 2)):
+        for nans in (("pixel",),):
+            for nan_density in (50,):
+                params = {
+                    "--nans": nans,
+                    "--nan-density": nan_density
+                }
+
+                image_set.append((dims, params))
+    return image_set
+
 def large_timer_image_set(slow=False):
     if slow:
         return [
@@ -469,7 +484,7 @@ if __name__ == "__main__":
     image_sets = (IMAGE_SETS[i] for i in args.image_set)
 
     if args.time:
-        test_speed(args, *image_sets)
+        test_speed(args, *image_sets, args.executable)
     else:
         for image_set in image_sets:
             for dims, params in image_set:
