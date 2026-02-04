@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -13,13 +13,22 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
     long dims[4];
     
     getFitsDims(inputFilePtr, N, dims);
+    
+    // check relevant FITS keywords if the axis order is STOKES,FREQ -> swap is required:
+    checkIfSwapAxisRequired();
         
     stokes = N == 4 ? dims[3] : 1;
     depth = N >= 3 ? dims[2] : 1;
+    if ( swapStokesFreqAxis ) {
+       stokes = N >= 4 ? dims[2] : 1;
+       depth = N == 4 ? dims[3] : 1;
+    }
     height = dims[1];
     width = dims[0];
     
     swizzledName = N == 3 ? "ZYX" : "ZYXW";
+    
+    DEBUG(std::cout << "Stokes = " << stokes << ", depth = " << depth << ", image dimensions " << height << " x " << width << " , swizzledName = " << swizzledName.c_str(););
     
     standardDims = trimAxes({stokes, depth, height, width}, N);
     tileDims = trimAxes({1, 1, TILE_SIZE, TILE_SIZE}, N);
@@ -72,6 +81,39 @@ void Converter::reportMemoryUsage() {
     std::cout << "TOTAL:\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
 }
 
+bool Converter::checkIfSwapAxisRequired() {
+    int numAttributes;
+    readFitsHeader(inputFilePtr, numAttributes);
+
+    bool bFreqAxisFound = false;
+
+    swapStokesFreqAxis = false;
+    // Check if both STOKES and FREQ axis are present and the order is STOKES,FREQ:
+    for (int i = 1; i <= numAttributes; i++) {
+       std::string attributeName;
+       std::string attributeValue;
+       readFitsAttribute(inputFilePtr, i, attributeName, attributeValue);
+       DEBUG(std::cout << "|" << attributeName.c_str() << "| = |" << attributeValue.c_str() << "|" << std::endl;);
+
+       if (attributeName == "CTYPE3" && attributeValue.find("STOKES") != std::string::npos) {
+          std::cout << "INFO : detected 3rd axis CTYPE3 = STOKES" << std::endl;
+          swapStokesFreqAxis = true;
+       }
+       if (attributeName == "CTYPE4" && attributeValue.find("FREQ") != std::string::npos) {
+          std::cout << "INFO : detected 4th axis CTYPE4 = FREQ" << std::endl;
+          bFreqAxisFound = true;
+       }
+    }
+    if (swapStokesFreqAxis) {
+       if (!bFreqAxisFound) {
+          swapStokesFreqAxis = false; // If Stokes is 3rd axis, but 4th axis is not frequency -> no swap
+       }
+    }
+    std::cout << "INFO : swapStokesFreqAxis = " << swapStokesFreqAxis << std::endl;
+    
+    return swapStokesFreqAxis;
+}
+
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
@@ -114,11 +156,36 @@ void Converter::convert() {
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);
     
+    std::vector<std::string> wcsStokesKeywords = {"CTYPE3","CRVAL3","CDELT3","CRPIX3","CUNIT3"};
+    std::vector<std::string> wcsFreqKeywords = {"CTYPE4","CRVAL4","CDELT4","CRPIX4","CUNIT4"};
+    
     // IMPORTANT: This is 1-indexed!
-    for (int i = 1; i <= numAttributes; i++) {        
+    for (int i = 1; i <= numAttributes; i++) {
+        bool bSwappingStokesFreqAxisNow = false;
         std::string attributeName;
         std::string attributeValue;
         readFitsAttribute(inputFilePtr, i, attributeName, attributeValue);
+ 
+        if (swapStokesFreqAxis) { // check if swap of STOKES <-> FREQ axis is required:
+           // If Stokes is 3rd axis and Freq 4th axis -> SWAP Stokes and Frequency axis in FITS header
+           if (std::find(wcsStokesKeywords.begin(), wcsStokesKeywords.end(), attributeName) != wcsStokesKeywords.end()) {
+              if(attributeName.back() == '3') {
+                 // if swap of STOKES and FREQ axis is required change 3 -> 4:
+                 std::cout << "INFO : swapping attribute " << attributeName << " (3 -> 4) " << std::endl;
+                 attributeName.back() = '4';
+                 bSwappingStokesFreqAxisNow = true;
+              }
+           }else{
+              if ( std::find(wcsFreqKeywords.begin(), wcsFreqKeywords.end(), attributeName) != wcsFreqKeywords.end() ){
+                 if(attributeName.back() == '4') {
+                    // if swap of STOKES and FREQ axis is required change 4 -> 3:
+                    std::cout << "INFO : swapping attribute " << attributeName << " (4 -> 3) " << std::endl;
+                    attributeName.back() = '3';
+                    bSwappingStokesFreqAxisNow = true;
+                 }
+              }
+           }
+        }
         
         if (attributeName.empty() || attributeName.find("COMMENT") == 0 || attributeName.find("HISTORY") == 0) {
             // TODO we should actually do something about these
@@ -133,7 +200,14 @@ void Converter::convert() {
                     // STRING
                     std::string attributeValueStr;
                     readFitsStringAttribute(inputFilePtr, attributeName, attributeValueStr);
+                    // this may not be required 
+                    if( bSwappingStokesFreqAxisNow ) {
+                       // if swapping axis now, we have to use attributeValue as the attributes's name has been swapped 
+                       // for example CTYPE3 -> CTYPE4 which means value of CTYPE4 would be read (FREQ) and no swap would happen!
+                       attributeValueStr = attributeValue;
+                    }
                     writeHdf5Attribute(outputGroup, attributeName, attributeValueStr);
+                    DEBUG(std::cout << "Written attribute " << attributeName.c_str() << " = " << attributeValueStr.c_str() << std::endl;);
                 } else if (attributeValue == "T" || attributeValue == "F") {
                     // BOOLEAN
                     bool attributeValueBool = (attributeValue == "T");

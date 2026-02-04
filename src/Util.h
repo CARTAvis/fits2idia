@@ -32,7 +32,7 @@ void getFitsDims(fitsfile* filePtr, int& N, long* dims);
 void readFitsHeader(fitsfile* filePtr, int& numAttributes);
 void readFitsAttribute(fitsfile* filePtr, int i, std::string& name, std::string& value);
 void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::string& value);
-void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
+void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis);
 
 // Only available in C++ API from 1.10.1
 bool hdf5Exists(H5::H5Location& location, const std::string& name);

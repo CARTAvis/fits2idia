@@ -150,8 +150,13 @@ void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::st
     value = strValueTmp;
 }
 
-void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination) {
+void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
     long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
+    if (bSwapStokesFreqAxis) {
+       // basically should instead be : long fpixel[] = {1, 1, stokes + 1, (long)channel + 1};
+       fpixel[2] = stokes + 1;
+       fpixel[3] = (long)channel + 1;
+    }
     int status(0);
     
     fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);

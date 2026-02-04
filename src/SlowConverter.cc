@@ -71,7 +71,7 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             
             // Write the standard dataset
             
@@ -223,7 +223,7 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
