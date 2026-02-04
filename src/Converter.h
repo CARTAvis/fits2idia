@@ -30,6 +30,9 @@ public:
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
+
+    // checks the order of STOKES and FREQUENCY axis an if it is STOKES,FREQ sets flat swapStokesFreqAxis to true:
+    bool checkIfSwapAxisRequired();
     
 protected:
     virtual void copyAndCalculate() = 0;
@@ -41,6 +44,7 @@ protected:
     std::string tempOutputFileName;
     std::string outputFileName;
     fitsfile* inputFilePtr;
+    bool      swapStokesFreqAxis;
     
     // Main HDF5 objects
     H5::H5File outputFile;
