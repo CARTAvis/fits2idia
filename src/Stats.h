@@ -19,6 +19,14 @@ struct StatsCounter {
         sum += val;
         sumSq += val * val;
     }
+    
+    void reset() {
+        minVal = std::numeric_limits<float>::max();
+        maxVal = -std::numeric_limits<float>::max();
+        sum = 0;
+        sumSq = 0;
+        nanCount = 0;
+    }
 
     void accumulateFiniteLazy(float val) {
         if (val < minVal) {
@@ -39,6 +47,14 @@ struct StatsCounter {
 
     void accumulateNonFinite() {
         nanCount++;
+    }
+    
+    void accumulateFromCounter(StatsCounter otherCounter) {
+        minVal = fmin(minVal, otherCounter.minVal);
+        maxVal = fmax(maxVal, otherCounter.maxVal);
+        sum += otherCounter.sum;
+        sumSq += otherCounter.sumSq;
+        nanCount += otherCounter.nanCount;
     }
 
     float minVal;
@@ -71,6 +87,16 @@ struct Stats {
         counter.nanCount += nanCounts[index];
     }
     
+    void accumulateStatsFromCounter(hsize_t index, const StatsCounter& counter) {
+        if (std::isfinite(counter.maxVal)) {
+            minVals[index] = fmin(counter.minVal, minVals[index]);
+            maxVals[index] = fmax(counter.maxVal, maxVals[index]);
+            sums[index] += counter.sum;
+            sumsSq[index] += counter.sumSq;
+        }
+        nanCounts[index] += counter.nanCount;
+    }
+    
     void copyStatsFromCounter(hsize_t index, hsize_t totalVals, const StatsCounter& counter) {
         if ((hsize_t)counter.nanCount == totalVals) {
             minVals[index] = NAN;
@@ -89,6 +115,7 @@ struct Stats {
     // Histograms
     
     void clearHistogramBuffers();
+    void clearPartialHistogramBuffer();
 
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
@@ -104,6 +131,15 @@ struct Stats {
         for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
             for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
                 histograms[binIndex] += partialHistograms[offset * numBins + binIndex];
+            }
+        }
+    }
+    
+    void consolidateAndClearPartialHistogram(hsize_t mainOffset) {
+        for (hsize_t offset = 0; offset < partialHistMultiplier; offset++) {
+            for (hsize_t binIndex = 0; binIndex < numBins; binIndex++) {
+                histograms[mainOffset * numBins + binIndex] += partialHistograms[offset * numBins + binIndex];
+                partialHistograms[offset * numBins + binIndex] = 0;     //reset partial histogram after consolidation
             }
         }
     }

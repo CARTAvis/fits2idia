@@ -118,6 +118,7 @@ void Converter::convert() {
     // CREATE OUTPUT FILE
     
     // TODO dataset variables should be local and passed into the copy function?
+    auto start = std::chrono::high_resolution_clock::now();
     
     outputFile = H5::H5File(tempOutputFileName, H5F_ACC_TRUNC);
     outputGroup = outputFile.createGroup("0");
@@ -265,4 +266,8 @@ void Converter::convert() {
     
     // Rename from temp file
     rename(tempOutputFileName.c_str(), outputFileName.c_str());
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Execution of entire Converter::convert took: " << duration.count() << " milliseconds." << std::endl;
 }

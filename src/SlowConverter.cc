@@ -33,20 +33,28 @@ MemoryUsage SlowConverter::calculateMemoryUsage() {
 }
 
 void SlowConverter::copyAndCalculate() {
+    auto start = std::chrono::high_resolution_clock::now();
+
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
+    
+    // 32 has produced best results in testing
+    const hsize_t REGION_MULTIPLIER = 32;
     
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
     standardCube = new float[cubeSize];
+    std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocated " << double(cubeSize*sizeof(float))/1e9 << " GB " << std::endl;
     
     // Allocate one stokes of stats at a time
-    statsXY.createBuffers({depth});
+    // statsXY.createBuffers({depth});
+    statsXY.createBuffers({depth}, height);
     
     if (depth > 1) {
-        statsXYZ.createBuffers({}, depth);
+//        statsXYZ.createBuffers({}, depth);
+          statsXYZ.createBuffers({}, height);
     }
     
     mipMaps.createBuffers({1, height, width});
@@ -65,7 +73,7 @@ void SlowConverter::copyAndCalculate() {
         
         StatsCounter counterXYZ;
         
-        for (hsize_t c = 0; c < depth; c++) {
+        for (hsize_t c = 0; c < depth; c++) { // one channel at the time, not yet portions like in the SmartConverter code 
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
@@ -88,7 +96,7 @@ void SlowConverter::copyAndCalculate() {
             auto indexXY = c;
             std::function<void(float)> accumulate;
             
-            auto lazy_accumulate = [&] (float val) {
+/*            auto lazy_accumulate = [&] (float val) {
                 counterXY.accumulateFiniteLazy(val);
             };
             
@@ -97,26 +105,46 @@ void SlowConverter::copyAndCalculate() {
                 accumulate = lazy_accumulate;
             };
             
-            accumulate = first_accumulate;
+            accumulate = first_accumulate;*/
+
+// NEW OPTIMIZED CODE:            
+            int regionIndex;
+            StatsCounter counterRegion;
             
-            for (hsize_t y = 0; y < height; y++) {
-                for (hsize_t x = 0; x < width; x++) {
-                    auto pos = y * width + x; // relative to channel slice
-                    auto& val = standardCube[pos];
-                                        
-                    if (std::isfinite(val)) {
-                        // XY statistics
-                        accumulate(val);
-                        
-                        // Accumulate mipmaps
-                        mipMaps.accumulate(val, x, y, 0);
-                        
-                    } else {
-                        counterXY.accumulateNonFinite();
+            int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
+            int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
+            int cubeSizeInRegions = regionRows * regionCols;
+            
+#pragma omp parallel for default(none) private (regionIndex, counterRegion) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
+            for (regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
+                counterRegion.reset();
+                hsize_t x0,y0,z0;
+                RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER,
+                    1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
+                for (hsize_t y = y0; y < y0 + REGION_MULTIPLIER; y++) {
+                    for (hsize_t x = x0; x < x0 + REGION_MULTIPLIER; x++) {
+                        auto pos = y * width + x;
+                        if (x >= width || y >= height) {    //check if we are out of bounds
+                            continue;
+                        }
+                        auto& val = standardCube[pos];
+                        if (std::isfinite(val)) {
+                            
+                            // region statistics
+                            counterRegion.accumulateFinite(val);
+                    
+                            // Accumulate mipmaps
+                            mipMaps.accumulate(val, x, y, 0); //This will not conflict with the other threads as regions are separate
+                            
+                        } else {
+                            counterRegion.accumulateNonFinite();
+                        }
                     }
                 }
-            } // end of XY loop
-            
+#pragma omp critical
+                counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
+            } // end of region loop
+                        
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
@@ -178,6 +206,7 @@ void SlowConverter::copyAndCalculate() {
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         
+        
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -194,29 +223,33 @@ void SlowConverter::copyAndCalculate() {
                 continue;
             }
             
-            auto doChannelHistogram = [&] (float val) {
+            auto doChannelHistogram = [&] (float val, hsize_t offset) {
                 // XY histogram
-                statsXY.accumulateHistogram(val, chanMin, chanRange, c);
+                statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
             };
             
-            auto doCubeHistogram = [&] (float val) {
+            auto doCubeHistogram = [&] (float val, hsize_t offset) {
                 // XYZ histogram
-                statsXYZ.accumulateHistogram(val, cubeMin, cubeRange, 0);
+                statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
             };
             
             auto doNothing = [&] (float val) {
                 UNUSED(val);
             };
             
-            std::function<void(float)> channelHistogramFunc = doChannelHistogram;
-            std::function<void(float)> cubeHistogramFunc = doCubeHistogram;
+            auto doNothingOffset = [&] (float val, hsize_t offset) {
+                UNUSED(val);
+            };
             
+            std::function<void(float,hsize_t)> channelHistogramFunc = doChannelHistogram;
+            std::function<void(float,hsize_t)> cubeHistogramFunc = doCubeHistogram;
+           
             if (!chanHist) {
-                channelHistogramFunc = doNothing;
+                channelHistogramFunc = doNothingOffset;
             }
             
             if (!cubeHist) {
-                cubeHistogramFunc = doNothing;
+                cubeHistogramFunc = doNothingOffset;
             }
             
             // read one channel
@@ -228,13 +261,21 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
-            for (hsize_t p = 0; p < width * height; p++) {
-                auto& val = standardCube[p];
+            hsize_t y;            
+#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, channelHistogramFunc, cubeHistogramFunc)
+            for (y = 0; y < height; y++) {
+                for (hsize_t x = 0; x < width; x++) {
+                    auto pos = y * width + x;
+                    auto& val = standardCube[pos];
                     if (std::isfinite(val)) {
-                        channelHistogramFunc(val);
-                        cubeHistogramFunc(val);
+                        channelHistogramFunc(val, y); // filling channel histograms for y 
+                        cubeHistogramFunc(val, y);
                     }
+                }
             } // end of XY loop
+            statsXY.consolidateAndClearPartialHistogram(c);
+            statsXYZ.consolidateAndClearPartialHistogram(0);
+
         } // end of second channel loop (XY and XYZ histograms)
         
         PROGRESS(std::endl);
@@ -266,6 +307,7 @@ void SlowConverter::copyAndCalculate() {
         hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
+        std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocated " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl;
         
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
@@ -359,4 +401,8 @@ void SlowConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
 }

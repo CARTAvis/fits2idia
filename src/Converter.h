@@ -56,9 +56,9 @@ protected:
     float* rotatedCube;
     
     // Stats
-    Stats statsXY;
+    Stats statsXY;  // per channel histogram
     Stats statsZ;
-    Stats statsXYZ;
+    Stats statsXYZ; // per cube histogram (using entire cube)
     
     // MipMaps
     MipMaps mipMaps;

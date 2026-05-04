@@ -63,6 +63,9 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
         this->partialHistMultiplier = partialHistMultiplier;
         histogramBuffersAllocated = true;
     }
+    
+    long int total_bytes = statsSize*5 + statsSize * numBins * partialHistMultiplier;
+    std::cout << "MEMORY (Stats::createBuffers): allocated " << double(total_bytes)/1e9 << " GB " << std::endl;
 }
 
 void Stats::clearHistogramBuffers() {
