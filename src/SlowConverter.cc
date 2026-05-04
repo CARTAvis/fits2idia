@@ -45,8 +45,8 @@ void SlowConverter::copyAndCalculate() {
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
+    std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocating " << double(cubeSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     standardCube = new float[cubeSize];
-    std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocated " << double(cubeSize*sizeof(float))/1e9 << " GB " << std::endl;
     
     // Allocate one stokes of stats at a time
     // statsXY.createBuffers({depth});
@@ -305,9 +305,9 @@ void SlowConverter::copyAndCalculate() {
         TIMER(timer.start("Allocate"););
         
         hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl << std::flush;
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
-        std::cout << "MEMORY (SlowConverter::copyAndCalculate): allocated " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl;
         
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
