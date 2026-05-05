@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), height_divider(1) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -87,6 +87,38 @@ void Converter::reportMemoryUsage() {
     std::cout << "TOTAL:\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
     std::cout << "MAX ALLOCATION:\t" << maxAllocationBytes * 1e-9 << "GB" << " required for " << maxAllocationDataset << std::endl;
 }
+
+void Converter::SetChunkDivider( int divider ) {
+   height_divider = divider;
+   height_chunk = height / divider;
+   
+   std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;
+}
+
+bool Converter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
+   hsize_t predictedTotal = calculateMemoryUsage().total;
+
+   std::vector<int> heigth_dividers;
+   getDividers(height, heigth_dividers);
+
+   int iter = 0;
+   while (iter < max_iter && predictedTotal>memoryLimit && iter < heigth_dividers.size()) {
+      int divider = heigth_dividers[iter];
+      SetChunkDivider( divider );
+      predictedTotal = calculateMemoryUsage().total;
+
+      if (predictedTotal <= memoryLimit ) {
+          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
+          return true;
+      } else {
+          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
+      }
+      iter++;
+   }
+   
+   return false;
+}
+
 
 bool Converter::checkIfSwapAxisRequired() {
     int numAttributes;

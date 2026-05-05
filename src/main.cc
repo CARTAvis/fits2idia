@@ -31,7 +31,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:spqmzM:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arspqmzM:")) != -1) {
         switch (opt) {
             case 'a':
                 auto_mode = true;
@@ -160,12 +160,23 @@ int main(int argc, char** argv) {
         if (memoryLimit > 0) {
             hsize_t predictedTotal = converter->calculateMemoryUsage().total;
             if (predictedTotal > memoryLimit) {
+                bool ok = false;
                 if (auto_mode) {
                     std::cout << "Required predicted memory " << predictedTotal * 1e-9 << "GB exceeds memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
                     std::cout << "This is automatic mode -> trying to reduce the required memory limit to continue processing" << std::endl;
-                    std::cout << "WARNING : this is not fully implemented yet -> exiting now!" << std::endl;
-                    return 1;
+                    // std::cout << "WARNING : this is not fully implemented yet -> exiting now!" << std::endl;
+                    
+                    if( converter->ReduceMemoryUsage( memoryLimit, 10 ) ) {
+                       predictedTotal = converter->calculateMemoryUsage().total;
+                       std::cout << "SUCCESS : reduced memory usage to " << predictedTotal * 1e-9 << "GB whcich is below the limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+                       ok = true;
+                    }
                 } else {
+                   std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
+                   std::cerr << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
+                } 
+                
+                if( !ok ) {
                     std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
                     return 1;
                 }

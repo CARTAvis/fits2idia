@@ -267,3 +267,12 @@ void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsiz
     y = (mipIndex % (mipWidth * mipHeight)) / mipWidth * factorY;
     z = mipIndex / (mipWidth * mipHeight) * factorZ;
 }
+
+void getDividers(long int value, std::vector<int>& dividers) {
+   dividers.clear();
+   for(long int i=2;i<value;i++){
+      if( (value % i) == 0 ) {
+          dividers.push_back(i);
+      }
+   }
+}

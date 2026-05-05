@@ -50,4 +50,8 @@ void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>&
 
 void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t factorX, hsize_t factorY, hsize_t factorZ);
 
+// optimisation requirements:
+void getDividers(long int value, std::vector<int>& dividers);
+
+
 #endif

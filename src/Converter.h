@@ -34,6 +34,11 @@ public:
     // checks the order of STOKES and FREQUENCY axis an if it is STOKES,FREQ sets flat swapStokesFreqAxis to true:
     bool checkIfSwapAxisRequired();
     
+    // reduce memory usage:
+    bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    
+    void SetChunkDivider( int divider );
+    
 protected:
     virtual void copyAndCalculate() = 0;
     
@@ -67,8 +72,12 @@ protected:
     hsize_t stokes, depth, height, width;
     hsize_t numBins;
     
-    // Dataset dimensions
+    // optimisations :
+    hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
+    int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
+                        // this is required when too much memory is required without any division
     
+    // Dataset dimensions    
     std::vector<hsize_t> standardDims;
     std::vector<hsize_t> swizzledDims;
     std::vector<hsize_t> tileDims;
