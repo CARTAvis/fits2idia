@@ -50,9 +50,7 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     fullBasicBufferDims = dims;
     auto statsSize = product(dims);
         
-    long int total_bytes = 2*statsSize*sizeof(float) + 2*statsSize*sizeof(double) + statsSize*sizeof(int64_t)  + statsSize * numBins * partialHistMultiplier + statsSize*numBins*sizeof(int64_t);
-    std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;
-    std::cout << "MEMORY (Stats::createBuffers): allocating " << double(total_bytes)/1e9 << " GB " << std::endl << std::flush;
+    long int total_bytes = 2*statsSize*sizeof(float) + 2*statsSize*sizeof(double) + statsSize*sizeof(int64_t);
 
     minVals = new float[statsSize];
     maxVals = new float[statsSize];
@@ -66,7 +64,12 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
         partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
         this->partialHistMultiplier = partialHistMultiplier;
         histogramBuffersAllocated = true;
+        total_bytes += (statsSize * numBins * partialHistMultiplier + statsSize*numBins)*sizeof(int64_t);
     }    
+    
+    std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;
+    std::cout << "MEMORY (Stats::createBuffers): allocating " << double(total_bytes)/1e9 << " GB " << std::endl << std::flush;
+
 }
 
 void Stats::clearHistogramBuffers() {

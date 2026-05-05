@@ -12,12 +12,12 @@ MemoryUsage SlowConverter::calculateMemoryUsage() {
 
     m.sizes["Main dataset"] = height * width * sizeof(float);
     m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
-    m.sizes["XY stats"] = Stats::size({depth}, numBins);
+    m.sizes["XY stats"] = Stats::size({depth}, numBins, height); // height added - has to agree with statsXY.createBuffers({depth}, height);
     
     if (depth > 1) {
         m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
-        m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
+        m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
+        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
     }
     
     for (auto& kv : m.sizes) {
@@ -50,13 +50,16 @@ void SlowConverter::copyAndCalculate() {
     
     // Allocate one stokes of stats at a time
     // statsXY.createBuffers({depth});
+    printf("DEBUG : before statsXY.createBuffers({%d}, %d)\n",depth,height);
     statsXY.createBuffers({depth}, height);
     
     if (depth > 1) {
 //        statsXYZ.createBuffers({}, depth);
+          printf("DEBUG : before statsXYZ.createBuffers({}, %d)\n",height);
           statsXYZ.createBuffers({}, height);
     }
-    
+
+    printf("DEBUG : before mipMaps.createBuffers({%d,%d,%d})\n",1,depth,height);    
     mipMaps.createBuffers({1, height, width});
 
     std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
@@ -309,6 +312,7 @@ void SlowConverter::copyAndCalculate() {
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
         
+        printf("DEBUG : before statsZ.createBuffers({%d,%d})\n",TILE_SIZE,TILE_SIZE);
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
         for (unsigned int s = 0; s < stokes; s++) {
