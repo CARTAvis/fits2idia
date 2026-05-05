@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory, bool& zMips) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode) {
     extern int optind;
     extern char *optarg;
     
@@ -21,15 +21,24 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << " using IDIA schema version " << SCHEMA_VERSION << std::endl
     << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
+    << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
-    << "-p\tPrint progress output (by default the program is silent)" << std::endl
+    << "-p\tPrint progress output (by default the program is silent)" << std::endl    
+    << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
+    << "-M\tSpecify memory limit in MB" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:spqmz")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:spqmzM:")) != -1) {
         switch (opt) {
+            case 'a':
+                auto_mode = true;
+                break;
+            case 'r':
+                auto_mode = true;
+                break;
             case 'o':
                 outputFileName.assign(optarg);
                 break;
@@ -46,6 +55,11 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'm':
                 // only print memory usage and exit
                 onlyReportMemory = true;
+                break;
+            case 'M':
+                if (optarg) {
+                    memoryLimitInMb = atof(optarg);   
+                }
                 break;
             case 'z':
                 zMips = true;
@@ -96,11 +110,13 @@ int main(int argc, char** argv) {
     std::string inputFileName;
     std::string outputFileName;
     bool slow(false);
+    bool auto_mode(false);
     bool progress(false);
     bool onlyReportMemory(false);
     bool zMips(false);
+    int memoryLimitInMb(0);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode)) {
         return 1;
     }
 
@@ -127,6 +143,9 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (memoryLimitInMb > 0) {
+       memoryLimit = memoryLimitInMb * 1e6; // converting from MB to bytes
+    }
     
     std::unique_ptr<Converter> converter;
         
@@ -141,8 +160,15 @@ int main(int argc, char** argv) {
         if (memoryLimit > 0) {
             hsize_t predictedTotal = converter->calculateMemoryUsage().total;
             if (predictedTotal > memoryLimit) {
-                std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
-                return 1;
+                if (auto_mode) {
+                    std::cout << "Required predicted memory " << predictedTotal * 1e-9 << "GB exceeds memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+                    std::cout << "This is automatic mode -> trying to reduce the required memory limit to continue processing" << std::endl;
+                    std::cout << "WARNING : this is not fully implemented yet -> exiting now!" << std::endl;
+                    return 1;
+                } else {
+                    std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
+                    return 1;
+                }
             }
         }
     
