@@ -74,11 +74,18 @@ void Converter::reportMemoryUsage() {
 
     std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
     
+    hsize_t maxAllocationBytes = 0;
+    std::string maxAllocationDataset = "";
     for (auto& kv : m.sizes) {
         std::cout << kv.first << ":\t" << kv.second * 1e-9 << " GB" << std::endl;
+        if (kv.second > maxAllocationBytes) {
+            maxAllocationDataset = kv.first;
+            maxAllocationBytes = kv.second;
+        }
     }
 
     std::cout << "TOTAL:\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
+    std::cout << "MAX ALLOCATION:\t" << maxAllocationBytes * 1e-9 << "GB" << " required for " << maxAllocationDataset << std::endl;
 }
 
 bool Converter::checkIfSwapAxisRequired() {
