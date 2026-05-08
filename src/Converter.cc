@@ -62,13 +62,16 @@ Converter::~Converter() {
     closeFitsFile(inputFilePtr);
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb) {
     if (slow) {
         std::cout << "DEBUG : using SlowConverter object" << std::endl;
         return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
      } else if (smart) { // was also && memoryLimitInMb > 0
-        std::cout << "DEBUG : using SmartConverter object" << std::endl;
-        return std::unique_ptr<Converter>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
+        std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << std::endl;
+        SmartConverter* ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+        ptr->setMemoryLimit(memoryLimitInMb);
+        std::unique_ptr<Converter> pSmartConverter(ptr);
+        return pSmartConverter;
     } else {
         std::cout << "DEBUG : using FastConverter object" << std::endl;
         return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));

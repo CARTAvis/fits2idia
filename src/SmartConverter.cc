@@ -389,7 +389,10 @@ void SmartConverter::copyAndCalculate() {
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
                     TIMER(timer.start("Rotation"););
-                    
+
+// TODO: this should be easy to paralelise as they all fall into different cells -> naturally no conflicts here !!!
+//       because it's one-to-one operation !!!
+// TODO: just try to add pragma here :                    
                     for (hsize_t i = 0; i < depth; i++) {
                         for (hsize_t j = 0; j < ySize; j++) {
                             for (hsize_t k = 0; k < xSize; k++) {
@@ -406,7 +409,12 @@ void SmartConverter::copyAndCalculate() {
                     // A separate pass over the same slice depth-last 
                     DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
                     TIMER(timer.start("Z statistics"););
-                    
+
+// TODO: not so easy here as this has accumulation -> need to protect against parallel access !!!
+// potentially like in previous cases, divide in j (ySize), accumlate per thread and then add to main accumulator                    
+// is this very slow and critical operation ? 
+// statistics may be much faster than other parts, 
+// Example - writting !!!
                     for (hsize_t j = 0; j < ySize; j++) {
                         for (hsize_t k = 0; k < xSize; k++) {
                             StatsCounter counterZ;

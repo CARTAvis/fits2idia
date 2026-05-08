@@ -26,7 +26,7 @@ public:
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     virtual ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb);
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
@@ -100,6 +100,7 @@ public:
     SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
 //    SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMip);
     MemoryUsage calculateMemoryUsage() override;
+    void setMemoryLimit(int _memoryLimitInMb){ memoryLimitInMb = _memoryLimitInMb; }
 
 private:
     int memoryLimitInMb;

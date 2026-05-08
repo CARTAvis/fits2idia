@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips, memoryLimitInMb);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();
