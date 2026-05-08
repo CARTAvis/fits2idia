@@ -336,6 +336,7 @@ void SlowConverter::copyAndCalculate() {
                     DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
                     TIMER(timer.start("Z statistics"););
                     
+                    auto start3 = std::chrono::high_resolution_clock::now();
                     for (hsize_t j = 0; j < ySize; j++) {
                         for (hsize_t k = 0; k < xSize; k++) {
                             StatsCounter counterZ;
@@ -356,6 +357,9 @@ void SlowConverter::copyAndCalculate() {
                             statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                         }
                     }
+                    auto end3 = std::chrono::high_resolution_clock::now();
+                    auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
+                    std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
                     
                     // write tile slice
                     DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
