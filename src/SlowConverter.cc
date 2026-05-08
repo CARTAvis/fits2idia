@@ -77,7 +77,7 @@ void SlowConverter::copyAndCalculate() {
             // measuring I/O :
             auto start_io = std::chrono::high_resolution_clock::now();
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             
             // Write the standard dataset
             
@@ -240,7 +240,7 @@ void SlowConverter::copyAndCalculate() {
             TIMER(timer.start("Read"););
             
             auto start_io = std::chrono::high_resolution_clock::now();
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             auto end_io = std::chrono::high_resolution_clock::now();
             auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
             total_io_ms += double(duration_io.count());
