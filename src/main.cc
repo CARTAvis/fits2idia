@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode) {
     extern int optind;
     extern char *optarg;
     
@@ -24,6 +24,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
+    << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
@@ -31,7 +32,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arspqmzM:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:")) != -1) {
         switch (opt) {
             case 'a':
                 auto_mode = true;
@@ -45,6 +46,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 's':
                 // use slower but less memory-intensive method
                 slow = true;
+                break;
+            case 'S':
+                // use smart converter
+                smart = true;
                 break;
             case 'p':
                 progress = true;
@@ -110,13 +115,14 @@ int main(int argc, char** argv) {
     std::string inputFileName;
     std::string outputFileName;
     bool slow(false);
+    bool smart(false);
     bool auto_mode(false);
     bool progress(false);
     bool onlyReportMemory(false);
     bool zMips(false);
     int memoryLimitInMb(0);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart,  progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode)) {
         return 1;
     }
 
@@ -150,7 +156,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, progress, zMips);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips);
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();

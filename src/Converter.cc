@@ -25,6 +25,7 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
     }
     height = dims[1];
     width = dims[0];
+    SetChunkDivider(height_divider);
     
     swizzledName = N == 3 ? "ZYX" : "ZYXW";
     
@@ -61,10 +62,15 @@ Converter::~Converter() {
     closeFitsFile(inputFilePtr);
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool progress, bool zMips) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips) {
     if (slow) {
+        std::cout << "DEBUG : using SlowConverter object" << std::endl;
         return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
+     } else if (smart) { // was also && memoryLimitInMb > 0
+        std::cout << "DEBUG : using SmartConverter object" << std::endl;
+        return std::unique_ptr<Converter>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
     } else {
+        std::cout << "DEBUG : using FastConverter object" << std::endl;
         return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));
     }
 }
@@ -104,8 +110,10 @@ bool Converter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
    int iter = 0;
    while (iter < max_iter && predictedTotal>memoryLimit && iter < heigth_dividers.size()) {
       int divider = heigth_dividers[iter];
+      std::cout << "DEBUG : testing divider = " << divider << std::endl;
       SetChunkDivider( divider );
-      predictedTotal = calculateMemoryUsage().total;
+      MemoryUsage memusage = calculateMemoryUsage();
+      predictedTotal = memusage.total;
 
       if (predictedTotal <= memoryLimit ) {
           std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
