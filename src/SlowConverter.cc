@@ -294,6 +294,7 @@ void SlowConverter::copyAndCalculate() {
             auto start1 = std::chrono::high_resolution_clock::now();            
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
+                    auto starttile = std::chrono::high_resolution_clock::now();
                     tileCount++;
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
@@ -374,6 +375,10 @@ void SlowConverter::copyAndCalculate() {
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
                     statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                    
+                    auto endtile = std::chrono::high_resolution_clock::now();
+                    auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                    std::cout << "Execution of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
                 }
             }
             auto end1 = std::chrono::high_resolution_clock::now();
