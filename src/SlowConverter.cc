@@ -58,6 +58,7 @@ void SlowConverter::copyAndCalculate() {
     
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
+    double total_io_ms = 0.00;
     
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
@@ -72,16 +73,23 @@ void SlowConverter::copyAndCalculate() {
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            
+            // measuring I/O :
+            auto start_io = std::chrono::high_resolution_clock::now();
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
             
             // Write the standard dataset
             
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
-            TIMER(timer.start("Write"););
+            TIMER(timer.start("Write"););            
             
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "I/O (readFitsData+writeHdf5Data) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
@@ -231,7 +239,12 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
+            auto start_io = std::chrono::high_resolution_clock::now();
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
@@ -266,6 +279,7 @@ void SlowConverter::copyAndCalculate() {
         }
     
     } // end of stokes
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
@@ -370,7 +384,12 @@ void SlowConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
+                    auto start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
