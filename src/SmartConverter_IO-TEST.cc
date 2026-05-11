@@ -196,6 +196,7 @@ void SmartConverter::copyAndCalculate() {
             mipMaps.resetBuffers();
             
         } // end of first channel loop
+        } // end of loop over blocks
         
         
         PROGRESS(std::endl);
@@ -312,7 +313,6 @@ void SmartConverter::copyAndCalculate() {
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
-        } // loop over blocks 
     } // end of stokes
     
     // Free memory
