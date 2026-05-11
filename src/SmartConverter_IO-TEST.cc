@@ -40,12 +40,35 @@ void SmartConverter::copyAndCalculate() {
        return;
     }
     
+    // calculate memory limits in different units, slice here is image in a single freq. channel:
+    double memoryLimitInBytes = double(memoryLimitInMb) * 1024.00 * 1024.00;
+    double double_memoryLimitInBytes = double(memoryLimitInMb) * 1024.0 * 1024.0;
+    double sliceSizeInPixels = height * width;
+    double memoryLimitInPixels = memoryLimitInBytes / sizeof(float);
+    std::cout << "DEBUG memoryLimitInMb = " << memoryLimitInMb << " -> memoryLimitInBytes = " << memoryLimitInBytes << " -> memoryLimitInPixels = " << memoryLimitInPixels << std::endl;
+    std::cout << "DEBUG double_memoryLimitInBytes = " << double_memoryLimitInBytes << std::endl;
+    double memoryLimitInSlices = std::ceil(memoryLimitInPixels / sliceSizeInPixels);
+    // first use MAX of memoryLimitInSlices and 1 , and then make sure we are not trying to read more channels than exist -> min(depth, MAX)
+    int sliceIncrement = std::max(memoryLimitInSlices, (double)1.00); // first make sure we use at least 1 slice
+    sliceIncrement = std::min( int(depth), sliceIncrement );          // then make sure we do not read more channels than there are in FITS file 
+    // playing it safe and only using 1/2 of memory :
+    std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
+    sliceIncrement = sliceIncrement/2;
+    int sliceIncrementCount = depth/sliceIncrement;                   // number of portions to be read 
+    // int leftOverSlices = (depth - sliceIncrementCount*sliceIncrement);
+    int leftOverSlices = (depth % sliceIncrement);    
+    std::cout << "SIZEOF(float) = " << sizeof(float) << ", Image size:" << height << " x " << width << std::endl;
+    std::cout << "MEMORY limits " << memoryLimitInMb << " MB = " << memoryLimitInPixels << " pixels = " << memoryLimitInSlices 
+              << " slices -> sliceIncrement = " << sliceIncrement << " sliceIncrementCount = " << depth << "/" << sliceIncrement << " = " << sliceIncrementCount 
+              << " -> leftover slices = " << leftOverSlices 
+              << std::endl;
+              
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
     // Allocate one channel at a time, and no swizzled data
-    hsize_t cubeSize = height * width;
+    hsize_t cubeSize = height * width * sliceIncrement;
     TIMER(timer.start("Allocate"););
     standardCube = new float[cubeSize];
     
