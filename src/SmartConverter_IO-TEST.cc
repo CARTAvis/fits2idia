@@ -62,15 +62,22 @@ void SmartConverter::copyAndCalculate() {
               << " slices -> sliceIncrement = " << sliceIncrement << " sliceIncrementCount = " << depth << "/" << sliceIncrement << " = " << sliceIncrementCount 
               << " -> leftover slices = " << leftOverSlices 
               << std::endl;
+    // 
+    int n_blocks = sliceIncrementCount;
+    if (leftOverSlices > 0) {
+       n_blocks++;
+    }
+    std::cout << "DEBUG : n_blocks = " << n_blocks << " vs.  sliceIncrementCount = " << sliceIncrementCount << " and leftOverSlices = " << leftOverSlices << std::endl;
+              
               
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
     // Allocate one channel at a time, and no swizzled data
-    hsize_t cubeSize = height * width * sliceIncrement;
+    hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
-    standardCube = new float[cubeSize];
+    standardCube = new float[height * width * sliceIncrement];
     
     // Allocate one stokes of stats at a time
     statsXY.createBuffers({depth});
@@ -81,9 +88,6 @@ void SmartConverter::copyAndCalculate() {
     
     mipMaps.createBuffers({1, height, width});
 
-    std::vector<hsize_t> count = trimAxes({1, 1, height, width}, N);
-    std::vector<hsize_t> memDims = {height, width};
-    
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
     
@@ -95,22 +99,36 @@ void SmartConverter::copyAndCalculate() {
         
         StatsCounter counterXYZ;
         
-        for (hsize_t c = 0; c < depth; c++) {
-            PROGRESS_DECIMATED(c, channelProgressStride, "|");
-            // read one channel
-            DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
+        for (hsize_t block = 0; block < n_blocks; block++ ) {
+            hsize_t c_start = block*sliceIncrement;
+            hsize_t c_end   = c_start + sliceIncrement;
+            if (block == (n_blocks-1) && leftOverSlices > 0 ) {
+               c_end   = c_start + leftOverSlices; // if last block and there are left over slices                
+            }
+            hsize_t n_channels = (c_end-c_start);
+            hsize_t block_size = n_channels*height*width;
+            std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;
+            
+            std::cout << "DEBUG : reading from c_start = " << c_start << " blockSize = " <<  block_size << " bytes" << std::endl;
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
-            
+            readFitsData(inputFilePtr, c_start, s, block_size, standardCube, swapStokesFreqAxis);
+
             // Write the standard dataset
-            
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
             TIMER(timer.start("Write"););
             
-            std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
+            std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N);
+            std::vector<hsize_t> memDims = {height, width, n_channels };
+            std::vector<hsize_t> count = trimAxes({1, n_channels, height, width}, N);            
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+
             
+        
+        for(hsize_t c = c_start; c < c_end; c++) {                 
+            PROGRESS_DECIMATED(c, channelProgressStride, "|");
+            // read one channel
+            DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
 
@@ -179,6 +197,7 @@ void SmartConverter::copyAndCalculate() {
             
         } // end of first channel loop
         
+        
         PROGRESS(std::endl);
         
         if (depth > 1) {
@@ -212,7 +231,7 @@ void SmartConverter::copyAndCalculate() {
         statsXYZ.clearHistogramBuffers();
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
-        
+
         auto start2 = std::chrono::high_resolution_clock::now();
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
@@ -259,6 +278,7 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
+            std::cout << "DEBUG : reading from c = " << c << " cubeSize = " << cubeSize << std::endl;
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
@@ -292,7 +312,7 @@ void SmartConverter::copyAndCalculate() {
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
-    
+        } // loop over blocks 
     } // end of stokes
     
     // Free memory
