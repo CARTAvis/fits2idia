@@ -151,10 +151,10 @@ void SmartConverter::copyAndCalculate() {
                     }
                 }
 #pragma omp critical
+{
                 counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
-                
-#pragma omp critical
-                mipMaps.accumulateFromMipMaps(thread_mipMaps);                
+                mipMaps.accumulateFromMipMaps(thread_mipMaps);
+}                
             } // end of region loop
                         
             // Final correction of XY min and max
