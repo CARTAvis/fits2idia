@@ -121,8 +121,10 @@ void SmartConverter::copyAndCalculate() {
             int cubeSizeInRegions = regionRows * regionCols;
 
             // temporary mipmaps to accumulate separately in different threads:
-            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);                        
-#pragma omp parallel for default(none) private (regionIndex, counterRegion, thread_mipMaps) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
+            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);
+            std::cout << "DEBUG : thread_mipMaps.size() = " << thread_mipMaps.mipMaps.size() << std::endl;
+#pragma omp parallel for default(none) private (regionIndex, counterRegion) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER) \
+    firstprivate(thread_mipMaps) // this is required to create copies of thread_mipMaps per each thread using copy constructor (otherwise with private() default constructor is called)
             for (regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
                 counterRegion.reset();
                 thread_mipMaps.resetBuffers();
