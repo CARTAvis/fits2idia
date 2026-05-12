@@ -52,8 +52,11 @@ void SmartConverter::copyAndCalculate() {
     int sliceIncrement = std::max(memoryLimitInSlices, (double)1.00); // first make sure we use at least 1 slice
     sliceIncrement = std::min( int(depth), sliceIncrement );          // then make sure we do not read more channels than there are in FITS file 
     // playing it safe and only using 1/2 of memory :
-    std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
-    sliceIncrement = sliceIncrement/2;
+    if (sliceIncrement > 2) {
+       std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
+       sliceIncrement = sliceIncrement/2;
+    }
+    std::cout << "DEBUG : final sliceIncrement = " << sliceIncrement << std::endl;
     int sliceIncrementCount = depth/sliceIncrement;                   // number of portions to be read 
     // int leftOverSlices = (depth - sliceIncrementCount*sliceIncrement);
     int leftOverSlices = (depth % sliceIncrement);    
@@ -118,9 +121,9 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
             TIMER(timer.start("Write"););
             
-            std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N);
-            std::vector<hsize_t> memDims = {height, width, n_channels };
-            std::vector<hsize_t> count = trimAxes({1, n_channels, height, width}, N);            
+            std::vector<hsize_t> count = trimAxes({1, n_channels, height, width}, N); // ok as in original SmartConverter.cc it is trimAxes({1, sliceIncrement, height, width}, N);
+            std::vector<hsize_t> memDims = {n_channels, height, width};
+            std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N); // std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);                       
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
 
             
