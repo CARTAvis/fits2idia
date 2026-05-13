@@ -93,7 +93,8 @@ void SmartConverter::copyAndCalculate() {
 
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
-    
+
+    double total_io_ms = 0.00;    
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         PROGRESS("Stokes " << s << ":" << std::endl);
@@ -115,6 +116,8 @@ void SmartConverter::copyAndCalculate() {
             std::cout << "DEBUG : reading from c_start = " << c_start << " blockSize = " <<  block_size << " bytes" << std::endl;
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
+            // measuring I/O :
+            auto start_io = std::chrono::high_resolution_clock::now();
             readFitsData(inputFilePtr, c_start, s, block_size, standardCube, swapStokesFreqAxis);
 
             // Write the standard dataset
@@ -125,6 +128,11 @@ void SmartConverter::copyAndCalculate() {
             std::vector<hsize_t> memDims = {n_channels, height, width};
             std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N); // std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);                       
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+
 
             
         
@@ -282,8 +290,14 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
+            auto start_io = std::chrono::high_resolution_clock::now();
             std::cout << "DEBUG : reading from c = " << c << " cubeSize = " << cubeSize << std::endl;
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
+
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
@@ -361,7 +375,12 @@ void SmartConverter::copyAndCalculate() {
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
                     
+                    auto start_io = std::chrono::high_resolution_clock::now();
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
@@ -421,7 +440,12 @@ void SmartConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
+                    start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
@@ -444,6 +468,7 @@ void SmartConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
