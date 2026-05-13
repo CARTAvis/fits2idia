@@ -119,13 +119,10 @@ void SmartConverter::copyAndCalculate() {
             int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
             int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
             int cubeSizeInRegions = regionRows * regionCols;
-
-            // temporary mipmaps to accumulate separately in different threads:
-            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);                        
-#pragma omp parallel for default(none) private (regionIndex, counterRegion, thread_mipMaps) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
+            
+#pragma omp parallel for default(none) private (regionIndex, counterRegion) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER)
             for (regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
                 counterRegion.reset();
-                thread_mipMaps.resetBuffers();
                 hsize_t x0,y0,z0;
                 RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER,
                     1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
@@ -141,9 +138,9 @@ void SmartConverter::copyAndCalculate() {
                             // region statistics
                             counterRegion.accumulateFinite(val);
                     
-                            // Accumulate thread mipmaps: without #pragma omp critical
-                            thread_mipMaps.accumulate(val, x, y, 0); // This will not conflict with the other threads as regions are separate - NOT TRUE "#pragma omp critical" WAS REQUIRED
-                                                              // as otherwise there were wrong values vs. Slow/Fast Converters !!!
+                            // Accumulate mipmaps
+#pragma omp critical
+                            mipMaps.accumulate(val, x, y, 0); //This will not conflict with the other threads as regions are separate
                             
                         } else {
                             counterRegion.accumulateNonFinite();
@@ -151,10 +148,7 @@ void SmartConverter::copyAndCalculate() {
                     }
                 }
 #pragma omp critical
-{
                 counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
-                mipMaps.accumulateFromMipMaps(thread_mipMaps);
-}                
             } // end of region loop
                         
             // Final correction of XY min and max
