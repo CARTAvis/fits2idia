@@ -50,8 +50,12 @@ void SmartConverter::copyAndCalculate() {
     double memoryLimitInSlices = std::ceil(memoryLimitInPixels / sliceSizeInPixels);
     // first use MAX of memoryLimitInSlices and 1 , and then make sure we are not trying to read more channels than exist -> min(depth, MAX)
     int sliceIncrement = std::max(memoryLimitInSlices, (double)1.00); // first make sure we use at least 1 slice
+    if (n_io_blocks > 1) {
+       sliceIncrement = n_io_blocks;
+    }
     sliceIncrement = std::min( int(depth), sliceIncrement );          // then make sure we do not read more channels than there are in FITS file 
     // playing it safe and only using 1/2 of memory :
+// TODO : comment out / remove the if below :
     if (sliceIncrement > 2) {
        std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
        sliceIncrement = sliceIncrement/2;
@@ -94,7 +98,9 @@ void SmartConverter::copyAndCalculate() {
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
 
-    double total_io_ms = 0.00;    
+    hsize_t image_size = width*height;
+    
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         PROGRESS("Stokes " << s << ":" << std::endl);
@@ -103,6 +109,7 @@ void SmartConverter::copyAndCalculate() {
         
         StatsCounter counterXYZ;
         
+        double total_first_pass_processing_ms = 0.00;
         for (hsize_t block = 0; block < n_blocks; block++ ) {
             hsize_t c_start = block*sliceIncrement;
             hsize_t c_end   = c_start + sliceIncrement;
@@ -158,10 +165,13 @@ void SmartConverter::copyAndCalculate() {
             
             accumulate = first_accumulate;
 
-            auto start1 = std::chrono::high_resolution_clock::now();            
+            auto start1 = std::chrono::high_resolution_clock::now();
+            hsize_t block_pos = (c-c_start)* image_size; 
             for (hsize_t y = 0; y < height; y++) {
+                auto y_pos = block_pos + y * width;
                 for (hsize_t x = 0; x < width; x++) {
-                    auto pos = y * width + x; // relative to channel slice
+                    auto pos = (c-c_start)* image_size + y * width + x; // relative to channel slice
+                    // auto pos = y_pos + x;
                     auto& val = standardCube[pos];
                                         
                     if (std::isfinite(val)) {
@@ -194,6 +204,10 @@ void SmartConverter::copyAndCalculate() {
             // Final mipmap calculation
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
             mipMaps.calculate();
+            // add everything to processing time of the 1st pass:
+            end1 = std::chrono::high_resolution_clock::now();
+            duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            total_first_pass_processing_ms += double(duration1.count());
             
             
             // Write the mipmaps
@@ -208,10 +222,15 @@ void SmartConverter::copyAndCalculate() {
             
         } // end of first channel loop
         } // end of loop over blocks
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_first_pass_processing_ms;
         
         
         PROGRESS(std::endl);
         
+//--------------------------------------------------------------------------------------------------------------------------------------
+// 2nd pass starts here:
+//--------------------------------------------------------------------------------------------------------------------------------------        
         if (depth > 1) {
             // Final correction of XYZ min and max
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
@@ -244,6 +263,7 @@ void SmartConverter::copyAndCalculate() {
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
 
+        double total_second_pass_processing_ms = 0.00;
         auto start2 = std::chrono::high_resolution_clock::now();
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
@@ -312,11 +332,16 @@ void SmartConverter::copyAndCalculate() {
             } // end of XY loop
             auto end1 = std::chrono::high_resolution_clock::now();
             auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            total_second_pass_processing_ms += double(duration1.count());
+            
             std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
         auto end2 = std::chrono::high_resolution_clock::now();
-        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);        
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_second_pass_processing_ms;
+
 
         
         PROGRESS(std::endl);
@@ -349,7 +374,8 @@ void SmartConverter::copyAndCalculate() {
         float* rotatedSlice = new float[sliceSize];
         
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
-        
+
+        double total_rotation_pass_processing_ms = 0.00;
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
             PROGRESS("\tStokes " << s << "\t");
@@ -401,6 +427,7 @@ void SmartConverter::copyAndCalculate() {
                     }
                     auto end2 = std::chrono::high_resolution_clock::now();
                     auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+                    total_rotation_pass_processing_ms += double(duration2.count());
                     std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
                     
                     // A separate pass over the same slice depth-last 
@@ -430,6 +457,7 @@ void SmartConverter::copyAndCalculate() {
                     }
                     auto end3 = std::chrono::high_resolution_clock::now();
                     auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
+                    total_rotation_pass_processing_ms += double(duration3.count());
                     std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
                     
                     // write tile slice
@@ -462,6 +490,8 @@ void SmartConverter::copyAndCalculate() {
 
             PROGRESS(std::endl);
         }
+        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_rotation_pass_processing_ms;
         
         TIMER(timer.start("Free"););
         DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
@@ -469,6 +499,7 @@ void SmartConverter::copyAndCalculate() {
         delete[] rotatedSlice;
     }
     std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
+    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);

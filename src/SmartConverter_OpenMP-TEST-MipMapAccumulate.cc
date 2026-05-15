@@ -70,6 +70,7 @@ void SmartConverter::copyAndCalculate() {
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
     
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         PROGRESS("Stokes " << s << ":" << std::endl);
@@ -78,12 +79,14 @@ void SmartConverter::copyAndCalculate() {
         
         StatsCounter counterXYZ;
         
+        double total_first_pass_processing_ms = 0.00;
         for (hsize_t c = 0; c < depth; c++) { // one channel at the time, not yet portions like in the SmartConverter code 
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
+            auto start_io = std::chrono::high_resolution_clock::now();
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             
             // Write the standard dataset
@@ -93,6 +96,10 @@ void SmartConverter::copyAndCalculate() {
             
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "I/O (readFitsData+writeHdf5Data) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
@@ -113,21 +120,34 @@ void SmartConverter::copyAndCalculate() {
             accumulate = first_accumulate;*/
 
 // NEW OPTIMIZED CODE:            
-            int regionIndex;
-            StatsCounter counterRegion;
+            // int regionIndex;
             
             int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
             int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
             int cubeSizeInRegions = regionRows * regionCols;
-
+ 
+            auto start1 = std::chrono::high_resolution_clock::now();
+// 1. Start the parallel region. 
+// standardDims, tileDims, and zMips must now be passed in as shared!
+#pragma omp parallel default(none) shared(std::cout, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
+{
+            // 2. Declare your thread-local variables HERE.
+            // Because this is inside the parallel block, OpenMP creates one instance per thread.
+            // You can use your parameterized constructor directly! No copy constructor needed.
             // temporary mipmaps to accumulate separately in different threads:
             MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);
+            thread_mipMaps.createBuffers({1, height, width});
+            thread_mipMaps.resetBuffers();
+            
+            StatsCounter counterRegion;
+            counterRegion.reset();
+            
+            // #pragma omp critical
+            // std::cout << "[Thread " << omp_get_thread_num() << "] DEBUG :" 
             std::cout << "DEBUG : thread_mipMaps.size() = " << thread_mipMaps.mipMaps.size() << std::endl;
-#pragma omp parallel for default(none) private (regionIndex, counterRegion) shared (standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER) \
-    firstprivate(thread_mipMaps) // this is required to create copies of thread_mipMaps per each thread using copy constructor (otherwise with private() default constructor is called)
-            for (regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
-                counterRegion.reset();
-                thread_mipMaps.resetBuffers();
+            #pragma omp for
+            for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
+                // counterRegion.reset();
                 hsize_t x0,y0,z0;
                 RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER,
                     1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
@@ -152,12 +172,20 @@ void SmartConverter::copyAndCalculate() {
                         }
                     }
                 }
-#pragma omp critical
-{
+            } // Threads implicitly synchronize here at the end of the 'for' loop     
+            
+            // 4. Finally, accumulate the thread-local results into the shared global objects.
+            // This still runs once per thread, protected by the critical section.
+            #pragma omp critical
+            {
                 counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
                 mipMaps.accumulateFromMipMaps(thread_mipMaps);
-}                
-            } // end of region loop
+            }                
+} // End of parallel region. Thread-local objects are safely destroyed here.
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+//            total_first_pass_processing_ms += double(duration1.count());
+            std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
                         
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
@@ -173,6 +201,10 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
             mipMaps.calculate();
             
+            end1 = std::chrono::high_resolution_clock::now();
+            duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            total_first_pass_processing_ms += double(duration1.count());
+            
             
             // Write the mipmaps
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
@@ -185,6 +217,8 @@ void SmartConverter::copyAndCalculate() {
             mipMaps.resetBuffers();
             
         } // end of first channel loop
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_first_pass_processing_ms;
         
         PROGRESS(std::endl);
         
@@ -219,13 +253,42 @@ void SmartConverter::copyAndCalculate() {
         statsXYZ.clearHistogramBuffers();
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
-        
-        
-        for (hsize_t c = depth; c-- > 0; ) {
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// !!! CAN BE DONE using a single readFits !!! Just do channel histograms in the first loop and calculate MIN of all MIN(StatXY) !!!
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+// ASK Adrianna ???
+// OK FIRST PASS IS REQUIRED to calculate MIN value for the entire cube used in doCubeHistogram : statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
+// BUT Channel histograms could be done earlier, still we do not win much by doing it ...        
+// ADRIANNA - why this loop goes down direction ??? and is separate 
+// hmm looks like it needs to have statsXYZ calculated to use minVals and maxVals for the histogram ranges !!! Cannot be done without doing 1st pass 
+// Is the only reason to have separate loop for this to have statsXYZ and statsXY calculated ???
+// but in such a case it can still be done at the end of the previous loop, without doing again: readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);        
+
+// Synthetic-sugar : The Post-decrement (c--) returns the current value of c for the comparison, and then subtracts 1 from c immediately after.
+//                   -> The Comparison (> 0) checks if that "old" value is greater than zero. When c=1 -> ok, c-- -> final loop performs on c=0
+//                   1st iteration (c--) returns c=depth for comparison (pre --) then does c-- and uses c-- value = 143 inside the loop
+// !!! The value inside the loop is alwayes by one less than it was during the comparison !!!
+// 1st Iteration: Condition sees 144 > 0 (True). Inside the loop, c is 143.
+// 2nd Iteration: Condition sees 143 > 0 (True). Inside the loop, c is 142.
+// Last Iteration: Condition sees 1 > 0 (True). Inside the loop, c is 0.
+// Termination: Condition sees 0 > 0 (False). The loop ends.
+        double total_second_pass_processing_ms = 0.00;
+        auto start2 = std::chrono::high_resolution_clock::now();
+        for (hsize_t c = depth; c-- > 0; ) { // ok so this syntax is used because c is hsize_t which does not have negative values !!! cannot write simple for loop !
+                                             // but why it needs to go from top channel down in the first place ???
+                                             // it does not seem to be necessary at all ...
+                                             // ??? there is nothing here that really depends on the order !!!???
+                                             // OR AM I WRONG ???
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             auto indexXY = c;
                             
+// ??? Adrianna ???                            
+// TODO: channel histograms can be calculated in the first loop why a separate loop going down from c max ???
+// ??? There is something strange with indexing here why c = depth and not depth-1 do they go from 1 ???
             double chanMin = statsXY.minVals[indexXY];
             double chanMax = statsXY.maxVals[indexXY];
             double chanRange = chanMax - chanMin;
@@ -270,7 +333,12 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
+            auto start_io = std::chrono::high_resolution_clock::now();
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
@@ -290,6 +358,7 @@ void SmartConverter::copyAndCalculate() {
             statsXY.consolidateAndClearPartialHistogram(c);
             statsXYZ.consolidateAndClearPartialHistogram(0);*/
 
+            auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t y;            
 #pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc)
             for (y = 0; y < height; y++) {
@@ -330,9 +399,17 @@ void SmartConverter::copyAndCalculate() {
                 statsXY.consolidateAndClearPartialHistogram(c);
 //                statsXYZ.consolidateAndClearPartialHistogram(0);                
             }
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            total_second_pass_processing_ms += double(duration1.count());
             
 
         } // end of second channel loop (XY and XYZ histograms)
+        auto end2 = std::chrono::high_resolution_clock::now();
+        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+        std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_second_pass_processing_ms;
         
         PROGRESS(std::endl);
         
@@ -355,6 +432,7 @@ void SmartConverter::copyAndCalculate() {
     delete[] standardCube;
             
 // STILL TODO :             
+// Rotation is performed on HDF5 file - seems to be easier this way, but there is still room for some optimisations / paralleisations:
     // Swizzle
     if (depth > 1) {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
@@ -369,6 +447,7 @@ void SmartConverter::copyAndCalculate() {
         printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",TILE_SIZE,TILE_SIZE);
         statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
         
+        double total_rotation_pass_processing_ms = 0.00;
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
             PROGRESS("\tStokes " << s << "\t");
@@ -392,12 +471,18 @@ void SmartConverter::copyAndCalculate() {
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
                     
+                    auto start_io = std::chrono::high_resolution_clock::now();
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
                     TIMER(timer.start("Rotation"););
 
+                    auto start2 = std::chrono::high_resolution_clock::now();
 // TODO: this should be easy to paralelise as they all fall into different cells -> naturally no conflicts here !!!
 //       because it's one-to-one operation !!!
 // TODO: just try to add pragma here :                    
@@ -441,8 +526,12 @@ void SmartConverter::copyAndCalculate() {
                             }
                             
                             statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
-                        }
+                        }                        
                     }
+                    auto end2 = std::chrono::high_resolution_clock::now();
+                    auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+                    total_rotation_pass_processing_ms += double(duration2.count());
+                    std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
                     
                     // write tile slice
                     DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
@@ -450,9 +539,14 @@ void SmartConverter::copyAndCalculate() {
                     
                     auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
-                    auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
+                    auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);                    
                     
+                    start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
@@ -461,12 +555,17 @@ void SmartConverter::copyAndCalculate() {
             }
             PROGRESS(std::endl);
         }
+        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds" << std::endl;
+        total_pureprocessing_ms += total_rotation_pass_processing_ms;
+
         
         TIMER(timer.start("Free"););
         DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
+    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes " << total_pureprocessing_ms << " milliseconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
