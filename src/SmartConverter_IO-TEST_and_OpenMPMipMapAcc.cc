@@ -206,7 +206,7 @@ void SmartConverter::copyAndCalculate() {
             
 // 1. Start the parallel region. 
 // standardDims, tileDims, and zMips must now be passed in as shared!
-#pragma omp parallel default(none) shared(std::cout, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
+#pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
 {
             // 2. Declare your thread-local variables HERE.
             // Because this is inside the parallel block, OpenMP creates one instance per thread.
