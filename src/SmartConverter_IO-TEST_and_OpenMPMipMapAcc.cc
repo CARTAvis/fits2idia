@@ -221,7 +221,7 @@ void SmartConverter::copyAndCalculate() {
             
             // #pragma omp critical
             // std::cout << "[Thread " << omp_get_thread_num() << "] DEBUG :" 
-            std::cout << "DEBUG : thread_mipMaps.size() = " << thread_mipMaps.mipMaps.size() << std::endl;
+//            std::cout << "DEBUG : thread_mipMaps.size() = " << thread_mipMaps.mipMaps.size() << std::endl;
             #pragma omp for
             for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
                 // counterRegion.reset();
