@@ -39,6 +39,8 @@ public:
     
     void SetChunkDivider( int divider );
     
+    void setIOBlocks( int _n_io_blocks ){ n_io_blocks = _n_io_blocks; }
+    
 protected:
     virtual void copyAndCalculate() = 0;
     
@@ -61,7 +63,7 @@ protected:
     float* rotatedCube;
     
     // Stats
-    Stats statsXY;  // per channel histogram
+    Stats statsXY;  // per channel stats and histogram
     Stats statsZ;
     Stats statsXYZ; // per cube histogram (using entire cube)
     
@@ -76,6 +78,7 @@ protected:
     hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
     int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
                         // this is required when too much memory is required without any division
+    int n_io_blocks; // number of channel images read at once to optimise I/O to read larger portions of file
     
     // Dataset dimensions    
     std::vector<hsize_t> standardDims;

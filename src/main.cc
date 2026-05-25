@@ -9,7 +9,7 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode) {
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks) {
     extern int optind;
     extern char *optarg;
     
@@ -22,6 +22,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
+    << "-B\tNumber of freq-images (i.e. blocks) read in one read transation [default " << n_io_blocks << "]" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
@@ -32,10 +33,15 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:")) != -1) {
         switch (opt) {
             case 'a':
                 auto_mode = true;
+                break;
+            case 'B':
+                if (optarg) {
+                   n_io_blocks = atol(optarg);
+                }
                 break;
             case 'r':
                 auto_mode = true;
@@ -121,8 +127,9 @@ int main(int argc, char** argv) {
     bool onlyReportMemory(false);
     bool zMips(false);
     int memoryLimitInMb(0);
+    int n_io_blocks(1);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart,  progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart,  progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks)) {
         return 1;
     }
 
@@ -157,6 +164,10 @@ int main(int argc, char** argv) {
         
     try {
         converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips, memoryLimitInMb);
+        
+        if (n_io_blocks>1) {
+           converter->setIOBlocks(n_io_blocks);
+        }
         
         if (onlyReportMemory) {
             converter->reportMemoryUsage();

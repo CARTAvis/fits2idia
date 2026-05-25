@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), height_divider(1) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), height_divider(1), n_io_blocks(1) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);

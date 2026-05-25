@@ -13,6 +13,21 @@
 struct MipMap {
     MipMap() {};
     MipMap(const std::vector<hsize_t>& datasetDims, int mipXY, int mipZ);
+
+    // WARNING: copy constructor is created only to copy MipMap structure by firstprivate(thread_MipMaps) 
+    //          and create all the buffers of the same size and length as originally. Hence, vals and count arrays are not memcpy-ied 
+// WARNING / ERROR : copy constructor crashes push_back(MipMaps(...)) - this should really be fixed at some point !!!
+/*    MipMap(const MipMap& right): mipXY(right.mipXY), mipZ(right.mipZ), bufferSize(right.bufferSize), width(right.width), height(right.height), 
+       depth(right.depth), stokes(right.stokes) {
+       datasetDims = right.datasetDims;
+       bufferDims  = right.bufferDims;
+       // dataset is ignored here, we do not want to deal with copying HDF5 file structures, groups etc
+       
+       std::cout << "DEBUG : copy constructor : before createBuffers( bufferDims )" << std::endl;
+       createBuffers( bufferDims );
+
+       std::cout << "DEBUG : copy constructor of MipMap called" << std::endl;
+    }*/
     ~MipMap();
     
     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
@@ -22,6 +37,17 @@ struct MipMap {
         hsize_t mipIndex = (z / mipZ) * width * height + (y / mipXY) * width + (x / mipXY);
         vals[mipIndex] += val;
         count[mipIndex]++;
+    }
+    
+    void accumulateFromMipMap(const MipMap& mipmap) {
+        if (bufferSize != mipmap.bufferSize ) {
+           std::cerr << "ERROR in accumulateFromMipMap different buffer sizes " << bufferSize << " != " << mipmap.bufferSize << std::endl;
+        }        
+    
+        for(hsize_t mipIndex=0;mipIndex<bufferSize;mipIndex++){
+           vals[mipIndex] += mipmap.vals[mipIndex];
+           count[mipIndex] += mipmap.count[mipIndex];
+        }
     }
     
     void calculate() {
@@ -51,8 +77,8 @@ struct MipMap {
     hsize_t depth;
     hsize_t stokes;
     
-    double* vals;
-    int* count;
+    double* vals; // size : bufferSize
+    int* count;   // size : bufferSize 
 };
 
 // A set of mipmaps
@@ -70,6 +96,24 @@ struct MipMaps {
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
         for (auto& mipMap : mipMaps) {
             mipMap.accumulate(val, x, y, z);
+        }
+    }
+
+    void accumulateFromMipMaps(const MipMaps& mipmaps) {
+//        for (auto& mipMap : mipMaps) {
+//            mipMap.accumulate(val, x, y, z);
+//        }
+        
+        if (mipMaps.size() != mipmaps.mipMaps.size() ) {
+           std::cerr << "ERROR in accumulateFromMipMaps : different number of MipMaps " << mipMaps.size() << " != " << mipmaps.mipMaps.size() << std::endl;
+        }
+        
+        for (int m=0;m<mipMaps.size();m++){
+           MipMap& mipMap = mipMaps[m];
+           const MipMap& mipMap2 = mipmaps.mipMaps[m];
+           
+           // TODO : check if dimensions agree !!!
+           mipMap.accumulateFromMipMap(mipMap2);           
         }
     }
 

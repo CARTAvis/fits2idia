@@ -412,6 +412,7 @@ void SlowConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
