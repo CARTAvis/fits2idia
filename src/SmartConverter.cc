@@ -184,26 +184,6 @@ void SmartConverter::copyAndCalculate() {
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t block_pos = (c-c_start)* image_size; 
 
-/*            for (hsize_t y = 0; y < height; y++) {
-                auto y_pos = block_pos + y * width;
-                for (hsize_t x = 0; x < width; x++) {
-                    auto pos = (c-c_start)* image_size + y * width + x; // relative to channel slice
-                    // auto pos = y_pos + x;
-                    auto& val = standardCube[pos];
-                                        
-                    if (std::isfinite(val)) {
-                        // XY statistics
-                        accumulate(val);
-                        
-                        // Accumulate mipmaps
-                        mipMaps.accumulate(val, x, y, 0);
-                        
-                    } else {
-                        counterXY.accumulateNonFinite();
-                    }
-                }
-            } // end of XY loop*/
-            
 // 1. Start the parallel region. 
 // standardDims, tileDims, and zMips must now be passed in as shared!
 #pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
@@ -401,14 +381,6 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
-/*            for (hsize_t p = 0; p < width * height; p++) {
-                auto& val = standardCube[p];
-                    if (std::isfinite(val)) {
-                        channelHistogramFunc(val);
-                        cubeHistogramFunc(val);
-                    }
-            } // end of XY loop*/
-            
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t y;            
 #pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc)
@@ -542,17 +514,15 @@ void SmartConverter::copyAndCalculate() {
 // TODO: this should be easy to paralelise as they all fall into different cells -> naturally no conflicts here !!!
 //       because it's one-to-one operation !!!
 // TODO: just try to add pragma here :                    
-                    hsize_t image_size = (ySize * xSize);
+                    hsize_t tile_size = (ySize * xSize);
                     hsize_t ysize_depth = (ySize * depth);
                     hsize_t i;
-                    #pragma omp parallel for default(none) private(i) shared(standardSlice,rotatedSlice, depth, ySize, xSize, image_size, ysize_depth)
+                    #pragma omp parallel for default(none) private(i) shared(standardSlice,rotatedSlice, depth, ySize, xSize, ysize_depth)
                     for (i = 0; i < depth; i++) {
-                        hsize_t layer_start = image_size * i;
-                        
+                        hsize_t layer_start = (ySize * xSize) * i;
                         for (hsize_t j = 0; j < ySize; j++) {
                             hsize_t row_start = xSize * j + layer_start;
                             hsize_t i_plus_depth_j = i + depth * j;
-                            
                             for (hsize_t k = 0; k < xSize; k++) {
 //                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
                                 auto sourceIndex = k + row_start;
@@ -579,26 +549,39 @@ void SmartConverter::copyAndCalculate() {
 // statistics may be much faster than other parts, 
 // Example - writting !!!                    
                     auto start3 = std::chrono::high_resolution_clock::now();
+//                    hsize_t image_size = (ySize * xSize);
+                    Stats* statsZ_ptr = &statsZ;
+
+                    // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
+                    // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
+                    #pragma omp parallel for default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr)
                     for (hsize_t j = 0; j < ySize; j++) {
-                        for (hsize_t k = 0; k < xSize; k++) {
-                            StatsCounter counterZ;
-                            auto indexZ = k + xSize * j;
-                            
-                            for (hsize_t i = 0; i < depth; i++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
-                                
-                                if (std::isfinite(val)) {
-                                    // Not lazy; too much risk of encountering an ascending / descending sequence.
-                                    counterZ.accumulateFinite(val);
-                                } else {
-                                    counterZ.accumulateNonFinite();
-                                }
-                            }
-                            
-                            statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
-                        }
+                       for (hsize_t k = 0; k < xSize; k++) {
+        
+                          // Because this is declared INSIDE the j/k loops, 
+                          // every thread creates its own completely separate instance on its own stack.
+                          StatsCounter counterZ; 
+                          counterZ.reset(); // CRITICAL: Clear the dirty thread-stack memory
+
+                          auto indexZ = k + xSize * j;
+        
+                          for (hsize_t i = 0; i < depth; i++) {
+                             auto sourceIndex = indexZ + (ySize * xSize) * i;
+                             auto& val = standardSlice[sourceIndex];
+              
+                             if (std::isfinite(val)) {
+                                // Not lazy; too much risk of encountering an ascending / descending sequence.
+                                counterZ.accumulateFinite(val);
+                             } else {
+                                counterZ.accumulateNonFinite();
+                             }
+                          }
+
+                         // Safe: Writing to a mathematically unique indexZ for every thread
+                         statsZ_ptr->copyStatsFromCounter(indexZ, depth, counterZ);
+                       }
                     }
+
                     auto end3 = std::chrono::high_resolution_clock::now();
                     auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
                     total_rotation_pass_processing_ms += double(duration3.count());
