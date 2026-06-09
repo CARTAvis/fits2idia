@@ -277,7 +277,7 @@ void SmartConverter::copyAndCalculate() {
             
         } // end of first channel loop
         } // end of loop over blocks
-        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += total_first_pass_processing_ms;
         
         
@@ -433,7 +433,7 @@ void SmartConverter::copyAndCalculate() {
         auto end2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);        
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
-        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
         total_pureprocessing_ms += total_second_pass_processing_ms;
 
 
@@ -617,7 +617,7 @@ void SmartConverter::copyAndCalculate() {
 
             PROGRESS(std::endl);
         }
-        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds " << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
         total_pureprocessing_ms += total_rotation_pass_processing_ms;
         
         TIMER(timer.start("Free"););
@@ -625,10 +625,10 @@ void SmartConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
-    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds" << std::endl;
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
+    std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
 }

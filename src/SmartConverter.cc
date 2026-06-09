@@ -277,7 +277,7 @@ void SmartConverter::copyAndCalculate() {
             
         } // end of first channel loop
         } // end of loop over blocks
-        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += total_first_pass_processing_ms;
         
         
@@ -433,7 +433,7 @@ void SmartConverter::copyAndCalculate() {
         auto end2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);        
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
-        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
         total_pureprocessing_ms += total_second_pass_processing_ms;
 
 
@@ -517,9 +517,9 @@ void SmartConverter::copyAndCalculate() {
                     hsize_t tile_size = (ySize * xSize);
                     hsize_t ysize_depth = (ySize * depth);
                     hsize_t i;
-                    #pragma omp parallel for default(none) private(i) shared(standardSlice,rotatedSlice, depth, ySize, xSize, ysize_depth)
+                    #pragma omp parallel for default(none) private(i) shared(standardSlice,rotatedSlice, depth, ySize, xSize, tile_size, ysize_depth)
                     for (i = 0; i < depth; i++) {
-                        hsize_t layer_start = (ySize * xSize) * i;
+                        hsize_t layer_start = tile_size * i;
                         for (hsize_t j = 0; j < ySize; j++) {
                             hsize_t row_start = xSize * j + layer_start;
                             hsize_t i_plus_depth_j = i + depth * j;
@@ -554,7 +554,7 @@ void SmartConverter::copyAndCalculate() {
 
                     // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
                     // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
-                    #pragma omp parallel for default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr)
+                    #pragma omp parallel for default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr, tile_size)
                     for (hsize_t j = 0; j < ySize; j++) {
                        for (hsize_t k = 0; k < xSize; k++) {
         
@@ -566,7 +566,7 @@ void SmartConverter::copyAndCalculate() {
                           auto indexZ = k + xSize * j;
         
                           for (hsize_t i = 0; i < depth; i++) {
-                             auto sourceIndex = indexZ + (ySize * xSize) * i;
+                             auto sourceIndex = indexZ + tile_size * i;
                              auto& val = standardSlice[sourceIndex];
               
                              if (std::isfinite(val)) {
@@ -617,7 +617,7 @@ void SmartConverter::copyAndCalculate() {
 
             PROGRESS(std::endl);
         }
-        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds" << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds " << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
         total_pureprocessing_ms += total_rotation_pass_processing_ms;
         
         TIMER(timer.start("Free"););
@@ -625,10 +625,10 @@ void SmartConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
-    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds" << std::endl;
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
+    std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
 }
