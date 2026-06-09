@@ -184,26 +184,6 @@ void SmartConverter::copyAndCalculate() {
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t block_pos = (c-c_start)* image_size; 
 
-/*            for (hsize_t y = 0; y < height; y++) {
-                auto y_pos = block_pos + y * width;
-                for (hsize_t x = 0; x < width; x++) {
-                    auto pos = (c-c_start)* image_size + y * width + x; // relative to channel slice
-                    // auto pos = y_pos + x;
-                    auto& val = standardCube[pos];
-                                        
-                    if (std::isfinite(val)) {
-                        // XY statistics
-                        accumulate(val);
-                        
-                        // Accumulate mipmaps
-                        mipMaps.accumulate(val, x, y, 0);
-                        
-                    } else {
-                        counterXY.accumulateNonFinite();
-                    }
-                }
-            } // end of XY loop*/
-            
 // 1. Start the parallel region. 
 // standardDims, tileDims, and zMips must now be passed in as shared!
 #pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
@@ -401,14 +381,6 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
-/*            for (hsize_t p = 0; p < width * height; p++) {
-                auto& val = standardCube[p];
-                    if (std::isfinite(val)) {
-                        channelHistogramFunc(val);
-                        cubeHistogramFunc(val);
-                    }
-            } // end of XY loop*/
-            
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t y;            
 #pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc)
@@ -542,14 +514,21 @@ void SmartConverter::copyAndCalculate() {
 // TODO: this should be easy to paralelise as they all fall into different cells -> naturally no conflicts here !!!
 //       because it's one-to-one operation !!!
 // TODO: just try to add pragma here :                    
-                    for (hsize_t i = 0; i < depth; i++) {
+                    int image_size = (ySize * xSize);
+                    hsize_t i;
+                    #pragma omp parallel for default(none) private(i) shared(standardSlice,rotatedSlice, depth, ySize, xSize, image_size)
+                    for (i = 0; i < depth; i++) {
+                        hsize_t layer_start = image_size * i;
                         for (hsize_t j = 0; j < ySize; j++) {
+                            hsize_t row_start = xSize * j + layer_start;
+                            hsize_t i_plus_depth_j = i + depth * j;
                             for (hsize_t k = 0; k < xSize; k++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+//                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
+                                auto sourceIndex = k + row_start;
                                 auto& val = standardSlice[sourceIndex];
                                 
                                 // rotation
-                                auto destIndex = i + depth * j + (ySize * depth) * k;
+                                auto destIndex = i_plus_depth_j + image_size * k;
                                 rotatedSlice[destIndex] = val;
                             }
                         }
