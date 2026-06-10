@@ -250,6 +250,48 @@ void SmartConverter::copyAndCalculate() {
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
+
+            // STEP4a : histograming in the 1st pass :
+            // histograming channel c :            
+            double chanMin = statsXY.minVals[indexXY];
+            double chanMax = statsXY.maxVals[indexXY];
+            double chanRange = chanMax - chanMin;
+            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
+
+            if( chanHist ) {
+               printf("DEBUG : calculating channel histogram for channel = %ld\n",(long int)c);
+               auto doChannelHistogram = [&] (float val, hsize_t offset) {
+                   // XY histogram
+                   statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
+               };
+
+               int portions = (height / height_chunk);
+               if ( (height % height_chunk) != 0 ) {
+                   std::cerr << "ERROR : height chunk " << height_chunk << " is not a divider of height " << height << " due to bug in the code -> aborting now" << std::endl;
+                   exit(0);
+               }
+               hsize_t y;
+               for (int p=0;p<portions;p++) {
+                   auto start_y = (p*height_chunk);
+                   auto end_y   = (p+1)*height_chunk;
+#pragma omp parallel for default(none) private(y) shared(standardCube, start_y, end_y, height, width, doChannelHistogram, block_pos)
+                   for (y = start_y; y < end_y; y++) {
+                       auto y_width = block_pos + y * width;
+                       for (hsize_t x = 0; x < width; x++) {
+                           auto pos = y_width + x;
+                           auto& val = standardCube[pos];
+                           if (std::isfinite(val)) {
+                               doChannelHistogram(val, y - start_y); // filling channel histograms for y 
+                           }
+                       }
+                   } // end of XY loop
+                   statsXY.consolidateAndClearPartialHistogram(c);
+               }
+            }else{
+               printf("WARNING : channel histogram not calculated !!!???\n");
+            }
+
+
             
             // Accumulate XYZ statistics
             if (depth > 1) {
@@ -278,6 +320,13 @@ void SmartConverter::copyAndCalculate() {
             
         } // end of first channel loop
         } // end of loop over blocks
+
+        // write channel stats to HDF5 files:
+        TIMER(timer.start("Write"););
+        PROGRESS("\tWrite stats" << std::endl);
+        statsXY.write({1, depth}, {s, 0});
+
+
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += total_first_pass_processing_ms;
         
@@ -324,23 +373,10 @@ void SmartConverter::copyAndCalculate() {
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
-            auto indexXY = c;
                             
-            double chanMin = statsXY.minVals[indexXY];
-            double chanMax = statsXY.maxVals[indexXY];
-            double chanRange = chanMax - chanMin;
-            
-            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
-            DEBUG(std::cout << " Will " << (chanHist ? "" : "not ") << "calculate channel histogram." << std::flush;);
-            
-            if (!chanHist && !cubeHist) {
+            if (!cubeHist) {
                 continue;
             }
-            
-            auto doChannelHistogram = [&] (float val, hsize_t offset) {
-                // XY histogram
-                statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
-            };
             
             auto doCubeHistogram = [&] (float val, hsize_t offset) {
                 // XYZ histogram
@@ -355,13 +391,8 @@ void SmartConverter::copyAndCalculate() {
                 UNUSED(val);
             };
             
-            std::function<void(float,hsize_t)> channelHistogramFunc = doChannelHistogram;
             std::function<void(float,hsize_t)> cubeHistogramFunc = doCubeHistogram;
            
-            if (!chanHist) {
-                channelHistogramFunc = doNothingOffset;
-            }
-            
             if (!cubeHist) {
                 cubeHistogramFunc = doNothingOffset;
             }
@@ -400,31 +431,6 @@ void SmartConverter::copyAndCalculate() {
             statsXYZ.consolidateAndClearPartialHistogram(0);
 
             
-            int portions = (height / height_chunk);
-            if ( (height % height_chunk) != 0 ) {
-                std::cerr << "ERROR : height chunk " << height_chunk << " is not a divider of height " << height << " due to bug in the code -> aborting now" << std::endl;
-                exit(0);
-            }
-            for (int p=0;p<portions;p++) {
-                auto start_y = (p*height_chunk);
-                auto end_y   = (p+1)*height_chunk;
-#pragma omp parallel for default(none) private(y) shared(standardCube, start_y, end_y, height, width, channelHistogramFunc)                
-                for (y = start_y; y < end_y; y++) {
-                    auto y_width = y * width;
-                    for (hsize_t x = 0; x < width; x++) {
-                        auto pos = y_width + x;
-                        auto& val = standardCube[pos];
-                        if (std::isfinite(val)) {
-                            channelHistogramFunc(val, y - start_y); // filling channel histograms for y 
-//                            cubeHistogramFunc(val, y);
-                        }
-                    }
-                } // end of XY loop
-                statsXY.consolidateAndClearPartialHistogram(c);
-//                statsXYZ.consolidateAndClearPartialHistogram(0);                
-            }
-            
-            
             auto end1 = std::chrono::high_resolution_clock::now();
             auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
             total_second_pass_processing_ms += double(duration1.count());
@@ -442,10 +448,9 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS(std::endl);
         
         // Write the statistics
-        TIMER(timer.start("Write"););
-        PROGRESS("\tWrite stats & mipmaps" << std::endl);
-                
-        statsXY.write({1, depth}, {s, 0});
+/*        TIMER(timer.start("Write"););
+        PROGRESS("\tWrite stats & mipmaps" << std::endl);                
+        statsXY.write({1, depth}, {s, 0});*/
         
         if (depth > 1) {
             statsXYZ.write({1}, {s});
