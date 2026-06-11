@@ -724,12 +724,6 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
 
-        for(size_t b = 0; b < numBins; ++b) {
-           // WARNING : truncation of fractional parts is required here:
-           int64_t binCount = statsXYZ.getBinCount(0, b);
-           printf("DEBUG : SmartConverter::doSecondPass : N(%d) = %.6f -> %ld\n",int(b),float(binCount),int64_t(binCount));
-         }
-
         return total_second_pass_processing_ms;
 }
 
