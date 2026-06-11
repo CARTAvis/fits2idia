@@ -110,6 +110,8 @@ private:
 
 protected:
     void copyAndCalculate() override;
+    double doSecondPass( unsigned int s, double& total_io_ms );
+    double calcApproxCubeHistogram( unsigned int s );
     void ReadRotateWriteFullDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
         hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement);
     void ReadRotateWritePartialDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
