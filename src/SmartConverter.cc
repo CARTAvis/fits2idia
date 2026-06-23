@@ -288,7 +288,7 @@ void SmartConverter::copyAndCalculate() {
                    statsXY.consolidateAndClearPartialHistogram(c);
                }
             }else{
-               printf("WARNING : channel histogram not calculated !!!???\n");
+               printf("channel = %ld : WARNING : channel histogram not calculated !!!???\n",(long int)c);
             }
 
 
@@ -351,12 +351,12 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
         
-        statsXY.clearHistogramBuffers();
+//        statsXY.clearHistogramBuffers();
         statsXYZ.clearHistogramBuffers();
 
         auto start2 = std::chrono::high_resolution_clock::now();        
         double total_second_pass_processing_ms = 0.00;
-        bool bApproximateCubeHistogram = false;
+        bool bApproximateCubeHistogram = true;
         if( bApproximateCubeHistogram ) {
            total_second_pass_processing_ms = calcApproxCubeHistogram(s);
         } else {
@@ -625,12 +625,14 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
         double cubeMin;
         double cubeMax;
         double cubeRange;
+        double cubeBinWidth;
         bool cubeHist(false);
   
         if (depth > 1) {
             cubeMin = statsXYZ.minVals[0];
             cubeMax = statsXYZ.maxVals[0];
             cubeRange = cubeMax - cubeMin;
+            cubeBinWidth = cubeRange / numBins;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
 
 // compare to using channel min/max 
@@ -647,6 +649,8 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             }
             printf("DEBUG : cubeMin = %.8f vs. cubeMinTest = %.8f\n",cubeMin,cubeMinTest);
             printf("DEBUG : cubeMax = %.8f vs. cubeMaxTest = %.8f\n",cubeMax,cubeMaxTest);
+        } else {
+            // TODO : copy histogram from channel histogram !
         }
 
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
@@ -660,9 +664,15 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
                             
-//            if (!cubeHist) {
-//                continue;
-//            }
+            double chanMin = statsXY.minVals[c];
+            double chanMax = statsXY.maxVals[c];
+            double chanRange = chanMax - chanMin;
+            bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
+
+            if(!chanHist){
+               printf("DEBUG (SmartConverter::doSecondPass) : channel = %ld skipped (chanMin = %.8f, chanMax = %.8f,, chanRange = %.8f)\n",(long int)c,chanMin,chanMax,chanRange);
+               continue;
+            }
             
             auto doCubeHistogram = [&] (float val, hsize_t offset) {
                 // XYZ histogram
@@ -724,24 +734,181 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
 
+        long int totalBinCount=0;
         for(size_t b = 0; b < numBins; ++b) {
            // WARNING : truncation of fractional parts is required here:
            int64_t binCount = statsXYZ.getBinCount(0, b);
-           printf("DEBUG : SmartConverter::doSecondPass : N(%d) = %.6f -> %ld\n",int(b),float(binCount),int64_t(binCount));
+           double binStart = cubeMin + (b * cubeBinWidth);
+           double binEnd   = binStart + cubeBinWidth;
+
+           printf("DEBUG : SmartConverter::doSecondPass : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,double(binCount),int64_t(binCount));
+           totalBinCount += binCount;
          }
+         printf("Total bin count = %ld\n",(long int)totalBinCount);
+
 
         return total_second_pass_processing_ms;
 }
 
 
 double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
+   printf("INFO : SmartConverter::calcApproxCubeHistogram\n");
    // calculate cubeMin / cubeMax from minVals/maxVals in statsXY 
+   const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+
+   hsize_t cubeSize = height * width;
+   double cubeMin;
+   double cubeMax;
+   double cubeRange;
+   double cubeBinWidth;
+   bool cubeHist(false);
+
+   // NO NEED FOR THIS StatsXYZ was already calculated !!!
+   // calculate cubeMin/Max using channel Min/Max :
+   /*double cubeMin = statsXY.minVals[0];
+   double cubeMax = statsXY.maxVals[0];
+   for(hsize_t c = 1; c < depth; c++ ) {
+      if ( statsXY.minVals[c] < cubeMin ) {
+         cubeMin = statsXY.minVals[c];
+      }
+      if ( statsXY.maxVals[c] > cubeMax ) {
+         cubeMax = statsXY.maxVals[c];
+      }
+             
+   }*/
+
+   double total_second_pass_processing_ms = 0.0;
+   auto start1 = std::chrono::high_resolution_clock::now();
+
+   if (depth > 1) {
+      cubeMin = statsXYZ.minVals[0];
+      cubeMax = statsXYZ.maxVals[0];
+      cubeRange = cubeMax - cubeMin;
+      cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
+      cubeBinWidth = cubeRange / numBins;
+   } else {
+      // copy channel histograms to cube histogrms :
+      // TODO : verify if more than this (full copy constructor) is required:
+      statsXYZ.copyHistogramBuffers(statsXY);
+   }
+
+   
+   printf("DEBUG : cubeMin = %.8f , cubeMax = %.8f -> cubeRange = %.8f , cubeHist = %d\n",cubeMin,cubeMax,cubeRange,cubeHist);   
+   DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
+
+   if(!cubeHist) {
+      return -1;
+   }        
+
+   if (cubeHist) {
+      statsXYZ.clearHistogramBuffers();
+
+      // only a single histogram per cube (no need for offsets etc):
+      double* histogram_XYZ = new double[numBins];
+      memset(histogram_XYZ,'\0', sizeof(double)*numBins);
+
+      auto addFractionalCount = [&] (int binIndex, float val) {
+         histogram_XYZ[binIndex] += val;
+      };
+
+      long int totalBinCount = 0;        
+      // 2. Iterate through every channel's histogram
+      for (hsize_t c = 0; c < depth; ++c) {
+         double chanMin = statsXY.minVals[c];
+         double chanMax = statsXY.maxVals[c];
+         double chanRange = chanMax - chanMin;
+            
+         if (!std::isfinite(chanMin) || !std::isfinite(chanMax) || chanRange <= 0) {
+             continue;
+         }
+
+         // Calculate the width of a single bin for this specific channel
+         double chanBinWidth = chanRange / numBins; 
+
+         // 3. Iterate through the bins of the current channel
+         for (size_t b = 0; b < numBins; ++b) {
+            // NOTE: You will need to expose or access the actual histogram array from statsXY here
+            uint64_t binCount = statsXY.getBinCount(c, b); 
+            totalBinCount += binCount;
+            printf("DEBUG: c = %d, b = %d -> binCount = %d\n",int(c),int(b),int(binCount));
+                
+            if (binCount > 0) {
+               // Assume the values in this bin are concentrated at the bin's center
+               double binCenterValue = chanMin + (b * chanBinWidth) + (chanBinWidth / 2.0);
+
+               // 4. Map the center value to the corresponding bin in the global cube histogram
+               // Note: You will need to write a method like addCountToHistogram that takes a weight/count
+               // statsXYZ.accumulateHistogram(binCenterValue, cubeMin, cubeRange, 0, binCount); 
+
+               // 1. Define the exact boundaries of the source (channel) bin
+               double srcStart = chanMin + (b * chanBinWidth);
+               double srcEnd   = srcStart + chanBinWidth;
+
+               // 2. Map those boundaries to exact, floating-point bin indices in the global histogram
+               double destStartFloat = (srcStart - cubeMin) / cubeBinWidth;
+               double destEndFloat   = (srcEnd - cubeMin) / cubeBinWidth;
+
+               // 3. Find the integer index of the first and last destination bins touched
+               // (Using std::clamp or manual bounds checking to ensure we don't write out of bounds)
+               int firstDestBin = std::max(0, (int)std::floor(destStartFloat));
+               int lastDestBin  = std::min((int)numBins - 1, (int)std::floor(destEndFloat));
+
+               // 4. Distribute the counts
+               if (firstDestBin == lastDestBin) {
+                  // The source bin fits entirely inside a single destination bin
+                  addFractionalCount(firstDestBin, (double)binCount); 
+               } else {
+                  // The source bin spans two (or more) destination bins!
+        
+                  // Count for the first bin (from srcStart to the boundary of the next dest bin)
+                  double firstBinUpperBoundary = cubeMin + (firstDestBin + 1) * cubeBinWidth;
+                  double firstBinFraction = (firstBinUpperBoundary - srcStart) / chanBinWidth;
+                  addFractionalCount(firstDestBin, binCount * firstBinFraction);
+
+                 // Count for the last bin (from the boundary of the last dest bin to srcEnd)
+                 double lastBinLowerBoundary = cubeMin + lastDestBin * cubeBinWidth;
+                 double lastBinFraction = (srcEnd - lastBinLowerBoundary) / chanBinWidth;
+                 addFractionalCount(lastDestBin, binCount * lastBinFraction);
+
+                 // Count for any full bins entirely engulfed in the middle, when cubeBinWidth << chanBinWidth (cubeBinWidth < 2*cubeBinWidth)             
+                 // (Rare, but possible if the channel range is much wider than the global range)
+                 double middleBinFraction = cubeBinWidth / chanBinWidth; // <1 because cubeBinWidth < chanBinWidth
+                 for (int middleBin = firstDestBin + 1; middleBin < lastDestBin; ++middleBin) {
+                    addFractionalCount(middleBin, binCount * middleBinFraction);
+                 }
+               }
+            }
+        }
+      }
+      printf("DEBUG : totalBinCount Pre-merged = %ld\n",totalBinCount);
+
+      // TODO : copy from histogram_XYZ -> statsXYZ.histograms 
+      double totalBinCountMerged = 0.00;
+      for(size_t b = 0; b < numBins; ++b) {
+         // WARNING : truncation of fractional parts is required here:
+         double binStart = cubeMin + (b * cubeBinWidth);
+         double binEnd   = binStart + cubeBinWidth;
+         int64_t finalBinValue = int64_t(round(histogram_XYZ[b]));
+         printf("DEBUG : calcApproxCubeHistogram : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,histogram_XYZ[b],(long int)finalBinValue);
+         statsXYZ.setBinCount(0, b, finalBinValue);
+
+         totalBinCountMerged += histogram_XYZ[b];
+      }
+      printf("DEBUG : totalBinCountMerged = %.8f\n",totalBinCountMerged);
+
+      delete histogram_XYZ;
+   }
+   auto end1 = std::chrono::high_resolution_clock::now();
+   auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+   total_second_pass_processing_ms = double(duration1.count());
+
+ 
 
    // create cube histogram using all the channel histograms !!!
    // WARNING : they all have different : MIN/MAX/RANGE -> different binning
    // -> i.e. bins are misaligned and cannot be simply added, but have to be
    // added with some weighting !!!
 
-   printf("ERROR : not implemented yet !!!\n");
-   return -1.00;   
+   // printf("ERROR : not implemented yet !!!\n");
+   return total_second_pass_processing_ms;
 }
