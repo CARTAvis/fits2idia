@@ -89,11 +89,8 @@ void SmartConverter::copyAndCalculate() {
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
-    // 32 has produced best results in testing
-    const hsize_t REGION_MULTIPLIER = 32;
-    
     // Allocate one channel at a time, and no swizzled data
-    hsize_t cubeSize = height * width;
+//    hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
     std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     standardCube = new float[height * width * sliceIncrement];    
@@ -115,7 +112,7 @@ void SmartConverter::copyAndCalculate() {
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
     hsize_t image_size = width*height;
-    
+
     double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
@@ -166,78 +163,13 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
 
-            StatsCounter counterXY;
             auto indexXY = c;
-
-            // NEW OPTIMIZED CODE:            
-            // int regionIndex;            
-            int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
-            int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
-            int cubeSizeInRegions = regionRows * regionCols;
-            
-            auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t block_pos = (c-c_start)* image_size; 
 
-// 1. Start the parallel region. 
-// standardDims, tileDims, and zMips must now be passed in as shared!
-#pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, cubeSize, REGION_MULTIPLIER, width, height)
-{
-            // Declare thread-local variables HERE. Because this is inside the parallel block, OpenMP creates one instance per thread.
-            // Temporary per-thread mipmaps to accumulate separately in different threads:
-            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);
-            thread_mipMaps.createBuffers({1, height, width});
-            thread_mipMaps.resetBuffers();
-            
-            StatsCounter counterRegion;
-            counterRegion.reset();
-            
-            #pragma omp for
-            for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
-                // counterRegion.reset();
-                hsize_t x0,y0,z0;
-                RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
-                for (hsize_t y = y0; y < y0 + REGION_MULTIPLIER; y++) {
-                    auto y_pos = block_pos + y * width;
-                    for (hsize_t x = x0; x < x0 + REGION_MULTIPLIER; x++) {
-                        auto pos = y_pos + x;
-                        if (x >= width || y >= height) {    //check if we are out of bounds
-                            continue;
-                        }
-                        auto& val = standardCube[pos];
-                        if (std::isfinite(val)) {
-                            
-                            // region statistics
-                            counterRegion.accumulateFinite(val);
-                    
-                            // Accumulate thread mipmaps: without #pragma omp critical
-                            thread_mipMaps.accumulate(val, x, y, 0); // This will not conflict with the other threads as regions are separate - NOT TRUE "#pragma omp critical" WAS REQUIRED
-                                                              // as otherwise there were wrong values vs. Slow/Fast Converters !!!
-                            
-                        } else {
-                            counterRegion.accumulateNonFinite();
-                        }
-                    }
-                }
-            } // Threads implicitly synchronize here at the end of the 'for' loop     
-            
-            // Finally, accumulate the thread-local results into the shared global objects.
-            // This still runs once per thread, protected by the critical section.
-            #pragma omp critical
-            {
-                counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
-                mipMaps.accumulateFromMipMaps(thread_mipMaps);
-            }                
-} // End of parallel region. Thread-local objects are safely destroyed here.
-            
-            
-            auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
-            std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
-            
-            
-            // Final correction of XY min and max
-            DEBUG(std::cout << " Final XY stats..." << std::flush;);
-            statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
+            auto start1 = std::chrono::high_resolution_clock::now();
+            // calculate statistics in channel indexXY  
+            // TODO : check if I can just use c without duplicating variables !
+            calculateChannelStats(indexXY, block_pos);
 
             // STEP4a : histograming in the 1st pass :
             // histograming channel c :            
@@ -291,8 +223,8 @@ void SmartConverter::copyAndCalculate() {
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
             mipMaps.calculate();
             // add everything to processing time of the 1st pass:
-            end1 = std::chrono::high_resolution_clock::now();
-            duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
             total_first_pass_processing_ms += double(duration1.count());
             
             
@@ -578,6 +510,80 @@ for (hsize_t i0 = 0; i0 < depth; i0 += BLOCK_SIZE) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
 }
+
+double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos )
+{
+   StatsCounter counterXY;
+
+   // 32 has produced best results in testing
+   const hsize_t REGION_MULTIPLIER = 32;
+   int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
+   int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
+   int cubeSizeInRegions = regionRows * regionCols;
+
+   auto start1 = std::chrono::high_resolution_clock::now();
+
+   // Start the parallel region. 
+   #pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, REGION_MULTIPLIER, width, height)
+   {
+            // Declare thread-local variables HERE. Because this is inside the parallel block, OpenMP creates one instance per thread.
+            // Temporary per-thread mipmaps to accumulate separately in different threads:
+            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);
+            thread_mipMaps.createBuffers({1, height, width});
+            thread_mipMaps.resetBuffers();
+            
+            StatsCounter counterRegion;
+            counterRegion.reset();
+            
+            #pragma omp for
+            for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
+                // counterRegion.reset();
+                hsize_t x0,y0,z0;
+                RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
+                for (hsize_t y = y0; y < y0 + REGION_MULTIPLIER; y++) {
+                    auto y_pos = block_pos + y * width;
+                    for (hsize_t x = x0; x < x0 + REGION_MULTIPLIER; x++) {
+                        auto pos = y_pos + x;
+                        if (x >= width || y >= height) {    //check if we are out of bounds
+                            continue;
+                        }
+                        auto& val = standardCube[pos];
+                        if (std::isfinite(val)) {
+                            
+                            // region statistics
+                            counterRegion.accumulateFinite(val);
+                    
+                            // Accumulate thread mipmaps: without #pragma omp critical
+                            thread_mipMaps.accumulate(val, x, y, 0); // This will not conflict with the other threads as regions are separate - NOT TRUE "#pragma omp critical" WAS REQUIRED
+                                                              // as otherwise there were wrong values vs. Slow/Fast Converters !!!
+                            
+                        } else {
+                            counterRegion.accumulateNonFinite();
+                        }
+                    }
+                }
+            } // Threads implicitly synchronize here at the end of the 'for' loop     
+            
+            // Finally, accumulate the thread-local results into the shared global objects.
+            // This still runs once per thread, protected by the critical section.
+            #pragma omp critical
+            {
+                counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
+                mipMaps.accumulateFromMipMaps(thread_mipMaps);
+            }                
+   } // End of parallel region. Thread-local objects are safely destroyed here.
+
+   // Final correction of XY min and max
+   DEBUG(std::cout << " Final XY stats..." << std::flush;);
+   statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
+
+   auto end1 = std::chrono::high_resolution_clock::now();
+   auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+   std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
+
+   return duration1.count();
+}
+
 
 double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
 {
