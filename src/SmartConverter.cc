@@ -305,6 +305,9 @@ double SmartConverter::calculateRotatedChannel( unsigned int s, hsize_t c_start,
         return -1.00; 
     }
 
+    // The rotation code below could be much simpler, but this version optimises CPU L2 cache usage to
+    // avoid large percentage of misses when writting into rotated data array.
+
     const hsize_t n_channels = c_end - c_start;
     
     // 2. Tiling parameter. 16 or 32 are the sweet spots for L1 cache sizes with 32-bit floats.
@@ -353,66 +356,65 @@ double SmartConverter::calculateRotatedChannel( unsigned int s, hsize_t c_start,
         }
     }
 
-   // calculte statistics in Z (frequency) direction separately for every pixel in time (width,height) image (channel image).
-   Stats* statsZ_ptr = &statsZ;
-   // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
-   // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
-#pragma omp parallel for default(none) shared(height, width, depth, standardCube, statsZ_ptr, c_start, c_end, image_size)
-for (hsize_t j = 0; j < height; j++) {
-    
-    // 1. Allocate a local array of StatsCounters for this specific row.
-    // This buffer is small enough to fit perfectly in the CPU L1/L2 cache.
-    std::vector<StatsCounter> rowCounters(width);
-    for (hsize_t k = 0; k < width; k++) {
-        rowCounters[k].reset(); // CRITICAL: Clear the memory
-    }
-
-    // 2. INVERT THE LOOPS: Channels (i) is outside, Width (k) is inside.
-    for (hsize_t i = c_start; i < c_end; i++) {
+    // calculte statistics in Z (frequency) direction separately for every pixel in time (width,height) image (channel image).
+    Stats* statsZ_ptr = &statsZ;
+    // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
+    // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
+    #pragma omp parallel for default(none) shared(height, width, depth, standardCube, statsZ_ptr, c_start, c_end, image_size)
+    for (hsize_t j = 0; j < height; j++) {
         
-        // Pre-calculate the base memory offset for this specific row and channel
-        hsize_t row_base_index = (width * j) + image_size * (i - c_start);
-
-        // 3. Sequential memory access: k increments by exactly 1 in memory.
-        // The #pragma omp simd hint allows the compiler to vectorize this loop (AVX/SSE).
-        #pragma omp simd 
+        // 1. Allocate a local array of StatsCounters for this specific row.
+        // This buffer is small enough to fit perfectly in the CPU L1/L2 cache.
+        std::vector<StatsCounter> rowCounters(width);
         for (hsize_t k = 0; k < width; k++) {
-            auto& val = standardCube[row_base_index + k];
+            rowCounters[k].reset(); // CRITICAL: Clear the memory
+        }
 
-            if (std::isfinite(val)) {
-                rowCounters[k].accumulateFinite(val);
-            } else {
-                rowCounters[k].accumulateNonFinite();
+        // 2. INVERT THE LOOPS: Channels (i) is outside, Width (k) is inside.
+        for (hsize_t i = c_start; i < c_end; i++) {
+            
+            // Pre-calculate the base memory offset for this specific row and channel
+            hsize_t row_base_index = (width * j) + image_size * (i - c_start);
+
+            // 3. Sequential memory access: k increments by exactly 1 in memory.
+            // The #pragma omp simd hint allows the compiler to vectorize this loop (AVX/SSE).
+            #pragma omp simd 
+            for (hsize_t k = 0; k < width; k++) {
+                auto& val = standardCube[row_base_index + k];
+
+                if (std::isfinite(val)) {
+                    rowCounters[k].accumulateFinite(val);
+                } else {
+                    rowCounters[k].accumulateNonFinite();
+                }
             }
+        }
+
+        // 4. Commit the fully accumulated row back to the global stats buffer.
+        // Because each thread owns a unique row 'j', writing back is 100% thread-safe.
+        for (hsize_t k = 0; k < width; k++) {
+            auto image_pixel_index = k + width * j;
+            statsZ_ptr->accumulateStatsFromCounter(image_pixel_index, rowCounters[k]);
         }
     }
 
-    // 4. Commit the fully accumulated row back to the global stats buffer.
-    // Because each thread owns a unique row 'j', writing back is 100% thread-safe.
-    for (hsize_t k = 0; k < width; k++) {
-        auto image_pixel_index = k + width * j;
-        statsZ_ptr->accumulateStatsFromCounter(image_pixel_index, rowCounters[k]);
-    }
-}
+    // write tile slice
+    DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+    TIMER(timer.start("Write"););
 
-// TODO : add saving rotated data to HDF5 file !!!
-   // write tile slice
-   DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
-   TIMER(timer.start("Write"););
+    auto swizzledMemDims = trimAxes({1, width, height, sliceIncrement}, N);
+    auto swizzledCount = trimAxes({1, width, height, sliceIncrement}, N);
+    auto swizzledStart = trimAxes({s, 0, 0, c_start}, N);
 
-   auto swizzledMemDims = trimAxes({1, width, height, sliceIncrement}, N);
-   auto swizzledCount = trimAxes({1, width, height, sliceIncrement}, N);
-   auto swizzledStart = trimAxes({s, 0, 0, c_start}, N);
+    // start_io = std::chrono::high_resolution_clock::now();
+    writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
 
-   // start_io = std::chrono::high_resolution_clock::now();
-   writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
-
-   DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
-   // write Z statistics
-   // statsZ.write({height, width}, {1, height, width}, {s, 0, 0});
+    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+    // write Z statistics
+    // statsZ.write({height, width}, {1, height, width}, {s, 0, 0});
 
 
-   return -1.00;
+    return -1.00;
 }
 
 double SmartConverter::calculateRotatedData(double& total_io_ms)
