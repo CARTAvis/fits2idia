@@ -105,13 +105,56 @@ public:
     MemoryUsage calculateMemoryUsage() override;
     void setMemoryLimit(int _memoryLimitInMb){ memoryLimitInMb = _memoryLimitInMb; }
 
+    // flag to enable single pass through the data 
+    // XYZ (cube) histogram is calculated using channel histograms 
+    // which means it's approximate only, but this is "good enough" for the visualisation purposes
+    static bool bApproximateCubeHistogram;
+
 private:
     int memoryLimitInMb;
 
 protected:
     void copyAndCalculate() override;
+    
+    // optional second pass to calculate exect XYZ (cube) histogram:
     double doSecondPass( unsigned int s, double& total_io_ms );
+    
+    // calculates approximate XYZ (cube) histogram using channel histograms
+    // it is not exact, but good enough for visualisation purposes
     double calcApproxCubeHistogram( unsigned int s );
+    
+    // calculate Stats for channel (min/max etc):
+    // Parameters:
+    //     indexXY - channel (c)
+    //     block_pos - position of the block to be processed
+    //
+    // Return value:
+    //     execution time in milli-seconds
+    // TODO : check if I can simplify these parameters a bit more 
+    double calculateChannelStats( hsize_t indexXY, hsize_t block_pos );
+
+    // calculate channel histograms
+    // Parameters:
+    //     indexXY - channel (c)
+    //     block_pos - position of the block to be processed
+    //
+    // Return value:
+    //     execution time in milli-seconds
+    // TODO : check if I can simplify these parameters a bit more     
+    double calculateChannelHistogram( hsize_t indexXY, hsize_t block_pos );
+    
+    // calculate rotated dataset:
+    // Return value:
+    //     execution time in milli-seconds
+    // TODO : check if I can simplify these parameters a bit more     
+    double calculateRotatedData(double& total_io_ms);
+    
+    // calculate rotated channel:
+    // Return value:
+    //     execution time in milli-seconds
+    // TODO : check if I can simplify these parameters a bit more     
+    double calculateRotatedChannel( unsigned int s, hsize_t c_start, hsize_t c_end, float* standardCube, float* rotatedCube, int sliceIncrement );
+    
     void ReadRotateWriteFullDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
         hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement);
     void ReadRotateWritePartialDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,

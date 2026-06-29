@@ -25,7 +25,9 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
     if (depth > 1) {
         m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
         m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+
+//        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        m.sizes["Z stats"] = Stats::size({height, width});
     }
     
     for (auto& kv : m.sizes) {
@@ -52,7 +54,7 @@ void SmartConverter::copyAndCalculate() {
     double memoryLimitInBytes = double(memoryLimitInMb) * 1024.00 * 1024.00;
     double double_memoryLimitInBytes = double(memoryLimitInMb) * 1024.0 * 1024.0;
     double sliceSizeInPixels = height * width;
-    double memoryLimitInPixels = memoryLimitInBytes / sizeof(float);
+    double memoryLimitInPixels = memoryLimitInBytes / (2.0 * sizeof(float));
     std::cout << "DEBUG memoryLimitInMb = " << memoryLimitInMb << " -> memoryLimitInBytes = " << memoryLimitInBytes << " -> memoryLimitInPixels = " << memoryLimitInPixels << std::endl;
     std::cout << "DEBUG double_memoryLimitInBytes = " << double_memoryLimitInBytes << std::endl;
     double memoryLimitInSlices = std::ceil(memoryLimitInPixels / sliceSizeInPixels);
@@ -91,6 +93,7 @@ void SmartConverter::copyAndCalculate() {
     TIMER(timer.start("Allocate"););
     std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     standardCube = new float[height * width * sliceIncrement];    
+    rotatedCube = new float[height * width * sliceIncrement];
     
     // Allocate one stokes of stats at a time
     // statsXY.createBuffers({depth});
@@ -101,6 +104,9 @@ void SmartConverter::copyAndCalculate() {
 //        statsXYZ.createBuffers({}, depth);
         printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",height);
         statsXYZ.createBuffers({}, height);
+
+        // allocate other stats:
+        statsZ.createBuffers({height, width});
     }
 
     printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n",1,depth,height);    
@@ -159,6 +165,8 @@ void SmartConverter::copyAndCalculate() {
 
                 auto indexXY = c;
                 hsize_t block_pos = (c-c_start)* image_size; 
+                float* standardSlice = standardCube + block_pos;
+                float* rotatedSlice = rotatedCube + block_pos;
 
                 auto start1 = std::chrono::high_resolution_clock::now();
                 // calculate statistics in channel indexXY  
@@ -167,6 +175,9 @@ void SmartConverter::copyAndCalculate() {
 
                 // calculate channel histograms:
                 calculateChannelHistogram(indexXY, block_pos);
+
+                // rotate channel:
+                // calculateRotatedChannel(s, c_start, c_end, standardCube, rotatedCube, sliceIncrement);
             
                 // Accumulate XYZ statistics
                 if (depth > 1) {
@@ -194,12 +205,22 @@ void SmartConverter::copyAndCalculate() {
                 mipMaps.resetBuffers();
             
             } // end of first channel loop
+
+            // rotate channel:
+            // has to be outside the loop !!!
+            calculateRotatedChannel(s, c_start, c_end, standardCube, rotatedCube, sliceIncrement);
         } // end of loop over blocks
 
         // write channel stats to HDF5 files:
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats" << std::endl);
         statsXY.write({1, depth}, {s, 0});
+
+        // ADD THESE LINES: Write finalized Z-stats to disk
+        if (depth > 1) {
+            DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+            statsZ.write({height, width}, {1, height, width}, {s, 0, 0});
+        }
 
 
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
@@ -255,16 +276,17 @@ void SmartConverter::copyAndCalculate() {
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
     TIMER(timer.start("Free"););
     
-    delete[] standardCube;
+    delete [] standardCube;
+    delete [] rotatedCube;
 
 // STILL TODO :             
 // Rotation is performed on HDF5 file - seems to be easier this way, but there is still room for some optimisations / paralleisations:            
 // Probably rotation can also be done in the first loop, why not ?
     // Swizzle
-    if (depth > 1) {
-        double total_rotation_pass_processing_ms = calculateRotatedData(total_io_ms);
-        total_pureprocessing_ms += total_rotation_pass_processing_ms;
-    }
+//    if (depth > 1) {
+//        double total_rotation_pass_processing_ms = calculateRotatedData(total_io_ms);
+//        total_pureprocessing_ms += total_rotation_pass_processing_ms;
+//    }
     std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
     
@@ -273,6 +295,131 @@ void SmartConverter::copyAndCalculate() {
     std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
 }
 
+
+double SmartConverter::calculateRotatedChannel( unsigned int s, hsize_t c_start, hsize_t c_end, float* standardCube, float* rotatedCube, int sliceIncrement )
+{   
+   hsize_t image_size = width*height;
+// 1. Fast exit if no rotation is needed. 
+    // This removes the `if (depth > 1)` check from the innermost loop, saving millions of branch evaluations.
+    if (depth <= 1) {
+        return -1.00; 
+    }
+
+    // The rotation code below could be much simpler, but this version optimises CPU L2 cache usage to
+    // avoid large percentage of misses when writting into rotated data array.
+
+    const hsize_t n_channels = c_end - c_start;
+    
+    // 2. Tiling parameter. 16 or 32 are the sweet spots for L1 cache sizes with 32-bit floats.
+    const hsize_t BLOCK_SIZE = 16; 
+
+    // 3. Pre-calculate strides outside the loops to avoid redundant multiplications
+    const size_t src_z_stride  = width * height;
+    const size_t src_y_stride  = width;
+    
+    const size_t dest_x_stride = height * sliceIncrement;
+    const size_t dest_y_stride = sliceIncrement;
+
+    // 4. Collapse the outer block loops so OpenMP has a rich pool of independent tasks
+    #pragma omp parallel for collapse(3) schedule(dynamic)
+    for (hsize_t i0 = 0; i0 < n_channels; i0 += BLOCK_SIZE) {
+        for (hsize_t j0 = 0; j0 < height; j0 += BLOCK_SIZE) {
+            for (hsize_t k0 = 0; k0 < width; k0 += BLOCK_SIZE) {
+                
+                // Calculate boundaries for the inner loops to prevent out-of-bounds segfaults
+                // if dimensions are not perfect multiples of BLOCK_SIZE.
+                hsize_t i_max = std::min(i0 + BLOCK_SIZE, n_channels);
+                hsize_t j_max = std::min(j0 + BLOCK_SIZE, height);
+                hsize_t k_max = std::min(k0 + BLOCK_SIZE, width);
+
+                // --- Cache-Hot Inner Loops ---
+                // These loops process exactly one BLOCK_SIZE^3 volume of data.
+                for (hsize_t i = i0; i < i_max; ++i) {
+                    for (hsize_t j = j0; j < j_max; ++j) {
+                        
+                        // Precompute invariant base indices for this specific (i, j)
+                        size_t dest_base_idx = i + dest_y_stride * j;
+                        size_t src_base_idx  = i * src_z_stride + j * src_y_stride;
+
+                        // Hint to the compiler to vectorize this innermost loop (AVX/SSE)
+                        #pragma omp simd
+                        for (hsize_t k = k0; k < k_max; ++k) {
+                            
+                            size_t destIndex = dest_base_idx + dest_x_stride * k;
+                            size_t srcIndex  = src_base_idx + k;
+                            
+                            rotatedCube[destIndex] = standardCube[srcIndex];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // calculte statistics in Z (frequency) direction separately for every pixel in time (width,height) image (channel image).
+    Stats* statsZ_ptr = &statsZ;
+    // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
+    // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
+    #pragma omp parallel for default(none) shared(height, width, depth, standardCube, statsZ_ptr, c_start, c_end, image_size)
+    for (hsize_t j = 0; j < height; j++) {
+        
+        // 1. Allocate a local array of StatsCounters for this specific row.
+        // This buffer is small enough to fit perfectly in the CPU L1/L2 cache.
+        std::vector<StatsCounter> rowCounters(width);
+        for (hsize_t k = 0; k < width; k++) {
+            rowCounters[k].reset(); // CRITICAL: Clear the memory
+        }
+
+        // 2. INVERT THE LOOPS: Channels (i) is outside, Width (k) is inside.
+        for (hsize_t i = c_start; i < c_end; i++) {
+            
+            // Pre-calculate the base memory offset for this specific row and channel
+            hsize_t row_base_index = (width * j) + image_size * (i - c_start);
+
+            // 3. Sequential memory access: k increments by exactly 1 in memory.
+            // The #pragma omp simd hint allows the compiler to vectorize this loop (AVX/SSE).
+            #pragma omp simd 
+            for (hsize_t k = 0; k < width; k++) {
+                auto& val = standardCube[row_base_index + k];
+
+                if (std::isfinite(val)) {
+                    rowCounters[k].accumulateFinite(val);
+                } else {
+                    rowCounters[k].accumulateNonFinite();
+                }
+            }
+        }
+
+        // 4. Commit the fully accumulated row back to the global stats buffer.
+        // Because each thread owns a unique row 'j', writing back is 100% thread-safe.
+        for (hsize_t k = 0; k < width; k++) {
+            auto image_pixel_index = k + width * j;
+            statsZ_ptr->accumulateStatsFromCounter(image_pixel_index, rowCounters[k]);
+        }
+    }
+
+    // write tile slice
+    DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+    TIMER(timer.start("Write"););
+
+/*    auto swizzledMemDims = trimAxes({1, width, height, sliceIncrement}, N);
+    auto swizzledCount = trimAxes({1, width, height, sliceIncrement}, N);
+    auto swizzledStart = trimAxes({s, 0, 0, c_start}, N);*/ 
+
+    auto swizzledMemDims = trimAxes({1, width, height, n_channels}, N);
+    auto swizzledCount   = trimAxes({1, width, height, n_channels}, N);
+    auto swizzledStart   = trimAxes({s, 0, 0, c_start}, N);
+
+    // start_io = std::chrono::high_resolution_clock::now();
+    writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
+
+    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+    // write Z statistics
+    // statsZ.write({height, width}, {1, height, width}, {s, 0, 0});
+
+
+    return -1.00;
+}
 
 double SmartConverter::calculateRotatedData(double& total_io_ms)
 {
@@ -865,7 +1012,7 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
       }
       printf("DEBUG : totalBinCountMerged = %.8f\n",totalBinCountMerged);
 
-      delete histogram_XYZ;
+      delete [] histogram_XYZ;
    }
    auto end1 = std::chrono::high_resolution_clock::now();
    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
