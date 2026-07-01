@@ -208,13 +208,14 @@ int checkMemory(Converter* converter, hsize_t memoryLimit, bool auto_mode ) {
                 std::cout << "SUCCESS : reduced memory usage to " << predictedTotal * 1e-9 << "GB whcich is below the limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
                 ok = true;
              }
-        } else {
-            std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
-            std::cerr << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
+/*        } else {
+            std::cerr << "Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+            std::cerr << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;*/
         } 
               
         if( !ok ) {
-           std::cerr << "Error: approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB. Aborting." << std::endl;
+           std::cout << "WARNING : Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+           std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
            return 1;
         }
     }
