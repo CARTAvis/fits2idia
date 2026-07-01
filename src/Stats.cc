@@ -72,6 +72,14 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
 
 }
 
+void Stats::copyHistogramBuffers(const Stats& right) {
+   if (histogramBuffersAllocated) {
+        auto statsSize = product(fullBasicBufferDims);
+        memcpy(histograms, right.histograms, sizeof(int64_t) * statsSize * numBins);
+        memcpy(partialHistograms, right.partialHistograms, sizeof(int64_t) * statsSize * numBins * partialHistMultiplier);
+    }
+}
+
 void Stats::clearHistogramBuffers() {
     if (histogramBuffersAllocated) {
         auto statsSize = product(fullBasicBufferDims);

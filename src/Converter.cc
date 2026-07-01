@@ -104,6 +104,13 @@ void Converter::SetChunkDivider( int divider ) {
    std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;
 }
 
+void Converter::getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width ) {
+   _stokes = stokes;
+   _depth  = depth;
+   _height = height;
+   _width  = width;
+}
+
 bool Converter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
    hsize_t predictedTotal = calculateMemoryUsage().total;
 

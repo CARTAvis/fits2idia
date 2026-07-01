@@ -41,6 +41,8 @@ public:
     
     void setIOBlocks( int _n_io_blocks ){ n_io_blocks = _n_io_blocks; }
     
+    void getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width );
+    
 protected:
     virtual void copyAndCalculate() = 0;
     

@@ -117,10 +117,26 @@ struct Stats {
     void clearHistogramBuffers();
     void clearPartialHistogramBuffer();
 
+    // copy histograms (e.g. channel histograms to cube histogram when DEPTH=1 (no frequency dimension))
+    void copyHistogramBuffers(const Stats& right);
+    
+    int64_t getBinCount(hsize_t offset, int binIndex) {
+        return histograms[offset * numBins + binIndex];
+    }
+    
+    void setBinCount(hsize_t offset, int binIndex, int64_t binCount) { 
+        histograms[offset * numBins + binIndex] = binCount;
+    }
+
     void accumulateHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
         histograms[offset * numBins + binIndex]++;
-    }
+    }        
+
+    void accumulateHistogram(float val, double min, double range, hsize_t offset, int64_t counts) {
+        int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
+        histograms[offset * numBins + binIndex] += counts;
+    }        
 
     void accumulatePartialHistogram(float val, double min, double range, hsize_t offset) {
         int binIndex = std::min(numBins - 1, (hsize_t)(numBins * (val - min) / range));
