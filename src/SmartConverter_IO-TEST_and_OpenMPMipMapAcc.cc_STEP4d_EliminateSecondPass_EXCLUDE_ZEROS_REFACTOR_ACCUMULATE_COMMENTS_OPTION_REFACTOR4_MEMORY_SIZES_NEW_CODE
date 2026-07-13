@@ -209,9 +209,13 @@ void SmartConverter::copyAndCalculate() {
             
             
                 // Write the mipmaps
+                auto start_io = std::chrono::high_resolution_clock::now();
                 DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
                 TIMER(timer.start("Write"););
                 mipMaps.write(s, c);
+                auto end_io = std::chrono::high_resolution_clock::now();
+                auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_io_ms += double(duration_io.count());
             
                 // Reset mipmaps before next channel
                 DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
