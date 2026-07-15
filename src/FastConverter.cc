@@ -34,6 +34,7 @@ MemoryUsage FastConverter::calculateMemoryUsage() {
 }
 
 void FastConverter::copyAndCalculate() {
+    auto start = std::chrono::high_resolution_clock::now();
     const hsize_t pixelProgressStride = std::max((hsize_t)1, (hsize_t)(width * height / 100));
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     
@@ -73,8 +74,8 @@ void FastConverter::copyAndCalculate() {
         PROGRESS("\tMain loop\t");
         TIMER(timer.start(timerLabelXYRotation););
 
-        // First loop calculates stats for each XY slice and rotates the dataset
-        
+        // First loop calculates stats for each XY slice and rotates the dataset        
+        auto start1 = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
@@ -116,6 +117,11 @@ void FastConverter::copyAndCalculate() {
             // Final correction of XY min and max
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
+        auto end1 = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        double duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass (rotation and statsXY): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+
         
         PROGRESS(std::endl);
 
@@ -125,6 +131,7 @@ void FastConverter::copyAndCalculate() {
             PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start("XYZ statistics"););
             
+            auto start1 = std::chrono::high_resolution_clock::now();
             StatsCounter counterXYZ;
 
             for (hsize_t i = 0; i < depth; i++) {
@@ -163,6 +170,11 @@ void FastConverter::copyAndCalculate() {
                     statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                 }
             }
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            double duration1_ms = double(duration1.count());
+            std::cout << "BENCHMARKING : total pure-processing time of 2nd pass (statsZ for all (X,Y) pixels): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+
 
             PROGRESS(std::endl);
         }
@@ -184,6 +196,8 @@ void FastConverter::copyAndCalculate() {
             cubeRange = cubeMax - cubeMin;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
+
+        start1 = std::chrono::high_resolution_clock::now();
         
         statsXY.clearHistogramBuffers();
         statsXYZ.clearHistogramBuffers();
@@ -236,12 +250,17 @@ void FastConverter::copyAndCalculate() {
                     cubeHistogramFunc(val);
                 }
             } // end of XY loop
-        } // end of parallel Z loop
+        } // end of parallel Z loop                
         
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             statsXYZ.consolidatePartialHistogram();
         }
+        
+        end1 = std::chrono::high_resolution_clock::now();
+        duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 3rd pass (channel and cube Histograms): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
         
         PROGRESS(std::endl);
 
@@ -276,7 +295,9 @@ void FastConverter::copyAndCalculate() {
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
         PROGRESS("\tMipmaps\t\t");
         TIMER(timer.start("Mipmaps"););
-        
+
+
+        start1 = std::chrono::high_resolution_clock::now();                 
 #pragma omp parallel for
         for (hsize_t c = 0; c < depth; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -294,6 +315,11 @@ void FastConverter::copyAndCalculate() {
         
         // Final mipmap calculation
         mipMaps.calculate();
+        
+        end1 = std::chrono::high_resolution_clock::now();
+        duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 4th pass (MipMaps accum and calc): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
         
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
@@ -320,4 +346,9 @@ void FastConverter::copyAndCalculate() {
     TIMER(timer.start("Free"););
     
     delete[] standardCube;
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double duration_ms = double(duration.count());
+    std::cout << "BENCHMARKING : entire processing: " << duration_ms << " milliseconds " << duration_ms/1000.00 << " seconds" << std::endl;
 }
