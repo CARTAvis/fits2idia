@@ -9,7 +9,7 @@
 // flag to enable single pass through the data 
 // XYZ (cube) histogram is calculated using channel histograms 
 // which means it's approximate only, but this is "good enough" for the visualisation purposes
-bool SmartConverter::bApproximateCubeHistogram = false;
+bool SmartConverter::bApproximateCubeHistogram = true;
 
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
  : Converter(inputFileName, outputFileName, progress, zMips)
@@ -134,7 +134,7 @@ void SmartConverter::copyAndCalculate() {
         
     if (depth > 1) {
         printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",depth);
-        statsXYZ.createBuffers({}, depth);
+        statsXYZ.createBuffers({}, height);
 //        statsXYZ.createBuffers({}, depth);
         statsZ.createBuffers({height, width});
     }
@@ -198,7 +198,7 @@ void SmartConverter::copyAndCalculate() {
                     
 //            for(hsize_t c = c_start; c < c_end; c++) {                 
 //            } // end of first channel loop
-        std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
+/*        std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
 #pragma omp parallel for
         for (hsize_t i = c_start; i < c_end; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
@@ -241,7 +241,69 @@ void SmartConverter::copyAndCalculate() {
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
         std::cout << "PROGRESS : after statsXY accumulation ..." << std::endl;
+*/
+
+std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
+#pragma omp parallel for
+        for (hsize_t i = c_start; i < c_end; i++) {
+            PROGRESS_DECIMATED(i, channelProgressStride, "|");
+            
+            StatsCounter counterXY;
+            counterXY.reset(); // CRITICAL: Clear dirty thread-stack memory
+            
+            for (hsize_t j = 0; j < height; j++) {
+                for (hsize_t k = 0; k < width; k++) {
+                    auto sourceIndex = k + width * j + (height * width) * (i - c_start);
+                    auto destIndex = (i-c_start) + sliceIncrement * j + (height * sliceIncrement) * k;
+                    auto& val = standardCube[sourceIndex];
+                    
+                    if (depth > 1) {
+                        rotatedCube[destIndex] = val;
+                    }
+                    
+                    // Accumulate XY stats matching the OLD code exactly
+                    if (std::isfinite(val)) {
+                        counterXY.accumulateFinite(val);
+                    } else {
+                        counterXY.accumulateNonFinite();
+                    }
+                }
+            }
+            
+            // Final correction of XY min and max
+            statsXY.copyStatsFromCounter(i, height * width, counterXY);
+        }
+        std::cout << "PROGRESS : after statsXY accumulation ..." << std::endl;
         PROGRESS(std::endl);
+
+        // -------------------------------------------------------------
+        // ADD THIS: Accumulate Z statistics for the current block
+        // -------------------------------------------------------------
+        if (depth > 1) {
+            DEBUG(std::cout << " Z statistics accumulation for block..." << std::flush;);
+            
+            #pragma omp parallel for
+            for (hsize_t j = 0; j < height; j++) {
+                for (hsize_t k = 0; k < width; k++) {
+                    auto indexZ = k + j * width;
+                    
+                    // Fetch the persistent counter for this specific spatial pixel
+                    auto& counterZ = globalCountersZ[indexZ];
+                    
+                    for (hsize_t i = c_start; i < c_end; i++) {
+                        auto sourceIndex = k + width * j + (height * width) * (i - c_start);
+                        auto& val = standardCube[sourceIndex];
+
+                        if (std::isfinite(val)) {
+                            // Not lazy; running exact accumulation along the Z depth
+                            counterZ.accumulateFinite(val);
+                        } else {
+                            counterZ.accumulateNonFinite();
+                        }
+                    }
+                }
+            }
+        }
 
 
         // NEW CODE:
@@ -347,12 +409,12 @@ void SmartConverter::copyAndCalculate() {
         mipMaps.write(currentStokes, c_start);        
         
         // Write the statistics                
-        statsXY.write({1, depth}, {currentStokes, 0});
+//        statsXY.write({1, depth}, {currentStokes, 0});
         
-        if (depth > 1) {
-            statsXYZ.write({1}, {currentStokes});
-            statsZ.write({1, height, width}, {currentStokes, 0, 0});
-        }
+//        if (depth > 1) {
+//            statsXYZ.write({1}, {currentStokes});
+//            statsZ.write({1, height, width}, {currentStokes, 0, 0});
+//        }
                 
         // Clear the mipmaps before the next BLOCK (not Stokes)
         TIMER(timer.start("Mipmaps"););
@@ -391,7 +453,7 @@ void SmartConverter::copyAndCalculate() {
             } else {
                // calculate exect cube histogram by doing second pass 
                // thought the data (slower)
-               total_second_pass_processing_ms = doSecondPass(s, total_io_ms);
+               total_second_pass_processing_ms = doSecondPass(s, n_blocks, sliceIncrement, leftOverSlices, total_io_ms);
             }
 
             auto end2 = std::chrono::high_resolution_clock::now();
@@ -701,7 +763,7 @@ double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos
    return duration1.count();
 }
 
-double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block_pos )
+/*double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block_pos )
 {
    auto start1 = std::chrono::high_resolution_clock::now();
 
@@ -752,55 +814,58 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
    std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
 
    return duration1.count();
-}
+}*/
 
 
 
-double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
+double SmartConverter::doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms )
 {
-        const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+    const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
+    
+    hsize_t cubeSize = height * width;
+    double cubeMin;
+    double cubeMax;
+    double cubeRange;
+    double cubeBinWidth;
+    bool cubeHist(false);
 
-        hsize_t cubeSize = height * width;
-        double cubeMin;
-        double cubeMax;
-        double cubeRange;
-        double cubeBinWidth;
-        bool cubeHist(false);
-  
-        if (depth > 1) {
-            cubeMin = statsXYZ.minVals[0];
-            cubeMax = statsXYZ.maxVals[0];
-            cubeRange = cubeMax - cubeMin;
-            cubeBinWidth = cubeRange / numBins;
-            cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
+    if (depth > 1) {
+        cubeMin = statsXYZ.minVals[0];
+        cubeMax = statsXYZ.maxVals[0];
+        cubeRange = cubeMax - cubeMin;
+        cubeBinWidth = cubeRange / numBins;
+        cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
+    }
 
-// compare to using channel min/max 
-            double cubeMinTest = statsXY.minVals[0];
-            double cubeMaxTest = statsXY.maxVals[0];
-            for(hsize_t c = 1; c < depth; c++ ) {
-               if ( statsXY.minVals[c] < cubeMinTest ) {
-                  cubeMinTest = statsXY.minVals[c];
-               }
-               if ( statsXY.maxVals[c] > cubeMaxTest ) {
-                  cubeMaxTest = statsXY.maxVals[c];
-               }
-             
-            }
-            printf("DEBUG : cubeMin = %.8f vs. cubeMinTest = %.8f\n",cubeMin,cubeMinTest);
-            printf("DEBUG : cubeMax = %.8f vs. cubeMaxTest = %.8f\n",cubeMax,cubeMaxTest);
-        } else {
-            // TODO : copy histogram from channel histogram !
+    if(!cubeHist) {
+       return -1;
+    }        
+
+    statsXYZ.clearHistogramBuffers();
+    double total_second_pass_processing_ms = 0.00;
+    auto start1 = std::chrono::high_resolution_clock::now();
+
+    // Loop through blocks forward-aligned to memory layout
+    for (int block = 0; block < n_blocks; block++) {
+        hsize_t c_start = block * sliceIncrement;
+        hsize_t c_end   = c_start + sliceIncrement;
+        if (block == (n_blocks - 1) && leftOverSlices > 0) {
+           c_end = c_start + leftOverSlices;                
         }
+        hsize_t n_channels = (c_end - c_start);
+        hsize_t block_size = n_channels * height * width;
 
-        DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
+        // Read the block into standardCube
+        TIMER(timer.start("Read"););
+        auto start_io = std::chrono::high_resolution_clock::now();
+        readFitsData(inputFilePtr, c_start, s, block_size, standardCube, swapStokesFreqAxis);
+        auto end_io = std::chrono::high_resolution_clock::now();
+        total_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
 
-        if(!cubeHist) {
-           return -1;
-        }        
+        TIMER(timer.start("Histograms"););
 
-        double total_second_pass_processing_ms = 0.00;
-        for (hsize_t c = depth; c-- > 0; ) {
-            DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
+        // Process each channel present in this current block
+        for (hsize_t c = c_start; c < c_end; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
                             
             double chanMin = statsXY.minVals[c];
@@ -809,86 +874,45 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
 
             if(!chanHist){
-               printf("DEBUG (SmartConverter::doSecondPass) : channel = %ld skipped (chanMin = %.8f, chanMax = %.8f,, chanRange = %.8f)\n",(long int)c,chanMin,chanMax,chanRange);
                continue;
             }
             
             auto doCubeHistogram = [&] (float val, hsize_t offset) {
-                // XYZ histogram
                 statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
             };
-            
-            auto doNothing = [&] (float val) {
-                UNUSED(val);
-            };
-            
-            auto doNothingOffset = [&] (float val, hsize_t offset) {
-                UNUSED(val);
-            };
-            
-            std::function<void(float,hsize_t)> cubeHistogramFunc = doCubeHistogram;
-           
-            if (!cubeHist) {
-                cubeHistogramFunc = doNothingOffset;
-            }
 
-            // read one channel
-            DEBUG(std::cout << " Reading main dataset..." << std::flush;);
-            TIMER(timer.start("Read"););
-            
-            auto start_io = std::chrono::high_resolution_clock::now();
-            std::cout << "DEBUG : reading from c = " << c << " cubeSize = " << cubeSize << std::endl;
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
-            auto end_io = std::chrono::high_resolution_clock::now();
-            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
-            std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
-
-
-            DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
-            TIMER(timer.start("Histograms"););
-            
-            auto start1 = std::chrono::high_resolution_clock::now();
+            // Parallel loop over image height matching template design
             hsize_t y;            
-#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc)
+#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, doCubeHistogram, c, c_start, cubeMin, cubeRange)
             for (y = 0; y < height; y++) {
-                auto y_width = y * width;                
+                hsize_t channel_offset = (c - c_start) * height * width;
+                auto y_width = channel_offset + y * width;                
+                
                 for (hsize_t x = 0; x < width; x++) {
                     auto pos = y_width + x;
                     auto& val = standardCube[pos];
                     if (std::isfinite(val)) {
-                        // channelHistogramFunc(val, y); // filling channel histograms for y 
-                        cubeHistogramFunc(val, y);
+                        doCubeHistogram(val, y);
                     }
                 }
-            } // end of XY loop
-            // statsXY.consolidateAndClearPartialHistogram(c);
+            }
+            // Consolidate partial row histogram into the global statsXYZ buffer
             statsXYZ.consolidateAndClearPartialHistogram(0);
+        } // end of channels in block
+    } // end of blocks loop
 
-            
-            auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
-            total_second_pass_processing_ms += double(duration1.count());
-            
-            std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
-        } // end of second channel loop (XY and XYZ histograms)
+    auto end1 = std::chrono::high_resolution_clock::now();
+    total_second_pass_processing_ms = double(std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1).count());
 
-        long int totalBinCount=0;
-        for(size_t b = 0; b < numBins; ++b) {
-           // WARNING : truncation of fractional parts is required here:
-           int64_t binCount = statsXYZ.getBinCount(0, b);
-           double binStart = cubeMin + (b * cubeBinWidth);
-           double binEnd   = binStart + cubeBinWidth;
+    long int totalBinCount = 0;
+    for(size_t b = 0; b < numBins; ++b) {
+       int64_t binCount = statsXYZ.getBinCount(0, b);
+       totalBinCount += binCount;
+    }
+    printf("Total exact bin count = %ld\n", (long int)totalBinCount);
 
-           printf("DEBUG : SmartConverter::doSecondPass : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,double(binCount),int64_t(binCount));
-           totalBinCount += binCount;
-         }
-         printf("Total bin count = %ld\n",(long int)totalBinCount);
-
-
-        return total_second_pass_processing_ms;
+    return total_second_pass_processing_ms;
 }
-
 
 double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
    printf("INFO : SmartConverter::calcApproxCubeHistogram\n");

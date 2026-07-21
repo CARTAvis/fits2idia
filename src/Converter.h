@@ -119,7 +119,10 @@ protected:
     void copyAndCalculate() override;
     
     // optional second pass to calculate exect XYZ (cube) histogram:
-    double doSecondPass( unsigned int s, double& total_io_ms );
+    // double doSecondPass( unsigned int s, double& total_io_ms );
+    
+    // SmartFastConverter.cc requires extra arguments:
+    double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
     
     // calculates approximate XYZ (cube) histogram using channel histograms
     // it is not exact, but good enough for visualisation purposes

@@ -263,7 +263,7 @@ void SmartConverter::copyAndCalculate() {
         } else {
            // calculate exect cube histogram by doing second pass 
            // thought the data (slower)
-           total_second_pass_processing_ms = doSecondPass(s, total_io_ms);
+           total_second_pass_processing_ms = doSecondPass(s, n_blocks, sliceIncrement, leftOverSlices, total_io_ms);
         }
 
         auto end2 = std::chrono::high_resolution_clock::now();
@@ -632,7 +632,7 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
 
 
 
-double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
+double SmartConverter::doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms )
 {
         const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
 
