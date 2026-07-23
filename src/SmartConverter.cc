@@ -9,7 +9,7 @@
 // flag to enable single pass through the data 
 // XYZ (cube) histogram is calculated using channel histograms 
 // which means it's approximate only, but this is "good enough" for the visualisation purposes
-bool SmartConverter::bApproximateCubeHistogram = true;
+bool SmartConverter::bApproximateCubeHistogram = false;
 
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
  : Converter(inputFileName, outputFileName, progress, zMips)

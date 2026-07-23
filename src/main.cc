@@ -31,13 +31,19 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
     << "-M\tSpecify memory limit in MB" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
-    << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl;
+    << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
+    << std::endl
+    << "Additional options specifying parameters of the convertion (e.g. allow for approximations):" << std::endl
+    << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:A")) != -1) {
         switch (opt) {
             case 'a':
                 auto_mode = true;
                 n_io_blocks = -1; // it will be automatically calculated based on memory limit
+                break;
+            case 'A':
+                SmartConverter::bApproximateCubeHistogram = true;
                 break;
             case 'B':
                 if (optarg) {
@@ -118,6 +124,15 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     return true;
 }
 
+void printOptions()
+{
+   std::cout << "##########################################" << std::endl;
+   std::cout << "PARAMETERS:" << std::endl;
+   std::cout << "Approximations:" << std::endl;
+   std::cout << "\tApproxumate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
+   std::cout << "##########################################" << std::endl;
+}
+
 int checkMemoryUsage( Converter* converter, int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
 
 int main(int argc, char** argv) {
@@ -135,6 +150,8 @@ int main(int argc, char** argv) {
     if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart,  progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks)) {
         return 1;
     }
+    
+    printOptions();
 
     if (slow && zMips){
         std::cerr << "Currently unable to include depth in mipmap calculation for -s mode." << std::endl;
