@@ -9,7 +9,23 @@
 #include <sstream>
 #include "Converter.h"
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, bool& progress, bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks) {
+eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
+   char first_char[2];
+   first_char[0] = smartconverter_type[0];
+   first_char[1] = '\0';
+
+   if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
+      return eSmartConverterSpatialParallel;
+   }
+   if (strcasecmp(smartconverter_type,"frequency") || strcasecmp(smartconverter_type,"channel") || strcasecmp(smartconverter_type,"fast") ||
+       strcasecmp(first_char,"f")==0 || strcasecmp(first_char,"c")==0) {
+      return eSmartConverterChannelParallel;
+   }
+   return eAutoSelectedSmartConverter;
+}
+
+bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, eSmartConverterType& smartconverter_type, bool& progress, 
+                bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks) {
     extern int optind;
     extern char *optarg;
     
@@ -26,6 +42,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel' or 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
@@ -36,7 +53,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Additional options specifying parameters of the convertion (e.g. allow for approximations):" << std::endl
     << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:A")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:AT:")) != -1) {
         switch (opt) {
             case 'a':
                 auto_mode = true;
@@ -77,6 +94,11 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'M':
                 if (optarg) {
                     memoryLimitInMb = atof(optarg);   
+                }
+                break;
+            case 'T':
+                if (optarg) {
+                   smartconverter_type = parse_smartconverter_type(optarg);   
                 }
                 break;
             case 'z':
@@ -146,8 +168,9 @@ int main(int argc, char** argv) {
     bool zMips(false);
     int memoryLimitInMb(0);
     int n_io_blocks(1);
+    eSmartConverterType smartconverter_type(eAutoSelectedSmartConverter);
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart,  progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks)) {
         return 1;
     }
     
@@ -183,7 +206,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, progress, zMips, memoryLimitInMb);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, smartconverter_type, progress, zMips, memoryLimitInMb);
         
         if (n_io_blocks>1) {
            converter->setIOBlocks(n_io_blocks);

@@ -12,6 +12,8 @@
 #include "Timer.h"
 #include "Util.h"
 
+enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2 };
+
 struct MemoryUsage {
     MemoryUsage() : total(0) {}
     
@@ -26,7 +28,7 @@ public:
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     virtual ~Converter();
     
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb);
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb);
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;

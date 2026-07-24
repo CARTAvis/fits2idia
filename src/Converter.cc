@@ -62,13 +62,24 @@ Converter::~Converter() {
     closeFitsFile(inputFilePtr);
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, bool progress, bool zMips, int memoryLimitInMb) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb) {
     if (slow) {
         std::cout << "DEBUG : using SlowConverter object" << std::endl;
         return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
      } else if (smart) { // was also && memoryLimitInMb > 0
         std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << std::endl;
-        SmartConverter* ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+        SmartConverter* ptr = NULL;
+        if (smarttype == eAutoSelectedSmartConverter ) {
+           // TODO : automatically select algorithms based on data dimensions etc. Currently just using the default one:
+           //        Looks like it will be tricky here as these dimentions are not yet known so this decision/call may need to be moved elsewhere.
+           ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+        } else {
+            if (smarttype == eSmartConverterChannelParallel) {
+                ptr = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
+            } else {
+                ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+            }
+        }
         ptr->setMemoryLimit(memoryLimitInMb);
         std::unique_ptr<Converter> pSmartConverter(ptr);
         return pSmartConverter;
