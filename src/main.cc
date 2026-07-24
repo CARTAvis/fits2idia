@@ -206,7 +206,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, smartconverter_type, progress, zMips, memoryLimitInMb);
+        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, smartconverter_type, progress, zMips, memoryLimitInMb, auto_mode);
         
         if (n_io_blocks>1) {
            converter->setIOBlocks(n_io_blocks);
