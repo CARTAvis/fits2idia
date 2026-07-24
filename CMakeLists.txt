@@ -53,6 +53,7 @@ set(SOURCE_FILES
     src/FastConverter.cc
     src/SlowConverter.cc
     src/SmartConverter.cc
+    src/SmartFastConverter.cc
     src/Util.cc)
 
 add_executable(fits2idia ${SOURCE_FILES})

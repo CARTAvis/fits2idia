@@ -789,7 +789,8 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
       auto addFractionalCount = [&] (int binIndex, float val) {
          histogram_XYZ[binIndex] += val;
       };
-        
+
+      long int totalBinCount = 0;        
       // 2. Iterate through every channel's histogram
       for (hsize_t c = 0; c < depth; ++c) {
          double chanMin = statsXY.minVals[c];
@@ -807,6 +808,7 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
          for (size_t b = 0; b < numBins; ++b) {
             // NOTE: You will need to expose or access the actual histogram array from statsXY here
             uint64_t binCount = statsXY.getBinCount(c, b); 
+            totalBinCount += binCount;
             printf("DEBUG: c = %d, b = %d -> binCount = %d\n",int(c),int(b),int(binCount));
                 
             if (binCount > 0) {
@@ -815,7 +817,7 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
 
                // 4. Map the center value to the corresponding bin in the global cube histogram
                // Note: You will need to write a method like addCountToHistogram that takes a weight/count
-               // statsXYZ.addCountToHistogram(binCenterValue, cubeMin, cubeRange, binCount); 
+               // statsXYZ.accumulateHistogram(binCenterValue, cubeMin, cubeRange, 0, binCount); 
 
                // 1. Define the exact boundaries of the source (channel) bin
                double srcStart = chanMin + (b * chanBinWidth);
@@ -857,15 +859,21 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
             }
         }
       }
+      printf("DEBUG : totalBinCount Pre-merged = %ld\n",totalBinCount);
 
       // TODO : copy from histogram_XYZ -> statsXYZ.histograms 
+      double totalBinCountMerged = 0.00;
       for(size_t b = 0; b < numBins; ++b) {
          // WARNING : truncation of fractional parts is required here:
          double binStart = cubeMin + (b * cubeBinWidth);
          double binEnd   = binStart + cubeBinWidth;
-         printf("DEBUG : calcApproxCubeHistogram : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,histogram_XYZ[b],int64_t(histogram_XYZ[b]));
-         statsXYZ.setBinCount(0, b, int64_t(histogram_XYZ[b]));
+         int64_t finalBinValue = int64_t(round(histogram_XYZ[b]));
+         printf("DEBUG : calcApproxCubeHistogram : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,histogram_XYZ[b],(long int)finalBinValue);
+         statsXYZ.setBinCount(0, b, finalBinValue);
+
+         totalBinCountMerged += histogram_XYZ[b];
       }
+      printf("DEBUG : totalBinCountMerged = %.8f\n",totalBinCountMerged);
 
       delete histogram_XYZ;
    }

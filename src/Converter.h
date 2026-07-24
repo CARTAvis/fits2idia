@@ -112,17 +112,16 @@ public:
     // which means it's approximate only, but this is "good enough" for the visualisation purposes
     static bool bApproximateCubeHistogram;
 
-private:
-    int memoryLimitInMb;
-
 protected:
+    int memoryLimitInMb;
+ 
     void copyAndCalculate() override;
     
     // optional second pass to calculate exect XYZ (cube) histogram:
     // double doSecondPass( unsigned int s, double& total_io_ms );
     
     // SmartFastConverter.cc requires extra arguments:
-    double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
+    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
     
     // calculates approximate XYZ (cube) histogram using channel histograms
     // it is not exact, but good enough for visualisation purposes
@@ -165,6 +164,19 @@ protected:
     void ReadRotateWritePartialDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
         hsize_t zStart, hsize_t xLimit, hsize_t yLimit, hsize_t zLimit, hsize_t xIncrement, hsize_t yIncrement, hsize_t zIncrement);
 };
+
+class SmartFastConverter : public SmartConverter {
+public:
+    SmartFastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    MemoryUsage calculateMemoryUsage() override;
+    
+protected:
+    void copyAndCalculate() override;
+
+    // SmartFastConverter.cc requires extra arguments:
+    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms ) override;
+};    
+
 
 
 class SlowConverter : public Converter {

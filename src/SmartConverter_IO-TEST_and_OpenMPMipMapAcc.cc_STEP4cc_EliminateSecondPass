@@ -121,6 +121,8 @@ void SmartConverter::copyAndCalculate() {
         StatsCounter counterXYZ;
         
         double total_first_pass_processing_ms = 0.00;
+        long int totalChannelBinCountXY = 0, totalChannelNaNCountXY = 0, totalBrutalChannelCounter = 0, totalBrutalChannelCounter2 = 0;
+
         for (hsize_t block = 0; block < n_blocks; block++ ) {
             hsize_t c_start = block*sliceIncrement;
             hsize_t c_end   = c_start + sliceIncrement;
@@ -153,7 +155,6 @@ void SmartConverter::copyAndCalculate() {
 
 
             
-        
         for(hsize_t c = c_start; c < c_end; c++) {                 
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
@@ -184,6 +185,14 @@ void SmartConverter::copyAndCalculate() {
             
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t block_pos = (c-c_start)* image_size; 
+
+// just a test :
+            for (hsize_t yy = 0; yy < height; yy++) {
+                for (hsize_t xx = 0; xx < width; xx++) { 
+                    totalBrutalChannelCounter++;
+                }
+            }
+            totalBrutalChannelCounter2 += height*width;
 
 // 1. Start the parallel region. 
 // standardDims, tileDims, and zMips must now be passed in as shared!
@@ -274,7 +283,7 @@ void SmartConverter::copyAndCalculate() {
                for (int p=0;p<portions;p++) {
                    auto start_y = (p*height_chunk);
                    auto end_y   = (p+1)*height_chunk;
-#pragma omp parallel for default(none) private(y) shared(standardCube, start_y, end_y, height, width, doChannelHistogram, block_pos)
+#pragma omp parallel for default(none) private(y) shared(standardCube, start_y, end_y, height, width, doChannelHistogram, block_pos, totalChannelBinCountXY, totalChannelNaNCountXY)
                    for (y = start_y; y < end_y; y++) {
                        auto y_width = block_pos + y * width;
                        for (hsize_t x = 0; x < width; x++) {
@@ -282,6 +291,11 @@ void SmartConverter::copyAndCalculate() {
                            auto& val = standardCube[pos];
                            if (std::isfinite(val)) {
                                doChannelHistogram(val, y - start_y); // filling channel histograms for y 
+#pragma omp critical 
+                               totalChannelBinCountXY++;
+                           }else{
+#pragma omp critical 
+                               totalChannelNaNCountXY++;
                            }
                        }
                    } // end of XY loop
@@ -327,6 +341,7 @@ void SmartConverter::copyAndCalculate() {
         statsXY.write({1, depth}, {s, 0});
 
 
+        printf("DEBUG : totalChannelBinCountXY = %ld, totalChannelNaNCountXY = %ld,  totalBrutalChannelCounter = %ld vs %ld\n",totalChannelBinCountXY,totalChannelNaNCountXY,totalBrutalChannelCounter,totalBrutalChannelCounter2);
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += total_first_pass_processing_ms;
         
@@ -351,7 +366,7 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
         
-        statsXY.clearHistogramBuffers();
+//        statsXY.clearHistogramBuffers();
         statsXYZ.clearHistogramBuffers();
 
         auto start2 = std::chrono::high_resolution_clock::now();        
@@ -657,10 +672,26 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
            return -1;
         }        
 
+        long int totalBinCountXY = 0;
+        long int totalBinCountTest = 0, totalNaNCountTest = 0, totalBrutalBinCountTest = 0, totalBrutalBinCountTest2 = 0;
         double total_second_pass_processing_ms = 0.00;
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
+
+            for (size_t b = 0; b < numBins; ++b) {
+               // NOTE: You will need to expose or access the actual histogram array from statsXY here
+               uint64_t binCount = statsXY.getBinCount(c, b); 
+               totalBinCountXY += binCount;
+            }
+
+            for (hsize_t yy = 0; yy < height; yy++) {
+                for (hsize_t xx = 0; xx < width; xx++) {
+                     totalBrutalBinCountTest++;
+                }
+            }
+            totalBrutalBinCountTest2 += (width*height);
+
                             
 //            if (!cubeHist) {
 //                continue;
@@ -669,6 +700,7 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             auto doCubeHistogram = [&] (float val, hsize_t offset) {
                 // XYZ histogram
                 statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
+//                totalBinCountTest++;
             };
             
             auto doNothing = [&] (float val) {
@@ -703,7 +735,7 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             
             auto start1 = std::chrono::high_resolution_clock::now();
             hsize_t y;            
-#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc)
+#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, cubeHistogramFunc, totalBinCountTest, totalNaNCountTest)
             for (y = 0; y < height; y++) {
                 auto y_width = y * width;                
                 for (hsize_t x = 0; x < width; x++) {
@@ -712,6 +744,15 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
                     if (std::isfinite(val)) {
                         // channelHistogramFunc(val, y); // filling channel histograms for y 
                         cubeHistogramFunc(val, y);
+#pragma omp critical
+{
+                        totalBinCountTest++;
+}
+                    }else{
+#pragma omp critical
+{
+                        totalNaNCountTest++;
+}
                     }
                 }
             } // end of XY loop
@@ -725,15 +766,20 @@ double SmartConverter::doSecondPass( unsigned int s, double& total_io_ms )
             
             std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
+        printf("DEBUG : totalBinCountXY (OLD CODE) = %ld\n",totalBinCountXY);
+        printf("DEBUG : totalBinCountTest (OLD CODE) = %ld , totalNaNCountTest = %ld, totalBrutalBinCountTest = %ld vs %ld\n",totalBinCountTest,totalNaNCountTest,totalBrutalBinCountTest,totalBrutalBinCountTest2);
 
+        long int totalBinCount=0;
         for(size_t b = 0; b < numBins; ++b) {
            // WARNING : truncation of fractional parts is required here:
            int64_t binCount = statsXYZ.getBinCount(0, b);
            double binStart = cubeMin + (b * cubeBinWidth);
            double binEnd   = binStart + cubeBinWidth;
 
-           printf("DEBUG : SmartConverter::doSecondPass : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,float(binCount),int64_t(binCount));
+           printf("DEBUG : SmartConverter::doSecondPass : N(%d, %.6f - %.6f) = %.6f -> %ld\n",int(b),binStart,binEnd,double(binCount),int64_t(binCount));
+           totalBinCount += binCount;
          }
+         printf("Total bin count = %ld\n",(long int)totalBinCount);
 
         return total_second_pass_processing_ms;
 }
