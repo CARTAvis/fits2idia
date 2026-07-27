@@ -16,8 +16,7 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
     m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
-    // m.sizes["XY stats"] = Stats::size({depth}, numBins, height_chunk); // height added - has to agree with statsXY.createBuffers({depth}, height);
-    m.sizes["XY stats"] = Stats::size({depth}, numBins);
+    m.sizes["XY stats"] = Stats::size({depth}, numBins); // no height_chunk in this version paralellising over channels
 
     if (depth > 1) {
        m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
@@ -29,7 +28,6 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
     }
        
     std::cout << "MEMORY used in 1st pass = " << total_pass1 << " bytes, " << total_pass1 * 1e-9 << " GB " << std::endl;
-//    std::cout << "DEBUG : height_chunk = " << height_chunk << " -> Memory(XY stats) = " << m.sizes["XY stats"] * 1e-9 << " GB " << std::endl;
     //----------------------------------------------- end of 1st pass -----------------------------------------------
 
     // second pass :    
@@ -45,15 +43,6 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
 
     m.total = std::max(total_pass1, total_pass2);
     std::cout << "MEMORY peak usage = " << m.total << " bytes, " << m.total * 1e-9 << " GB " << std::endl;
-    
-//    for (auto& kv : m.sizes) {
-//        m.total += kv.second;
-//    }
-    
-//    if (depth > 1) {
-//        m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
-//        m.note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
-//    }
 
     return m;
 }
