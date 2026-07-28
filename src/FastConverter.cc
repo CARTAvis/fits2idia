@@ -55,6 +55,7 @@ void FastConverter::copyAndCalculate() {
     
     std::string timerLabelXYRotation = depth > 1 ? "XY statistics and rotation" : "XY statistics";
 
+    double total_io_ms = 0.00;
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
         PROGRESS("Stokes " << currentStokes << ":" << std::endl);
@@ -62,7 +63,14 @@ void FastConverter::copyAndCalculate() {
         // Read data into memory space
         TIMER(timer.start("Read"););
         DEBUG(std::cout << "+ Reading main dataset..." << std::flush;);
+        // measuring I/O :
+        auto start_io = std::chrono::high_resolution_clock::now();
         readFitsData(inputFilePtr, 0, currentStokes, cubeSize, standardCube, swapStokesFreqAxis);
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
+        std::cout << "I/O (readFitsData+writeHdf5Data) for Stokes : " << currentStokes << " took " << duration_io.count() << " milliseconds." << std::endl;
+
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
         if (depth > 1) {
@@ -340,6 +348,9 @@ void FastConverter::copyAndCalculate() {
         mipMaps.resetBuffers();
         
     } // end of Stokes loop
+    
+    // total I/O time:
+    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
