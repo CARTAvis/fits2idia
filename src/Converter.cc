@@ -5,7 +5,7 @@
 
 #include "Converter.h"
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), height_divider(1), n_io_blocks(1) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), n_io_blocks(1) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -25,7 +25,6 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
     }
     height = dims[1];
     width = dims[0];
-    SetChunkDivider(height_divider);
     
     swizzledName = N == 3 ? "ZYX" : "ZYXW";
     
@@ -112,13 +111,6 @@ void Converter::reportMemoryUsage() {
     std::cout << "MAX ALLOCATION:\t" << maxAllocationBytes * 1e-9 << "GB" << " required for " << maxAllocationDataset << std::endl;
 }
 
-void Converter::SetChunkDivider( int divider ) {
-   height_divider = divider;
-   height_chunk = height / divider;
-   
-   std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;
-}
-
 void Converter::getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width ) {
    _stokes = stokes;
    _depth  = depth;
@@ -127,31 +119,9 @@ void Converter::getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _heig
 }
 
 bool Converter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
-   hsize_t predictedTotal = calculateMemoryUsage().total;
-
-   std::vector<int> heigth_dividers;
-   getDividers(height, heigth_dividers);
-
-   int iter = 0;
-   while (iter < max_iter && predictedTotal>memoryLimit && iter < heigth_dividers.size()) {
-      int divider = heigth_dividers[iter];
-      std::cout << "DEBUG : testing divider = " << divider << std::endl;
-      SetChunkDivider( divider );
-      MemoryUsage memusage = calculateMemoryUsage();
-      predictedTotal = memusage.total;
-
-      if (predictedTotal <= memoryLimit ) {
-          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
-          return true;
-      } else {
-          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
-      }
-      iter++;
-   }
-   
+   std::cout << "ERROR : function is not implemented for this class" << std::endl;
    return false;
 }
-
 
 bool Converter::checkIfSwapAxisRequired() {
     int numAttributes;

@@ -58,13 +58,17 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     sumsSq = new double[statsSize];
     nanCounts = new int64_t[statsSize];
     buffersAllocated = true;
+
+    std::cout << "MEMORY (Stats::createBuffers): starting with total_bytes = " << total_bytes << " bytes." << std::endl;
     
     if (numBins) {
         histograms = new int64_t[statsSize * numBins];
         partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
         this->partialHistMultiplier = partialHistMultiplier;
         histogramBuffersAllocated = true;
-        total_bytes += (statsSize * numBins * partialHistMultiplier + statsSize*numBins)*sizeof(int64_t);
+        size_t histogram_bytes = (statsSize * numBins * partialHistMultiplier + statsSize*numBins)*sizeof(int64_t);
+        total_bytes += histogram_bytes;
+        std::cout << "MEMORY (Stats::createBuffers): adding " << histogram_bytes << " bytes for histograms" << std::endl;
     }    
     
     std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;

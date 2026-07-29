@@ -34,7 +34,7 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
     hsize_t total_pass2 = 0;
     if (depth > 1) {
         m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        m.sizes["Z stats"] = Stats::size({height, width});
 
         total_pass2 = m.sizes["Rotation"] + m.sizes["Z stats"];
     }
@@ -110,15 +110,17 @@ void SmartFastConverter::copyAndCalculate() {
     
     // Allocate one stokes of stats at a time
     // statsXY.createBuffers({depth});
-    printf("DEBUG : before statsXY.createBuffers({%llu})\n",depth);
+    std::cout << "DEBUG : before statsXY.createBuffers({" << depth << ")" << std::endl;
 //    statsXY.createBuffers({depth}, height_chunk);
     statsXY.createBuffers({depth});
         
     if (depth > 1) {
-        printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",depth);
+        std::cout << "DEBUG : before statsXYZ.createBuffers({}," << depth << ")" << std::endl;
         statsXYZ.createBuffers({}, height);
 //        statsXYZ.createBuffers({}, depth);
+        
         statsZ.createBuffers({height, width});
+        std::cout << "DEBUG : before statsZ.createBuffers({" << height << "," << width << "})" << std::endl;
     }
 
     // Change the depth from 1 to sliceIncrement
@@ -414,6 +416,8 @@ std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
                 statsXY.accumulateStatsToCounter(counterXYZ, i);
             }
             statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);
+            
+            std::cout << "DEBUG: copied statsXYZ from counter ..." << std::endl;
 
             // 2. Finalize Z-stats from persistent cross-block buffers
             #pragma omp parallel for
@@ -423,6 +427,7 @@ std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
                     statsZ.copyStatsFromCounter(indexZ, depth, globalCountersZ[indexZ]);
                 }
             }
+            std::cout << "DEBUG: copied statsZ from counter ..." << std::endl;
             
             // 3. Compute the approximate cube histogram using your built-in algorithm
             // This populates the statsXYZ histogram buffers BEFORE we write to disk.

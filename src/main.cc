@@ -151,7 +151,7 @@ void printOptions()
    std::cout << "##########################################" << std::endl;
    std::cout << "PARAMETERS:" << std::endl;
    std::cout << "Approximations:" << std::endl;
-   std::cout << "\tApproxumate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
+   std::cout << "\tApproximate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
    std::cout << "##########################################" << std::endl;
 }
 

@@ -6,15 +6,25 @@
 #include "Converter.h"
 #include <algorithm> // for std::min
 
+// 1. Conditionally include the OpenMP header at the top of your file
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
+
 // flag to enable single pass through the data 
 // XYZ (cube) histogram is calculated using channel histograms 
 // which means it's approximate only, but this is "good enough" for the visualisation purposes
 bool SmartConverter::bApproximateCubeHistogram = false;
 
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
- : Converter(inputFileName, outputFileName, progress, zMips)
+ : Converter(inputFileName, outputFileName, progress, zMips), allowed_mipmaps_threads(1), min_mipmap_threads(8), height_divider(1)
 {
-   n_io_blocks = 1; // default to make it same as SlowConverter (1 channel at a time)
+   n_io_blocks = 1;
+   SetChunkDivider(height_divider);
+#ifdef _OPENMP
+   allowed_mipmaps_threads = omp_get_max_threads();
+#endif       
+   
 }
 
 MemoryUsage SmartConverter::calculateMemoryUsage() {
@@ -22,8 +32,18 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
 
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
-    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
     m.sizes["XY stats"] = Stats::size({depth}, numBins, height_chunk); // height added - has to agree with statsXY.createBuffers({depth}, height);
+    
+    // MipMaps in multiple threads:
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
+
+    if( allowed_mipmaps_threads > 1 ) {
+       // times number of threads (see function SmartConverter::calculateChannelStats) :
+       m.sizes["Mipmaps"] *= allowed_mipmaps_threads;
+    }
+    std::cout << "MEMORY used in 1st pass MipMaps calculations = " << m.sizes["Mipmaps"] << " bytes, " << m.sizes["Mipmaps"] * 1e-9 << " GB for #threads = " << allowed_mipmaps_threads << std::endl;
+
+    
 
     if (depth > 1) {
        m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
@@ -43,6 +63,9 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
     if (depth > 1) {
         m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
         m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        
+        std::cout << "MEMORY used in rotation " << m.sizes["Rotation"] << " bytes, " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;
+        std::cout << "MEMORY used in Z stats " << m.sizes["Z stats"] << " bytes, " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
 
         total_pass2 = m.sizes["Rotation"] + m.sizes["Z stats"];
     }
@@ -63,6 +86,47 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
 
     return m;
 }
+
+bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
+   hsize_t predictedTotal = calculateMemoryUsage().total;
+
+   std::vector<int> heigth_dividers;
+   getDividers(height, heigth_dividers);
+
+   int iter = 0;
+   while (iter < max_iter && predictedTotal>memoryLimit && iter < heigth_dividers.size()) {
+      int divider = heigth_dividers[iter];
+      std::cout << "MEMORY REDUCTION : testing divider = " << divider << std::endl;
+      SetChunkDivider( divider );
+      
+      if( allowed_mipmaps_threads > min_mipmap_threads ) {
+         // reduce number of threads used for MipMaps as well:
+         allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
+         std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
+      }
+      
+      MemoryUsage memusage = calculateMemoryUsage();
+      predictedTotal = memusage.total;
+
+      if (predictedTotal <= memoryLimit ) {
+          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
+          return true;
+      } else {
+          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
+      }
+      iter++;
+   }
+   
+   return false;
+}
+
+void SmartConverter::SetChunkDivider( int divider ) {
+   height_divider = divider;
+   height_chunk = height / divider;
+
+   std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;
+}
+
 
 void SmartConverter::copyAndCalculate() {
     auto start = std::chrono::high_resolution_clock::now();
@@ -130,6 +194,14 @@ void SmartConverter::copyAndCalculate() {
 
     printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n",1,depth,height);    
     mipMaps.createBuffers({1, height, width});
+    
+    // Allocate thread-local MipMaps array once
+    thread_mipmaps_array.clear();
+    thread_mipmaps_array.reserve(allowed_mipmaps_threads);
+    for (int i = 0; i < allowed_mipmaps_threads; ++i) {
+        thread_mipmaps_array.emplace_back(standardDims, tileDims, zMips);
+        thread_mipmaps_array.back().createBuffers({1, height, width}); 
+    }
 
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
@@ -285,6 +357,7 @@ void SmartConverter::copyAndCalculate() {
     TIMER(timer.start("Free"););
     
     delete[] standardCube;
+    thread_mipmaps_array.clear(); // Free thread-local buffers
 
 // STILL TODO :             
 // Rotation is performed on HDF5 file - seems to be easier this way, but there is still room for some optimisations / paralleisations:            
@@ -314,7 +387,7 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
     
     hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
     std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
-    std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl << std::flush;
+    std::cout << "MEMORY (SmartConverter::calculateRotatedData): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl << std::flush;
     float* standardSlice = new float[sliceSize];
     float* rotatedSlice = new float[sliceSize];
 
@@ -429,36 +502,35 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
 
                 // calculte statistics in Z (frequency) direction:
                 Stats* statsZ_ptr = &statsZ;
-                // WARNING: passing pointer to statsZ (statsZ_ptr) due to its lack of copy constructor resulting in shallow
-                // copy and destructor crash in multi-threaded conditions due to double-deletes etc.
-                #pragma omp parallel for default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr, tile_size)
-                for (hsize_t j = 0; j < ySize; j++) {
-                    for (hsize_t k = 0; k < xSize; k++) {
 
-                        // Because this is declared INSIDE the j/k loops, 
-                        // every thread creates its own completely separate instance on its own stack.
-                        StatsCounter counterZ; 
-                        counterZ.reset(); // CRITICAL: Clear the dirty thread-stack memory
+                // this is to avoid once per pixel creation of StatsCounter counterZ object and instead having it once per thread:
+                #pragma omp parallel default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr, tile_size)
+                {
+                   // 1. Declare once per thread on the stack
+                   StatsCounter counterZ; 
 
+                  // 2. Distribute the loop iterations across threads
+                  #pragma omp for collapse(2) // Collapse j and k loops for better load balancing
+                  for (hsize_t j = 0; j < ySize; j++) {
+                     for (hsize_t k = 0; k < xSize; k++) {
+            
+                        counterZ.reset(); // 3. Just reset the existing memory
                         auto indexZ = k + xSize * j;
 
                         for (hsize_t i = 0; i < depth; i++) {
-                            auto sourceIndex = indexZ + tile_size * i;
-                            auto& val = standardSlice[sourceIndex];
-            
-                            if (std::isfinite(val)) {
-                                // Not lazy; too much risk of encountering an ascending / descending sequence.
-                                counterZ.accumulateFinite(val);
-                            } else {
-                                counterZ.accumulateNonFinite();
-                            }
+                           auto sourceIndex = indexZ + tile_size * i;
+                           auto& val = standardSlice[sourceIndex];
+                           if (std::isfinite(val)) {
+                              counterZ.accumulateFinite(val);
+                           } else {
+                              counterZ.accumulateNonFinite();
+                           }
                         }
-
-                        // Safe: Writing to a mathematically unique indexZ for every thread
                         statsZ_ptr->copyStatsFromCounter(indexZ, depth, counterZ);
-                    }
+                     }  
+                  }
                 }
-
+                
                 auto end3 = std::chrono::high_resolution_clock::now();
                 auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
                 total_rotation_pass_processing_ms += double(duration3.count());
@@ -511,7 +583,6 @@ double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos
 {
    StatsCounter counterXY;
 
-   // 32 has produced best results in testing
    const hsize_t REGION_MULTIPLIER = 32;
    int regionRows = std::ceil((float)height / (float)REGION_MULTIPLIER);
    int regionCols = std::ceil((float)width / (float)REGION_MULTIPLIER);
@@ -519,55 +590,49 @@ double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos
 
    auto start1 = std::chrono::high_resolution_clock::now();
 
-   // Start the parallel region. 
-   #pragma omp parallel default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, REGION_MULTIPLIER, width, height)
+   // We don't need to pass the array; it's a class member.
+   // Just ensure OpenMP knows it's shared.
+   #pragma omp parallel num_threads(allowed_mipmaps_threads) default(none) shared(std::cout, block_pos, standardDims, tileDims, zMips, standardCube, cubeSizeInRegions, mipMaps, counterXY, REGION_MULTIPLIER, width, height, thread_mipmaps_array)
    {
-            // Declare thread-local variables HERE. Because this is inside the parallel block, OpenMP creates one instance per thread.
-            // Temporary per-thread mipmaps to accumulate separately in different threads:
-            MipMaps thread_mipMaps = MipMaps(standardDims, tileDims, zMips);
-            thread_mipMaps.createBuffers({1, height, width});
-            thread_mipMaps.resetBuffers();
-            
-            StatsCounter counterRegion;
-            counterRegion.reset();
-            
-            #pragma omp for
-            for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
-                // counterRegion.reset();
-                hsize_t x0,y0,z0;
-                RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1); //use index of higher-order mipmap-space to keep lower-order mipmaps thread-safe
-                for (hsize_t y = y0; (y < y0 + REGION_MULTIPLIER && y < height); y++) {
-                    auto y_pos = block_pos + y * width;
-                    for (hsize_t x = x0; (x < x0 + REGION_MULTIPLIER && x < width); x++) {
-                        auto pos = y_pos + x;
-                        auto& val = standardCube[pos];
-                        if (std::isfinite(val)) {
-                            
-                            // region statistics
-                            counterRegion.accumulateFinite(val);
-                    
-                            // Accumulate thread mipmaps: without #pragma omp critical
-                            thread_mipMaps.accumulate(val, x, y, 0); // This will not conflict with the other threads as regions are separate - NOT TRUE "#pragma omp critical" WAS REQUIRED
-                                                              // as otherwise there were wrong values vs. Slow/Fast Converters !!!
-                            
-                        } else {
-                            counterRegion.accumulateNonFinite();
-                        }
+        int tid = 0;
+        #ifdef _OPENMP
+            tid = omp_get_thread_num();
+        #endif
+
+        // Grab this thread's pre-allocated MipMap object from the class member
+        MipMaps& my_mipmaps = thread_mipmaps_array[tid];
+        my_mipmaps.resetBuffers();
+        
+        StatsCounter counterRegion;
+        counterRegion.reset();
+        
+        #pragma omp for
+        for (int regionIndex = 0; regionIndex < cubeSizeInRegions; regionIndex += 1 ) {
+            // ... exact same inner loop as before ...
+            hsize_t x0,y0,z0;
+            RegionIndexToXYZ(regionIndex, x0, y0, z0, width, height, REGION_MULTIPLIER, REGION_MULTIPLIER, 1);
+            for (hsize_t y = y0; (y < y0 + REGION_MULTIPLIER && y < height); y++) {
+                auto y_pos = block_pos + y * width;
+                for (hsize_t x = x0; (x < x0 + REGION_MULTIPLIER && x < width); x++) {
+                    auto pos = y_pos + x;
+                    auto& val = standardCube[pos];
+                    if (std::isfinite(val)) {
+                        counterRegion.accumulateFinite(val);
+                        my_mipmaps.accumulate(val, x, y, 0); 
+                    } else {
+                        counterRegion.accumulateNonFinite();
                     }
                 }
-            } // Threads implicitly synchronize here at the end of the 'for' loop     
-            
-            // Finally, accumulate the thread-local results into the shared global objects.
-            // This still runs once per thread, protected by the critical section.
-            #pragma omp critical
-            {
-                counterXY.accumulateFromCounter(counterRegion);      // Accumulate to slice's XY stats from thread-local X stats
-                mipMaps.accumulateFromMipMaps(thread_mipMaps);
-            }                
-   } // End of parallel region. Thread-local objects are safely destroyed here.
+            }
+        } 
+        
+        #pragma omp critical
+        {
+            counterXY.accumulateFromCounter(counterRegion); 
+            mipMaps.accumulateFromMipMaps(my_mipmaps);
+        }                
+   } 
 
-   // Final correction of XY min and max
-   DEBUG(std::cout << " Final XY stats..." << std::flush;);
    statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
 
    auto end1 = std::chrono::high_resolution_clock::now();
@@ -895,7 +960,7 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
       }
       printf("DEBUG : totalBinCountMerged = %.8f\n",totalBinCountMerged);
 
-      delete histogram_XYZ;
+      delete [] histogram_XYZ;
    }
    auto end1 = std::chrono::high_resolution_clock::now();
    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);

@@ -37,9 +37,7 @@ public:
     bool checkIfSwapAxisRequired();
     
     // reduce memory usage:
-    bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
-    
-    void SetChunkDivider( int divider );
+    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
     
     void setIOBlocks( int _n_io_blocks ){ n_io_blocks = _n_io_blocks; }
     
@@ -79,10 +77,11 @@ protected:
     hsize_t numBins;
     
     // optimisations :
-    hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
-    int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
+//    hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
+//    int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
                         // this is required when too much memory is required without any division
     int n_io_blocks; // number of channel images read at once to optimise I/O to read larger portions of file
+//    int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)
     
     // Dataset dimensions    
     std::vector<hsize_t> standardDims;
@@ -116,6 +115,7 @@ public:
 
 protected:
     int memoryLimitInMb;
+    int allowed_mipmaps_threads;
  
     void copyAndCalculate() override;
     
@@ -161,10 +161,26 @@ protected:
     // TODO : check if I can simplify these parameters a bit more     
     double calculateRotatedChannel( unsigned int s, hsize_t c_start, hsize_t c_end, float* standardCube, float* rotatedCube, int sliceIncrement );
     
+    // reduce memory usage:
+    bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    
+    void SetChunkDivider( int divider );
+    
+    
     void ReadRotateWriteFullDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
         hsize_t xLimit, hsize_t yLimit, hsize_t xIncrement, hsize_t yIncrement);
     void ReadRotateWritePartialDepth(float* standardSliceToRead, float* rotatedSliceToWrite, unsigned int s, hsize_t xStart, hsize_t yStart,
         hsize_t zStart, hsize_t xLimit, hsize_t yLimit, hsize_t zLimit, hsize_t xIncrement, hsize_t yIncrement, hsize_t zIncrement);
+         
+    // optimisations :
+    hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
+    int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
+                        // this is required when too much memory is required without any division
+    int n_io_blocks; // number of channel images read at once to optimise I/O to read larger portions of file
+    int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)       
+    
+    // auxiliary objects used in calculations:
+    std::vector<MipMaps> thread_mipmaps_array;
 };
 
 class SmartFastConverter : public SmartConverter {
