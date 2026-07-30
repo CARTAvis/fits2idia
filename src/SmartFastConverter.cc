@@ -284,7 +284,8 @@ void SmartFastConverter::copyAndCalculate() {
             DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
             PROGRESS("\tWrite data" << std::endl);
             TIMER(timer.start("Write"););
-                        
+                 
+            start_io = std::chrono::high_resolution_clock::now();                        
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
         
             if (depth > 1) {
@@ -299,6 +300,9 @@ void SmartFastConverter::copyAndCalculate() {
                 
                 writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
             }
+            end_io = std::chrono::high_resolution_clock::now();
+            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
 
             // Fourth loop handles mipmaps        
             // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
@@ -331,7 +335,11 @@ void SmartFastConverter::copyAndCalculate() {
             
             // Write the mipmaps
             // FIX: Pass c_start so the HDF5 writer knows the correct Z-offset
+            start_io = std::chrono::high_resolution_clock::now();
             mipMaps.write(currentStokes, c_start);        
+            end_io = std::chrono::high_resolution_clock::now();
+            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
             
             // Write the statistics                
             // Clear the mipmaps before the next BLOCK (not Stokes)
@@ -382,8 +390,12 @@ void SmartFastConverter::copyAndCalculate() {
             std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
             
             // 4. Write Z stats and the fully completed Global XYZ object
+            auto start_io = std::chrono::high_resolution_clock::now();
             statsZ.write({height, width}, {1, height, width}, {currentStokes, 0, 0});
             statsXYZ.write({1}, {currentStokes});
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            total_io_ms += double(duration_io.count());
         }
         
         // 5. Write completed XY channel stats
