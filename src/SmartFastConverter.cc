@@ -19,7 +19,8 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
     m.sizes["XY stats"] = Stats::size({depth}, numBins); // no height_chunk in this version paralellising over channels
 
     if (depth > 1) {
-       m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
+       // m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
+       m.sizes["XYZ stats"] = Stats::size({}, numBins, n_io_blocks ); // has to match : statsXYZ.createBuffers({}, sliceIncrement); and sliceIncrement = n_io_blocks
     }
 
     hsize_t total_pass1 = 0;
@@ -115,8 +116,10 @@ void SmartFastConverter::copyAndCalculate() {
     statsXY.createBuffers({depth});
         
     if (depth > 1) {
-        std::cout << "DEBUG : before statsXYZ.createBuffers({}," << depth << ")" << std::endl;
-        statsXYZ.createBuffers({}, height);
+        std::cout << "DEBUG : before statsXYZ.createBuffers({}," << sliceIncrement << ")" << std::endl;
+        // Allocate based on the maximum channels per block (c - c_start)
+        statsXYZ.createBuffers({}, sliceIncrement);
+//        statsXYZ.createBuffers({}, height);        
 //        statsXYZ.createBuffers({}, depth);
         
         statsZ.createBuffers({height, width});
@@ -157,6 +160,13 @@ void SmartFastConverter::copyAndCalculate() {
             }
             hsize_t n_channels = (c_end-c_start);
             hsize_t block_size = n_channels*height*width;
+            
+            // Resize the mipMaps buffer for the final block so it doesn't write out-of-bounds
+            // dimensions of MipMaps have to be adjusted for smaller number of channels in the last porition of the data:
+            if (block == (n_blocks - 1) && leftOverSlices > 0) {
+                mipMaps.createBuffers({n_channels, height, width});
+            }
+            
             std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;
             
             std::cout << "DEBUG : reading from c_start = " << c_start << " blockSize = " <<  block_size << " bytes" << std::endl;
@@ -227,8 +237,8 @@ void SmartFastConverter::copyAndCalculate() {
         std::cout << "PROGRESS : after statsXY accumulation ..." << std::endl;
 */
 
-std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
-#pragma omp parallel for
+        std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
+        #pragma omp parallel for
         for (hsize_t i = c_start; i < c_end; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
             
@@ -238,7 +248,9 @@ std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
                     auto sourceIndex = k + width * j + (height * width) * (i - c_start);
-                    auto destIndex = (i-c_start) + sliceIncrement * j + (height * sliceIncrement) * k;
+                    // auto destIndex = (i-c_start) + sliceIncrement * j + (height * sliceIncrement) * k;
+                    // Use n_channels instead of sliceIncrement to pack memory correctly:
+                    auto destIndex = (i-c_start) + n_channels * j + (height * n_channels) * k;
                     auto& val = standardCube[sourceIndex];
                     
                     if (depth > 1) {
@@ -266,7 +278,7 @@ std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
         if (depth > 1) {
             DEBUG(std::cout << " Z statistics accumulation for block..." << std::flush;);
             
-            #pragma omp parallel for
+            /*#pragma omp parallel for
             for (hsize_t j = 0; j < height; j++) {
                 for (hsize_t k = 0; k < width; k++) {
                     auto indexZ = k + j * width;
@@ -286,6 +298,30 @@ std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
                         }
                     }
                 }
+            }*/
+            
+            // Swapped order of the loop so that the loop over k (image X-axis) is last to optmise L2 cache
+            #pragma omp parallel for
+            for (hsize_t j = 0; j < height; j++) {
+               // Swap 'i' to the middle
+               for (hsize_t i = c_start; i < c_end; i++) {
+        
+                  // Make 'k' the innermost loop for contiguous memory access
+                  for (hsize_t k = 0; k < width; k++) {
+                     auto indexZ = k + j * width;
+                     auto sourceIndex = k + width * j + (height * width) * (i - c_start);
+                     auto& val = standardCube[sourceIndex];
+
+                     // Safely fetch and update the counter for this specific pixel
+                     auto& counterZ = globalCountersZ[indexZ];
+            
+                     if (std::isfinite(val)) {
+                        counterZ.accumulateFinite(val);
+                     } else {
+                        counterZ.accumulateNonFinite();
+                     }
+                 }
+               }
             }
         }
 
@@ -522,7 +558,8 @@ double SmartFastConverter::doSecondPass( unsigned int s, int n_blocks, int slice
 
         TIMER(timer.start("Histograms"););
 
-        // Process each channel present in this current block
+        // 1. Parallel loop over channels to match the class's architectural design
+#pragma omp parallel for default(none) shared(std::cout, progress, standardCube, height, width, statsXYZ, statsXY, c_start, c_end, cubeMin, cubeRange, channelProgressStride)
         for (hsize_t c = c_start; c < c_end; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
                             
@@ -535,28 +572,28 @@ double SmartFastConverter::doSecondPass( unsigned int s, int n_blocks, int slice
                continue;
             }
             
-            auto doCubeHistogram = [&] (float val, hsize_t offset) {
-                statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, offset);
-            };
-
-            // Parallel loop over image height matching template design
-            hsize_t y;            
-#pragma omp parallel for default(none) private(y) shared(standardCube, height, width, doCubeHistogram, c, c_start, cubeMin, cubeRange)
-            for (y = 0; y < height; y++) {
-                hsize_t channel_offset = (c - c_start) * height * width;
+            // 2. Use the channel's block index (c - c_start) as a unique offset 
+            // to guarantee thread-safety without locks
+            hsize_t buffer_offset = c - c_start; 
+            hsize_t channel_offset = buffer_offset * height * width;
+            
+            for (hsize_t y = 0; y < height; y++) {
                 auto y_width = channel_offset + y * width;                
                 
                 for (hsize_t x = 0; x < width; x++) {
                     auto pos = y_width + x;
                     auto& val = standardCube[pos];
                     if (std::isfinite(val)) {
-                        doCubeHistogram(val, y);
+                        statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, buffer_offset);
                     }
                 }
             }
-            // Consolidate partial row histogram into the global statsXYZ buffer
-            statsXYZ.consolidateAndClearPartialHistogram(0);
-        } // end of channels in block
+        } // end of parallel channels in block
+        
+        // 3. Consolidate OUTSIDE the channel loop! 
+        // We now consolidate all partial histograms generated by the threads exactly once per block.
+        statsXYZ.consolidateAndClearPartialHistogram(0);
+
     } // end of blocks loop
 
     auto end1 = std::chrono::high_resolution_clock::now();
