@@ -74,15 +74,8 @@ void SmartFastConverter::copyAndCalculate() {
        sliceIncrement = n_io_blocks;
     }
     sliceIncrement = std::min( int(depth), sliceIncrement ); // then make sure we do not read more channels than there are in FITS file 
-    // playing it safe and only using 1/2 of memory :
-// TODO : comment out / remove the if below :
-//    if (sliceIncrement > 2) {
-//       std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
-//       sliceIncrement = sliceIncrement/2;
-//    }
     std::cout << "DEBUG : final sliceIncrement = " << sliceIncrement << " (n_io_blocks = " << n_io_blocks << ")" << std::endl;
     int sliceIncrementCount = depth/sliceIncrement;                   // number of portions to be read 
-    // int leftOverSlices = (depth - sliceIncrementCount*sliceIncrement);
     int leftOverSlices = (depth % sliceIncrement);    
     std::cout << "SIZEOF(float) = " << sizeof(float) << ", Image size:" << height << " x " << width << std::endl;
     std::cout << "MEMORY limits " << memoryLimitInMb << " MB = " << memoryLimitInPixels << " pixels = " << memoryLimitInSlices 
@@ -119,9 +112,7 @@ void SmartFastConverter::copyAndCalculate() {
         std::cout << "DEBUG : before statsXYZ.createBuffers({}," << sliceIncrement << ")" << std::endl;
         // Allocate based on the maximum channels per block (c - c_start)
         statsXYZ.createBuffers({}, sliceIncrement);
-//        statsXYZ.createBuffers({}, height);        
-//        statsXYZ.createBuffers({}, depth);
-        
+
         statsZ.createBuffers({height, width});
         std::cout << "DEBUG : before statsZ.createBuffers({" << height << "," << width << "})" << std::endl;
     }
@@ -190,53 +181,6 @@ void SmartFastConverter::copyAndCalculate() {
             std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
 
                     
-//            for(hsize_t c = c_start; c < c_end; c++) {                 
-//            } // end of first channel loop
-/*        std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
-#pragma omp parallel for
-        for (hsize_t i = c_start; i < c_end; i++) {
-            PROGRESS_DECIMATED(i, channelProgressStride, "|");
-            StatsCounter counterXY;
-            
-            auto& indexXY = i;
-            std::function<void(float)> accumulate;
-            
-            auto lazy_accumulate = [&] (float val) {
-                counterXY.accumulateFiniteLazy(val);
-            };
-            
-            auto first_accumulate = [&] (float val) {
-                counterXY.accumulateFiniteLazyFirst(val);
-                accumulate = lazy_accumulate;
-            };
-            
-            accumulate = first_accumulate;
-            
-            for (hsize_t j = 0; j < height; j++) {
-                for (hsize_t k = 0; k < width; k++) {
-                    auto sourceIndex = k + width * j + (height * width) * (i - c_start);
-                    auto destIndex = (i-c_start) + sliceIncrement * j + (height * sliceIncrement) * k;
-                    auto& val = standardCube[sourceIndex];
-                    
-                    if (depth > 1) {
-                        rotatedCube[destIndex] = val;
-                    }
-                    
-                    // Accumulate XY stats
-                    if (std::isfinite(val)) {
-                        accumulate(val);
-                    } else {
-                        counterXY.accumulateNonFinite();
-                    }
-                }
-            }
-            
-            // Final correction of XY min and max
-            statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
-        }
-        std::cout << "PROGRESS : after statsXY accumulation ..." << std::endl;
-*/
-
         std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
         #pragma omp parallel for
         for (hsize_t i = c_start; i < c_end; i++) {
@@ -277,28 +221,6 @@ void SmartFastConverter::copyAndCalculate() {
         // -------------------------------------------------------------
         if (depth > 1) {
             DEBUG(std::cout << " Z statistics accumulation for block..." << std::flush;);
-            
-            /*#pragma omp parallel for
-            for (hsize_t j = 0; j < height; j++) {
-                for (hsize_t k = 0; k < width; k++) {
-                    auto indexZ = k + j * width;
-                    
-                    // Fetch the persistent counter for this specific spatial pixel
-                    auto& counterZ = globalCountersZ[indexZ];
-                    
-                    for (hsize_t i = c_start; i < c_end; i++) {
-                        auto sourceIndex = k + width * j + (height * width) * (i - c_start);
-                        auto& val = standardCube[sourceIndex];
-
-                        if (std::isfinite(val)) {
-                            // Not lazy; running exact accumulation along the Z depth
-                            counterZ.accumulateFinite(val);
-                        } else {
-                            counterZ.accumulateNonFinite();
-                        }
-                    }
-                }
-            }*/
             
             // Swapped order of the loop so that the loop over k (image X-axis) is last to optmise L2 cache
             #pragma omp parallel for
@@ -363,19 +285,12 @@ void SmartFastConverter::copyAndCalculate() {
         PROGRESS("\tWrite data" << std::endl);
         TIMER(timer.start("Write"););
                     
-//        std::vector<hsize_t> memDims = {depth, height, width};
-//        std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
-//        std::vector<hsize_t> start = trimAxes({currentStokes, 0, 0, 0}, N);
         writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
         
         if (depth > 1) {
             // This all technically worked if we reused the standard filespace and memspace
             // But it's probably not a good idea to rely on two incorrect values cancelling each other out
-/*            std::vector<hsize_t> swizzledCount = trimAxes({1, width, height, depth}, N);
-            std::vector<hsize_t> swizzledMemDims = {width, height, depth};
-            writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);*/
-            // Use n_channels instead of depth
-            
+            // Use n_channels instead of depth            
             std::vector<hsize_t> swizzledCount = trimAxes({1, width, height, n_channels}, N);
             std::vector<hsize_t> swizzledMemDims = {width, height, n_channels};            
             // Standard format is {Stokes, Depth, Height, Width} -> Start is {s, c_start, 0, 0}
@@ -385,16 +300,7 @@ void SmartFastConverter::copyAndCalculate() {
             writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
         }
 
-        // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
-/*        if (depth > 1) {
-            DEBUG(std::cout << " Freeing memory from rotated dataset..." << std::flush;);
-            TIMER(timer.start("Free"););
-            
-            delete[] rotatedCube;
-        }*/
-        
-        // Fourth loop handles mipmaps
-        
+        // Fourth loop handles mipmaps        
         // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
         PROGRESS("\tMipmaps\t\t");
@@ -429,20 +335,13 @@ void SmartFastConverter::copyAndCalculate() {
         mipMaps.write(currentStokes, c_start);        
         
         // Write the statistics                
-//        statsXY.write({1, depth}, {currentStokes, 0});
-        
-//        if (depth > 1) {
-//            statsXYZ.write({1}, {currentStokes});
-//            statsZ.write({1, height, width}, {currentStokes, 0, 0});
-//        }
-                
         // Clear the mipmaps before the next BLOCK (not Stokes)
         TIMER(timer.start("Mipmaps"););
         mipMaps.resetBuffers();
 
         } // end of loop over blocks
         
-// === POST-BLOCK GLOBAL CONSOLIDATION ===
+        // === POST-BLOCK GLOBAL CONSOLIDATION ===
         if (depth > 1) {
             std::cout << "Finalizing Global XYZ and Z statistics..." << std::endl;
             

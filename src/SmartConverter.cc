@@ -75,15 +75,6 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
     m.total = std::max(total_pass1, total_pass2);
     std::cout << "MEMORY peak usage = " << m.total << " bytes, " << m.total * 1e-9 << " GB " << std::endl;
     
-//    for (auto& kv : m.sizes) {
-//        m.total += kv.second;
-//    }
-    
-//    if (depth > 1) {
-//        m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
-//        m.note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
-//    }
-
     return m;
 }
 
@@ -150,22 +141,15 @@ void SmartConverter::copyAndCalculate() {
        sliceIncrement = n_io_blocks;
     }
     sliceIncrement = std::min( int(depth), sliceIncrement ); // then make sure we do not read more channels than there are in FITS file 
-    // playing it safe and only using 1/2 of memory :
-// TODO : comment out / remove the if below :
-//    if (sliceIncrement > 2) {
-//       std::cout << "DEBUG : sliceIncrement = " << sliceIncrement << " but playing it safe and using only half of it -> sliceIncrement := " << sliceIncrement/2 << std::endl;
-//       sliceIncrement = sliceIncrement/2;
-//    }
     std::cout << "DEBUG : final sliceIncrement = " << sliceIncrement << " (n_io_blocks = " << n_io_blocks << ")" << std::endl;
     int sliceIncrementCount = depth/sliceIncrement;                   // number of portions to be read 
-    // int leftOverSlices = (depth - sliceIncrementCount*sliceIncrement);
     int leftOverSlices = (depth % sliceIncrement);    
     std::cout << "SIZEOF(float) = " << sizeof(float) << ", Image size:" << height << " x " << width << std::endl;
     std::cout << "MEMORY limits " << memoryLimitInMb << " MB = " << memoryLimitInPixels << " pixels = " << memoryLimitInSlices 
               << " slices -> sliceIncrement = " << sliceIncrement << " sliceIncrementCount = " << depth << "/" << sliceIncrement << " = " << sliceIncrementCount 
               << " -> leftover slices = " << leftOverSlices 
               << std::endl;
-    // 
+
     int n_blocks = sliceIncrementCount;
     if (leftOverSlices > 0) {
        n_blocks++;
@@ -187,7 +171,6 @@ void SmartConverter::copyAndCalculate() {
     statsXY.createBuffers({depth}, height_chunk);
         
     if (depth > 1) {
-//        statsXYZ.createBuffers({}, depth);
         printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",height);
         statsXYZ.createBuffers({}, height);
     }
