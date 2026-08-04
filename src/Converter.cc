@@ -195,6 +195,8 @@ void Converter::convert() {
     writeHdf5Attribute(outputGroup, "SCHEMA_VERSION", std::string(SCHEMA_VERSION));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
+    writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_TYPE", getConverterType() );
+    writeHdf5Attribute(outputGroup, "HDF5_PARAM_CUBE_HISTOGRAM_APPROXIMATE", getCubeHistogramApproximated() );
 
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);

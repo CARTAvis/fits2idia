@@ -158,7 +158,9 @@ void SmartConverter::copyAndCalculate() {
               
               
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
-    
+
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
+    auto start1 = std::chrono::high_resolution_clock::now();    
     // Allocate one channel at a time, and no swizzled data
     TIMER(timer.start("Allocate"););
     std::cout << "MEMORY : stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
@@ -187,10 +189,13 @@ void SmartConverter::copyAndCalculate() {
     }
 
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
+    auto end1 = std::chrono::high_resolution_clock::now();
+    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+    total_pureprocessing_ms += double(duration1.count());
+
 
     hsize_t image_size = width*height;
 
-    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         PROGRESS("Stokes " << s << ":" << std::endl);
@@ -272,18 +277,25 @@ void SmartConverter::copyAndCalculate() {
                 auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
                 total_io_ms += double(duration_io.count());
             
+                start1 = std::chrono::high_resolution_clock::now();
                 // Reset mipmaps before next channel
                 DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
                 TIMER(timer.start(timerLabelStatsMipmaps););
                 mipMaps.resetBuffers();
-            
+                end1 = std::chrono::high_resolution_clock::now();
+                duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+                total_first_pass_processing_ms += double(duration1.count());            
             } // end of first channel loop
         } // end of loop over blocks
 
+        auto start_io = std::chrono::high_resolution_clock::now();
         // write channel stats to HDF5 files:
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats" << std::endl);
         statsXY.write({1, depth}, {s, 0});
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
 
 
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
@@ -291,6 +303,7 @@ void SmartConverter::copyAndCalculate() {
                 
         PROGRESS(std::endl);
         
+        auto start1 = std::chrono::high_resolution_clock::now();
         if (depth > 1) {
             // Final correction of XYZ min and max
             DEBUG(std::cout << " Final XYZ stats..." << std::flush;);
@@ -305,11 +318,14 @@ void SmartConverter::copyAndCalculate() {
         DEBUG(std::cout << " Histograms..." << std::endl;);
         PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
+        auto end1 = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        total_first_pass_processing_ms += double(duration1.count());
         
 
         // calculate cube (statsXYZ) histogram:
-        statsXYZ.clearHistogramBuffers();
         auto start2 = std::chrono::high_resolution_clock::now();        
+        statsXYZ.clearHistogramBuffers();
         double total_second_pass_processing_ms = 0.00;
         if( bApproximateCubeHistogram ) {
            // calculate approximate cube histogram by merging channel histograms
@@ -330,9 +346,13 @@ void SmartConverter::copyAndCalculate() {
         
         PROGRESS(std::endl);
         
+        start_io = std::chrono::high_resolution_clock::now();
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
+        end_io = std::chrono::high_resolution_clock::now();
+        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
     } // end of stokes
     
     // Free memory

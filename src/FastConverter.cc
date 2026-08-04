@@ -275,7 +275,8 @@ void FastConverter::copyAndCalculate() {
         DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
         PROGRESS("\tWrite data" << std::endl);
         TIMER(timer.start("Write"););
-                    
+             
+        start_io = std::chrono::high_resolution_clock::now();                      
         std::vector<hsize_t> memDims = {depth, height, width};
         std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
         std::vector<hsize_t> start = trimAxes({currentStokes, 0, 0, 0}, N);
@@ -288,6 +289,10 @@ void FastConverter::copyAndCalculate() {
             std::vector<hsize_t> swizzledMemDims = {width, height, depth};
             writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);
         }
+        end_io = std::chrono::high_resolution_clock::now();
+        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
+
 
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
         if (depth > 1) {
@@ -332,6 +337,7 @@ void FastConverter::copyAndCalculate() {
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
         
+        start_io = std::chrono::high_resolution_clock::now();
         // Write the mipmaps
         mipMaps.write(currentStokes, 0);
         
@@ -342,6 +348,9 @@ void FastConverter::copyAndCalculate() {
             statsXYZ.write({1}, {currentStokes});
             statsZ.write({1, height, width}, {currentStokes, 0, 0});
         }
+        end_io = std::chrono::high_resolution_clock::now();
+        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
                 
         // Clear the mipmaps before the next Stokes
         TIMER(timer.start("Mipmaps"););

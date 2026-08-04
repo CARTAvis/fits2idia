@@ -43,6 +43,12 @@ public:
     
     void getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width );
     
+    // functions about the type of the converter and its parameters to be used 
+    // in saving metadata to the output HDF5 file:
+    virtual const char* getConverterType() = 0;
+    
+    bool getCubeHistogramApproximated(){ return false; }
+    
 protected:
     virtual void copyAndCalculate() = 0;
     
@@ -97,6 +103,8 @@ public:
     FastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
     
+    virtual const char* getConverterType() override { return "FAST"; }
+    
 protected:
     void copyAndCalculate() override;
 };
@@ -112,6 +120,12 @@ public:
     // XYZ (cube) histogram is calculated using channel histograms 
     // which means it's approximate only, but this is "good enough" for the visualisation purposes
     static bool bApproximateCubeHistogram;
+    
+    // functions about the type of the converter and its parameters to be used 
+    // in saving metadata to the output HDF5 file:
+    virtual const char* getConverterType() override { return "SMART-XY-PARALLEL"; }
+    
+    bool getCubeHistogramApproximated(){  return bApproximateCubeHistogram; }
 
 protected:
     int memoryLimitInMb;
@@ -188,6 +202,10 @@ public:
     SmartFastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
     
+    // functions about the type of the converter and its parameters to be used 
+    // in saving metadata to the output HDF5 file:
+    virtual const char* getConverterType() override { return "SMART-CHAN-PARALLEL"; }
+    
 protected:
     void copyAndCalculate() override;
 
@@ -201,6 +219,8 @@ class SlowConverter : public Converter {
 public:
     SlowConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
+    
+    virtual const char* getConverterType() override { return "SLOW"; }
     
 protected:
     void copyAndCalculate() override;
