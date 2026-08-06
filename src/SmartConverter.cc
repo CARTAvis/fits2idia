@@ -31,22 +31,24 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
     MemoryUsage m;
 
     // memory used in pass 1 :
-    m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
-    m.sizes["XY stats"] = Stats::size({depth}, numBins, height_chunk); // height added - has to agree with statsXY.createBuffers({depth}, height);
+    m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block , TICKED 
+    std::cout << "MEMORY_ESTIMATE: Main dataset  = " << m.sizes["Main dataset"]* 1e-9 << " GB" << std::endl;
+    
+    m.sizes["XY stats"] = Stats::size({depth}, numBins, height_chunk); // height added - has to agree with statsXY.createBuffers({depth}, height_chunk);, TICKED
+    std::cout << "MEMORY_ESTIMATE: XY stats  = " << m.sizes["XY stats"]* 1e-9 << " GB" << std::endl; 
     
     // MipMaps in multiple threads:
     m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
-
     if( allowed_mipmaps_threads > 1 ) {
        // times number of threads (see function SmartConverter::calculateChannelStats) :
-       m.sizes["Mipmaps"] *= allowed_mipmaps_threads;
+       m.sizes["Mipmaps"] *= (1+allowed_mipmaps_threads); // for mipMaps and thread_mipmaps_array
     }
-    std::cout << "MEMORY used in 1st pass MipMaps calculations = " << m.sizes["Mipmaps"] << " bytes, " << m.sizes["Mipmaps"] * 1e-9 << " GB for #threads = " << allowed_mipmaps_threads << std::endl;
-
+    std::cout << "MEMORY_ESTIMATE: MipMaps calculations (#threads = " << allowed_mipmaps_threads << ") = " << m.sizes["Mipmaps"] * 1e-9 << std::endl;
     
 
     if (depth > 1) {
        m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
+       std::cout << "MEMORY_ESTIMATE: XYZ stats  = " << m.sizes["XYZ stats"]* 1e-9 << " GB" << std::endl;
     }
 
     hsize_t total_pass1 = 0;
@@ -54,26 +56,39 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
         total_pass1 += kv.second;
     }
        
-    std::cout << "MEMORY used in 1st pass = " << total_pass1 << " bytes, " << total_pass1 * 1e-9 << " GB " << std::endl;
-    std::cout << "DEBUG : height_chunk = " << height_chunk << " -> Memory(XY stats) = " << m.sizes["XY stats"] * 1e-9 << " GB " << std::endl;
+    std::cout << "MEMORY_ESTIMATE: 1st pass = " << total_pass1 * 1e-9 << " GB " << std::endl;
+    std::cout << "MEMORY_ESTIMATE: height_chunk = " << height_chunk << std::endl;
     //----------------------------------------------- end of 1st pass -----------------------------------------------
 
-    // second pass :    
+    // 2nd pass (cannot see any specific allocations)
     hsize_t total_pass2 = 0;
+    if ( bApproximateCubeHistogram ) {
+       std::cout << "MEMORY_ESTIMATE: 2nd pass (approx XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
+    }else {
+       // 2nd pass does not use any extra memory:
+       std::cout << "MEMORY_ESTIMATE: 2nd pass (accurate XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
+    }
+    
+    // rotation pass : standardSlice , rotatedSlice : 
+    hsize_t total_rotation_pass = 0;
     if (depth > 1) {
-        m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        m.sizes["Rotation"] = 2*sliceSize*sizeof(float);
+        std::cout << "MEMORY_ESTIMATE: rotation " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;
         
-        std::cout << "MEMORY used in rotation " << m.sizes["Rotation"] << " bytes, " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;
-        std::cout << "MEMORY used in Z stats " << m.sizes["Z stats"] << " bytes, " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
+        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});        
+        std::cout << "MEMORY_ESTIMATE: Z stats " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
 
-        total_pass2 = m.sizes["Rotation"] + m.sizes["Z stats"];
+        total_rotation_pass = m.sizes["Rotation"] + m.sizes["Z stats"];
+        std::cout << "MEMORY_ESTIMATE: Rotation = "  << total_rotation_pass * 1e-9 << " GB " << std::endl;
     }
 
-    std::cout << "MEMORY used in 2nd pass = " << total_pass2 << " bytes, " << total_pass2 * 1e-9 << " GB " << std::endl;
 
-    m.total = std::max(total_pass1, total_pass2);
-    std::cout << "MEMORY peak usage = " << m.total << " bytes, " << m.total * 1e-9 << " GB " << std::endl;
+    m.total = std::max( std::max(total_pass1, total_pass2), total_rotation_pass);
+    std::cout << "MEMORY_ESTIMATE peak usage = " << m.total * 1e-9 << " GB " << std::endl;
+    
+    size_t sum_total = total_pass1 + total_pass2 + total_rotation_pass;
+    std::cout << "MEMORY_ESTIMATE sum usage = " << m.total * 1e-9 << " GB " << std::endl;
     
     return m;
 }
