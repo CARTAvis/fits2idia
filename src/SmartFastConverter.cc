@@ -98,6 +98,7 @@ void SmartFastConverter::copyAndCalculate() {
     std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating standardCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     standardCube = new float[height * width * sliceIncrement];    
     if (depth > 1) {
+       std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating rotatedCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
        rotatedCube = new float[height * width * sliceIncrement];
     }
     
@@ -139,6 +140,7 @@ void SmartFastConverter::copyAndCalculate() {
         // ADD THIS: Persistent counters that survive across Z-axis blocks
         std::vector<StatsCounter> globalCountersZ;
         if (depth > 1) {
+            std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating globalCountersZ with size " << double(height * width * sizeof(StatsCounter))/1e9 << " GB " << std::endl << std::flush;
             globalCountersZ.resize(width * height);
         }
         

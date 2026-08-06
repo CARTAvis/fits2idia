@@ -390,7 +390,7 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
     
     hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
     std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
-    std::cout << "MEMORY (SmartConverter::calculateRotatedData): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << " (for standardSlice and rotatedSlice) " << std::endl << std::flush;
+    std::cout << "MEMORY (SmartConverter::calculateRotatedData for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     float* standardSlice = new float[sliceSize];
     float* rotatedSlice = new float[sliceSize];
 
@@ -871,8 +871,9 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
       statsXYZ.clearHistogramBuffers();
 
       // only a single histogram per cube (no need for offsets etc):
-      double* histogram_XYZ = new double[numBins];
+      double* histogram_XYZ = new double[numBins];      
       memset(histogram_XYZ,'\0', sizeof(double)*numBins);
+      std::cout << "MEMORY (SmartConverter::calcApproxCubeHistogram): allocating " << double(numBins*sizeof(double))/1e9 << " GB " << std::endl << std::flush;
 
       auto addFractionalCount = [&] (int binIndex, float val) {
          histogram_XYZ[binIndex] += val;
