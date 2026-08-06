@@ -15,12 +15,28 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
 
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
-    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
-    m.sizes["XY stats"] = Stats::size({depth}, numBins); // no height_chunk in this version paralellising over channels
+    std::cout << "MEMORY_ESTIMATE: Main dataset  = " << m.sizes["Main dataset"]* 1e-9 << " GB" << std::endl;
+    
+    m.sizes["XY stats"] = Stats::size({depth}, numBins); // statsXY.createBuffers({depth});
+    std::cout << "MEMORY_ESTIMATE: XY stats  = " << m.sizes["XY stats"]* 1e-9 << " GB" << std::endl;
+    
+    m.sizes["Mipmaps"] = MipMaps::size(standardDims, {(hsize_t)n_io_blocks, height, width}, zMips);
+    std::cout << "MEMORY_ESTIMATE: MipMaps calculations = " << m.sizes["Mipmaps"] * 1e-9 << " GB " << std::endl;
 
+    // DONE up to here:
     if (depth > 1) {
-       // m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
-       m.sizes["XYZ stats"] = Stats::size({}, numBins, n_io_blocks ); // has to match : statsXYZ.createBuffers({}, sliceIncrement); and sliceIncrement = n_io_blocks
+       // rotated:
+       m.sizes["Rotation"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
+       std::cout << "MEMORY_ESTIMATE: Rotated dataset  = " << m.sizes["Rotation"]* 1e-9 << " GB" << std::endl;
+    
+       m.sizes["XYZ stats"] = Stats::size({}, numBins, n_io_blocks ); // has to match : statsXYZ.createBuffers({}, sliceIncrement);
+       std::cout << "MEMORY_ESTIMATE: XYZ stats  = " << m.sizes["XYZ stats"]* 1e-9 << " GB" << std::endl;
+       
+       m.sizes["Z stats"] = Stats::size({height, width}); // statsZ.createBuffers({height, width});
+       std::cout << "MEMORY_ESTIMATE: Z stats  = " << m.sizes["Z stats"]* 1e-9 << " GB" << std::endl;
+       
+       m.sizes["globalCountersZ"] = height  * width * sizeof(StatsCounter);
+       std::cout << "MEMORY_ESTIMATE: globalCountersZ  = " << m.sizes["globalCountersZ"]* 1e-9 << " GB" << std::endl;
     }
 
     hsize_t total_pass1 = 0;
@@ -28,22 +44,15 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
         total_pass1 += kv.second;
     }
        
-    std::cout << "MEMORY used in 1st pass = " << total_pass1 << " bytes, " << total_pass1 * 1e-9 << " GB " << std::endl;
+    std::cout << "MEMORY_ESTIMATE: 1st pass = " << total_pass1 * 1e-9 << " GB " << std::endl;
     //----------------------------------------------- end of 1st pass -----------------------------------------------
 
     // second pass :    
     hsize_t total_pass2 = 0;
-    if (depth > 1) {
-        m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
-        m.sizes["Z stats"] = Stats::size({height, width});
-
-        total_pass2 = m.sizes["Rotation"] + m.sizes["Z stats"];
-    }
-
-    std::cout << "MEMORY used in 2nd pass = " << total_pass2 << " bytes, " << total_pass2 * 1e-9 << " GB " << std::endl;
+    std::cout << "MEMORY_ESTIMATE: 1st pass = " << total_pass2 * 1e-9 << " GB " << std::endl;
 
     m.total = std::max(total_pass1, total_pass2);
-    std::cout << "MEMORY peak usage = " << m.total << " bytes, " << m.total * 1e-9 << " GB " << std::endl;
+    std::cout << "MEMORY_ESTIMATE: peak usage = " << m.total * 1e-9 << " GB " << std::endl;
 
     return m;
 }

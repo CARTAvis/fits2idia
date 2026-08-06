@@ -43,7 +43,7 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
        // times number of threads (see function SmartConverter::calculateChannelStats) :
        m.sizes["Mipmaps"] *= (1+allowed_mipmaps_threads); // for mipMaps and thread_mipmaps_array
     }
-    std::cout << "MEMORY_ESTIMATE: MipMaps calculations (#threads = " << allowed_mipmaps_threads << ") = " << m.sizes["Mipmaps"] * 1e-9 << std::endl;
+    std::cout << "MEMORY_ESTIMATE: MipMaps calculations (#threads = " << allowed_mipmaps_threads << ") = " << m.sizes["Mipmaps"] * 1e-9 << " GB " << std::endl;
     
 
     if (depth > 1) {
