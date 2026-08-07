@@ -281,6 +281,7 @@ int checkMemoryUsage( Converter* converter, int n_io_blocks, hsize_t memoryLimit
          // hence going from largest (depth) down 
          int n_io_blocks = _depth;         
          while( n_io_blocks > 0 ) {
+            std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;
             converter->setIOBlocks(n_io_blocks);
             int ret = checkMemory(converter, memoryLimit, auto_mode);
             if( !ret ) {

@@ -190,7 +190,6 @@ protected:
     hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
     int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
                         // this is required when too much memory is required without any division
-    int n_io_blocks; // number of channel images read at once to optimise I/O to read larger portions of file
     int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)       
     
     // auxiliary objects used in calculations:

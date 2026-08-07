@@ -12,6 +12,8 @@ SmartFastConverter::SmartFastConverter(std::string inputFileName, std::string ou
 
 MemoryUsage SmartFastConverter::calculateMemoryUsage() {
     MemoryUsage m;
+    
+    std::cout << "MEMORY_ESTIMATE: (SmartConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , height = " << height << " , width = " << width << std::endl;
 
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block 
@@ -434,6 +436,7 @@ void SmartFastConverter::copyAndCalculate() {
 
 double SmartFastConverter::doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms )
 {
+    auto start = std::chrono::high_resolution_clock::now();
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     
     hsize_t cubeSize = height * width;
@@ -525,6 +528,10 @@ double SmartFastConverter::doSecondPass( unsigned int s, int n_blocks, int slice
        totalBinCount += binCount;
     }
     printf("Total exact bin count = %ld\n", (long int)totalBinCount);
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Execution of 2nd pass took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
 
     return total_second_pass_processing_ms;
 }

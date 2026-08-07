@@ -19,7 +19,6 @@ bool SmartConverter::bApproximateCubeHistogram = false;
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
  : Converter(inputFileName, outputFileName, progress, zMips), allowed_mipmaps_threads(1), min_mipmap_threads(8), height_divider(1)
 {
-   n_io_blocks = 1;
    SetChunkDivider(height_divider);
 #ifdef _OPENMP
    allowed_mipmaps_threads = omp_get_max_threads();
@@ -29,6 +28,8 @@ SmartConverter::SmartConverter(std::string inputFileName, std::string outputFile
 
 MemoryUsage SmartConverter::calculateMemoryUsage() {
     MemoryUsage m;
+    
+    std::cout << "MEMORY_ESTIMATE: (SmartConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , height = " << height << " , width = " << width << std::endl;
 
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block , TICKED 
@@ -396,6 +397,7 @@ void SmartConverter::copyAndCalculate() {
 
 double SmartConverter::calculateRotatedData(double& total_io_ms)
 {
+    auto start = std::chrono::high_resolution_clock::now();
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
 
@@ -593,6 +595,12 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
     DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
     delete[] standardSlice;
     delete[] rotatedSlice;
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double total_rotation_ms = double(duration.count());
+    std::cout << "BENCHMARKING : rotation pass took: " << total_rotation_ms << " milliseconds " 
+              << (float(total_rotation_ms)/1000.0) << " seconds" << std::endl;
 
     return total_rotation_pass_processing_ms;
 }
@@ -717,6 +725,7 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
 
 double SmartConverter::doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms )
 {
+        auto start = std::chrono::high_resolution_clock::now();
         const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
 
         hsize_t cubeSize = height * width;
@@ -844,12 +853,16 @@ double SmartConverter::doSecondPass( unsigned int s, int n_blocks, int sliceIncr
          }
          printf("Total bin count = %ld\n",(long int)totalBinCount);
 
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "Execution of 2nd pass took: " << duration.count() << " milliseconds." << std::endl;
 
         return total_second_pass_processing_ms;
 }
 
 
 double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
+   auto start = std::chrono::high_resolution_clock::now();
    printf("INFO : SmartConverter::calcApproxCubeHistogram\n");
    // calculate cubeMin / cubeMax from minVals/maxVals in statsXY 
    const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
@@ -984,6 +997,9 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
    auto end1 = std::chrono::high_resolution_clock::now();
    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
    total_second_pass_processing_ms = double(duration1.count());
+   
+   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start);
+   std::cout << "Execution of Approx histogram calculation took: " << duration.count() << " milliseconds." << std::endl;
 
    return total_second_pass_processing_ms;
 }
