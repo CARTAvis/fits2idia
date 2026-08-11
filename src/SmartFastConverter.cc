@@ -190,10 +190,11 @@ void SmartFastConverter::copyAndCalculate() {
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             auto end_io = std::chrono::high_resolution_clock::now();
             auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
+            auto block_io_ms = double(duration_io.count());
             std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
 
                     
+            auto start_processing = std::chrono::high_resolution_clock::now();
             std::cout << "PROGRESS : before statsXY accumulation ..." << std::endl;
             #pragma omp parallel for
             for (hsize_t i = c_start; i < c_end; i++) {
@@ -291,7 +292,10 @@ void SmartFastConverter::copyAndCalculate() {
                         statsXY.accumulateHistogram(val, chanMin, chanRange, i);
                     }
                 } 
-            }         
+            }                     
+            auto end_processing = std::chrono::high_resolution_clock::now();
+            auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+            auto block_first_pass_processing_ms = double(duration_processing.count());
             
 
             DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
@@ -315,7 +319,7 @@ void SmartFastConverter::copyAndCalculate() {
             }
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
+            block_io_ms += double(duration_io.count());
 
             // Fourth loop handles mipmaps        
             // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
@@ -323,7 +327,8 @@ void SmartFastConverter::copyAndCalculate() {
             PROGRESS("\tMipmaps\t\t");
             TIMER(timer.start("Mipmaps"););
 
-                
+
+            start_processing = std::chrono::high_resolution_clock::now();                
 #pragma omp parallel for
             for (hsize_t c = c_start; c < c_end; c++) {
                 PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -341,7 +346,11 @@ void SmartFastConverter::copyAndCalculate() {
         
             // Final mipmap calculation
             mipMaps.calculate();
-            std::cout << "PROGRESS : after mipMaps accumulation ..." << std::endl;
+            std::cout << "PROGRESS : after mipMaps accumulation ..." << std::endl;            
+            end_processing = std::chrono::high_resolution_clock::now();
+            duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+            block_first_pass_processing_ms += double(duration_processing.count());
+
             
             TIMER(timer.start("Write"););
             PROGRESS("\tWrite stats & mipmaps" << std::endl);
@@ -352,18 +361,25 @@ void SmartFastConverter::copyAndCalculate() {
             mipMaps.write(currentStokes, c_start);        
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
+            block_io_ms += double(duration_io.count());
             
             // Write the statistics                
             // Clear the mipmaps before the next BLOCK (not Stokes)
             TIMER(timer.start("Mipmaps"););
             mipMaps.resetBuffers();
+            
+            total_io_ms += block_io_ms;
+            total_first_pass_processing_ms += block_first_pass_processing_ms;
+            std::cout << "BENCHMARKING : block = " << block << " I/O took " << block_io_ms/1000.00 << " sec -> total I/O time = " << total_io_ms/1000.00 << " sec." << std::endl;
+            std::cout << "BENCHMARKING : block = " << block << " pure processing took " << block_first_pass_processing_ms/1000.00 << " sec -> total pure processing took " << total_first_pass_processing_ms/1000.00 << " sec." << std::endl;
+            
         } // end of loop over blocks
         
         // === POST-BLOCK GLOBAL CONSOLIDATION ===
         if (depth > 1) {
             std::cout << "Finalizing Global XYZ and Z statistics..." << std::endl;
-            
+
+            auto start_processing = std::chrono::high_resolution_clock::now();            
             // 1. Determine actual global min/max by scanning completed channel stats
             StatsCounter counterXYZ;
             for (hsize_t i = 0; i < depth; i++) {
@@ -381,6 +397,12 @@ void SmartFastConverter::copyAndCalculate() {
                     statsZ.copyStatsFromCounter(indexZ, depth, globalCountersZ[indexZ]);
                 }
             }
+            auto end_processing = std::chrono::high_resolution_clock::now();
+            auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+            total_first_pass_processing_ms += double(duration_processing.count());
+            std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << (float(total_first_pass_processing_ms)/1000.00) << " seconds" << std::endl;
+            total_pureprocessing_ms += total_first_pass_processing_ms;
+
             std::cout << "DEBUG: copied statsZ from counter ..." << std::endl;
             
             // 3. Compute the approximate cube histogram using your built-in algorithm
@@ -401,6 +423,7 @@ void SmartFastConverter::copyAndCalculate() {
             auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
             std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
             std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
+            total_pureprocessing_ms += total_second_pass_processing_ms;
             
             // 4. Write Z stats and the fully completed Global XYZ object
             auto start_io = std::chrono::high_resolution_clock::now();
@@ -411,19 +434,26 @@ void SmartFastConverter::copyAndCalculate() {
             total_io_ms += double(duration_io.count());
         }
         
+        auto start_io = std::chrono::high_resolution_clock::now();
         // 5. Write completed XY channel stats
         statsXY.write({1, depth}, {currentStokes, 0});
-
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        total_io_ms += double(duration_io.count());
     } // end of stokes
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
     TIMER(timer.start("Free"););
     
+    auto start_processing = std::chrono::high_resolution_clock::now();
     delete[] standardCube;
     if (depth > 1) {               // ADD THIS
         delete[] rotatedCube;      // ADD THIS
     }
+    auto end_processing = std::chrono::high_resolution_clock::now();
+    auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+    total_pureprocessing_ms += double(duration_processing.count());
 
     std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
