@@ -144,28 +144,9 @@ void SmartConverter::copyAndCalculate() {
     }
     
     // calculate memory limits in different units, slice here is image in a single freq. channel:
-    double memoryLimitInBytes = double(memoryLimitInMb) * 1024.00 * 1024.00;
-    double double_memoryLimitInBytes = double(memoryLimitInMb) * 1024.0 * 1024.0;
-    double sliceSizeInPixels = height * width;
-    double memoryLimitInPixels = memoryLimitInBytes / sizeof(float);
-    std::cout << "DEBUG memoryLimitInMb = " << memoryLimitInMb << " -> memoryLimitInBytes = " << memoryLimitInBytes << " -> memoryLimitInPixels = " << memoryLimitInPixels << std::endl;
-    std::cout << "DEBUG double_memoryLimitInBytes = " << double_memoryLimitInBytes << std::endl;
-    double memoryLimitInSlices = std::ceil(memoryLimitInPixels / sliceSizeInPixels);
-    // first use MAX of memoryLimitInSlices and 1 , and then make sure we are not trying to read more channels than exist -> min(depth, MAX)
-    int sliceIncrement = std::max(memoryLimitInSlices, (double)1.00); // first make sure we use at least 1 slice
-    if (n_io_blocks > 1) {
-       sliceIncrement = n_io_blocks;
-    }
-    sliceIncrement = std::min( int(depth), sliceIncrement ); // then make sure we do not read more channels than there are in FITS file 
-    std::cout << "DEBUG : final sliceIncrement = " << sliceIncrement << " (n_io_blocks = " << n_io_blocks << ")" << std::endl;
-    int sliceIncrementCount = depth/sliceIncrement;                   // number of portions to be read 
-    int leftOverSlices = (depth % sliceIncrement);    
-    std::cout << "SIZEOF(float) = " << sizeof(float) << ", Image size:" << height << " x " << width << std::endl;
-    std::cout << "MEMORY limits " << memoryLimitInMb << " MB = " << memoryLimitInPixels << " pixels = " << memoryLimitInSlices 
-              << " slices -> sliceIncrement = " << sliceIncrement << " sliceIncrementCount = " << depth << "/" << sliceIncrement << " = " << sliceIncrementCount 
-              << " -> leftover slices = " << leftOverSlices 
-              << std::endl;
-
+    int sliceIncrement = n_io_blocks;
+    int sliceIncrementCount = depth/sliceIncrement;
+    int leftOverSlices = (depth % sliceIncrement);   
     int n_blocks = sliceIncrementCount;
     if (leftOverSlices > 0) {
        n_blocks++;
