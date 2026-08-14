@@ -395,7 +395,11 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
     printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",TILE_SIZE,TILE_SIZE);        
     statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
 
-    double total_rotation_pass_processing_ms = 0.00;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);    
+    double total_rotation_pass_processing_ms = double(duration.count());;
+    double total_rotation_io_ms = 0.00;
+    
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
         PROGRESS("\tStokes " << s << "\t");
@@ -406,7 +410,6 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
         hsize_t tileCount(0);
         for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
             for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
-                auto starttile = std::chrono::high_resolution_clock::now();
                 tileCount++;
                 hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                 hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
@@ -415,6 +418,8 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                 PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
                 
                 // read tile slice
+                auto start_io = std::chrono::high_resolution_clock::now();
+                
                 DEBUG(std::cout << " Reading main dataset..." << std::flush;);
                 TIMER(timer.start("Read"););
                 
@@ -422,18 +427,17 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                 auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                 auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
                 
-                auto start_io = std::chrono::high_resolution_clock::now();
                 readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                 auto end_io = std::chrono::high_resolution_clock::now();
                 auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-                total_io_ms += double(duration_io.count());
+                total_rotation_io_ms += double(duration_io.count());
                 std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
-                
+
+                auto starttile = std::chrono::high_resolution_clock::now();                
                 // rotate tile slice
                 DEBUG(std::cout << " Calculating rotation..." << std::flush;);
                 TIMER(timer.start("Rotation"););
                         
-                auto start2 = std::chrono::high_resolution_clock::now();
                 hsize_t tile_size = (ySize * xSize);
                 hsize_t ysize_depth = (ySize * depth);
                 hsize_t i;
@@ -490,16 +494,10 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                 }
 
 
-                auto end2 = std::chrono::high_resolution_clock::now();
-                auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
-                total_rotation_pass_processing_ms += double(duration2.count());
-                std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
                 
                 // A separate pass over the same slice depth-last 
                 DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
                 TIMER(timer.start("Z statistics"););
-
-                auto start3 = std::chrono::high_resolution_clock::now();
 
                 // calculte statistics in Z (frequency) direction:
                 Stats* statsZ_ptr = &statsZ;
@@ -532,11 +530,6 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                   }
                 }
                 
-                auto end3 = std::chrono::high_resolution_clock::now();
-                auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
-                total_rotation_pass_processing_ms += double(duration3.count());
-                std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
-                
                 // write tile slice
                 DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
                 TIMER(timer.start("Write"););
@@ -545,20 +538,22 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                 auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                 auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                 
+                auto endtile = std::chrono::high_resolution_clock::now();
+                auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                total_rotation_pass_processing_ms += double(durationtile.count());
+                std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
+                
+                // NEXT I/O write operation:
                 start_io = std::chrono::high_resolution_clock::now();
                 writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                end_io = std::chrono::high_resolution_clock::now();
-                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-                total_io_ms += double(duration_io.count());
-                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                 
                 DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                 // write Z statistics
                 statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
-                
-                auto endtile = std::chrono::high_resolution_clock::now();
-                auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
-                std::cout << "Execution of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
+                end_io = std::chrono::high_resolution_clock::now();
+                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_rotation_io_ms += double(duration_io.count());
+                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;                
             }
         }
         
@@ -569,16 +564,27 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
         PROGRESS(std::endl);
 
     } // end of loop over Stokeses 
-    std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
-              << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
-    
+
+    // Add rotation I/O to total I/O:              
+    total_io_ms += total_rotation_io_ms;
+    std::cout << "BENCHMARKING : total rotation I/O took: " << total_rotation_io_ms << " milliseconds "
+               << (float(total_rotation_io_ms)/1000.0) << " seconds" << std::endl;              
+
+
+    // Add time of delete:
+    auto startfree = std::chrono::high_resolution_clock::now();        
     TIMER(timer.start("Free"););
     DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
     delete[] standardSlice;
-    delete[] rotatedSlice;
+    delete[] rotatedSlice;    
+    end = std::chrono::high_resolution_clock::now();
+    auto duration_free = std::chrono::duration_cast<std::chrono::milliseconds>(end - startfree);
+    total_rotation_pass_processing_ms += double(duration_free.count());
+    std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
+              << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
     
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    // measure total execution time of rotation function:
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     double total_rotation_ms = double(duration.count());
     std::cout << "BENCHMARKING : rotation pass took: " << total_rotation_ms << " milliseconds " 
               << (float(total_rotation_ms)/1000.0) << " seconds" << std::endl;
