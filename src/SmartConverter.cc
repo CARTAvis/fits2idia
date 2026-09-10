@@ -100,28 +100,39 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
    std::vector<int> heigth_dividers;
    getDividers(height, heigth_dividers);
 
-   int iter = 0;
-   while (iter < max_iter && predictedTotal>memoryLimit && iter < heigth_dividers.size()) {
-      int divider = heigth_dividers[iter];
-      std::cout << "MEMORY REDUCTION : testing divider = " << divider << std::endl;
-      SetChunkDivider( divider );
-      
-      if( allowed_mipmaps_threads > min_mipmap_threads ) {
-         // reduce number of threads used for MipMaps as well:
-         allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
-         std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
-      }
-      
-      MemoryUsage memusage = calculateMemoryUsage();
-      predictedTotal = memusage.total;
+   
+   // outer most is change of number of threads which we want to avoid as much as possible:
+   while( allowed_mipmaps_threads >= 1 ) {          
+       int iter = 0;
 
-      if (predictedTotal <= memoryLimit ) {
-          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
-          return true;
-      } else {
-          std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
-      }
-      iter++;
+       // number of iterations is limited by the number of dividers in the array heigth_dividers:
+       while (iter < heigth_dividers.size() && iter < max_iter && predictedTotal>memoryLimit ) {
+          int divider = heigth_dividers[iter];
+          std::cout << "MEMORY REDUCTION : testing divider = " << divider << ", #MipMap_Threads = " << allowed_mipmaps_threads << std::endl;
+          SetChunkDivider( divider );
+      
+          MemoryUsage memusage = calculateMemoryUsage();
+          predictedTotal = memusage.total;
+
+          if (predictedTotal <= memoryLimit ) {
+              std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
+              return true;
+          } else {
+              std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
+          }
+          
+          // counts all iterations:
+          iter++;
+       }
+       
+       if( allowed_mipmaps_threads > 1 ) {
+           // reduce number of threads used for MipMaps as well:
+           allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
+           std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
+       }else{
+           std::cout << "ERROR : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
+           break;
+       }
    }
    
    return false;
@@ -530,10 +541,6 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                   }
                 }
                 
-                // write tile slice
-                DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
-                TIMER(timer.start("Write"););
-                
                 auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
                 auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                 auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
@@ -543,17 +550,28 @@ double SmartConverter::calculateRotatedData(double& total_io_ms)
                 total_rotation_pass_processing_ms += double(durationtile.count());
                 std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
                 
+                // write tile slice
+                DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+                TIMER(timer.start("Write"););
+                
                 // NEXT I/O write operation:
+                // write rotated slice:
                 start_io = std::chrono::high_resolution_clock::now();
                 writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                end_io = std::chrono::high_resolution_clock::now();
+                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_rotation_io_ms += double(duration_io.count());
+                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
                 
+                // write Z statistics"
                 DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+                start_io = std::chrono::high_resolution_clock::now();
                 // write Z statistics
                 statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                 end_io = std::chrono::high_resolution_clock::now();
                 duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
-                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;                
+                std::cout << "5th I/O (statsZ.write) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;                
             }
         }
         

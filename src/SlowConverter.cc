@@ -399,14 +399,20 @@ void SlowConverter::copyAndCalculate() {
                     
                     auto start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                    
-                    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
-                    // write Z statistics
-                    statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                     auto end_io = std::chrono::high_resolution_clock::now();
                     auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
                     total_io_ms += double(duration_io.count());
-                    std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;
+                    DEBUG(std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
+                    
+                    start_io = std::chrono::high_resolution_clock::now();
+                    DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+                    // write Z statistics
+                    statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    DEBUG(std::cout << "4th I/O (statsZ.write) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
+                    std::cout << "Is this printed ???" << std::endl;
                     
                     auto endtile = std::chrono::high_resolution_clock::now();
                     auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);

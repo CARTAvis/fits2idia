@@ -26,14 +26,12 @@ Converter::Converter(std::string inputFileName, std::string outputFileName, bool
     height = dims[1];
     width = dims[0];
     
-    swizzledName = N == 3 ? "ZYX" : "ZYXW";
-    
-    DEBUG(std::cout << "Stokes = " << stokes << ", depth = " << depth << ", image dimensions " << height << " x " << width << " , swizzledName = " << swizzledName.c_str(););
-    
+    swizzledName = N == 3 ? "ZYX" : "ZYXW";    
     standardDims = trimAxes({stokes, depth, height, width}, N);
     tileDims = trimAxes({1, 1, TILE_SIZE, TILE_SIZE}, N);
     
     numBins = int(std::max(std::sqrt(width * height), 2.0));
+    DEBUG(std::cout << "Stokes = " << stokes << ", depth = " << depth << ", image dimensions " << height << " x " << width << " , swizzledName = " << swizzledName.c_str() << " , numBins = " << numBins << std::endl;);
     
     // STATS OBJECTS
 
@@ -59,6 +57,56 @@ Converter::~Converter() {
     // TODO this is probably unnecessary; the file object destructor should close the file properly.
     outputFile.close();
     closeFitsFile(inputFilePtr);
+}
+
+bool Converter::includeDataset(const char* dataset)
+{
+   if (output_datasets.empty()) {
+      return true;
+   }
+
+   auto it = output_datasets.find(dataset);   
+   if (it != output_datasets.end()) {
+      return it->second;
+   }
+   
+   return false;
+}
+
+void Converter::ParseExcludeIncludeOptions( std::string exclude_list, std::string include_list ) {
+   output_datasets.clear();
+   
+   std::stringstream ss(include_list);
+   std::string item;
+   
+   // first parse list of includes:
+   if( include_list.size() ) {
+      // std::getline with ',' extracts tokens directly
+      while (std::getline(ss, item, ',')) {
+        if (!item.empty()) {
+            output_datasets[item] = true;
+        }
+      }
+   }
+   
+   // now parse the excluded datasets:
+   std::stringstream ss2(exclude_list);
+   if( exclude_list.size() ) {
+      // std::getline with ',' extracts tokens directly
+      while (std::getline(ss2, item, ',')) {
+        if (!item.empty()) {
+            // output_datasets[item] = true;
+            auto it = output_datasets.find(item);
+            
+            // if found in the list set flag to false, otherwise do nothing as the
+            // specific dataset will not be present in the list of included datasets:
+            if (it != output_datasets.end()) {
+              it->second = false;
+            }
+        }
+      }
+   }
+   
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
@@ -156,6 +204,43 @@ bool Converter::checkIfSwapAxisRequired() {
     return swapStokesFreqAxis;
 }
 
+void Converter::DebugDimsAndParameters( const std::vector<hsize_t>& swizzledDims, const std::vector<hsize_t>& swizzledChunkDims, const H5::DataSet& swizzledDataSet ) {
+   // DEBUG: verify swizzledDims and swizzledChunkDims line up axis-for-axis
+   std::cout << "DEBUG swizzledDims       = [";
+   for (auto d : swizzledDims) std::cout << d << " ";
+   std::cout << "]" << std::endl;
+        
+   std::cout << "DEBUG swizzledChunkDims  = [";
+   for (auto d : swizzledChunkDims) std::cout << d << " ";
+   std::cout << "]" << std::endl;
+        
+   H5::DSetCreatPropList actualPropList = swizzledDataSet.getCreatePlist();
+   if (actualPropList.getLayout() == H5D_CHUNKED) {
+      int rank = swizzledDims.size();
+      std::vector<hsize_t> actualChunkDims(rank);
+      actualPropList.getChunk(rank, actualChunkDims.data());
+
+      std::cout << "DEBUG actual chunk dims from dataset = [";
+      for (auto d : actualChunkDims) std::cout << d << " ";
+          std::cout << "]" << std::endl;
+   } else {
+      std::cout << "DEBUG WARNING: swizzledDataSet is NOT chunked!" << std::endl;
+   }
+       
+   // --- DEBUG: print current chunk cache settings for swizzledDataSet ---
+   H5::DSetAccPropList currentAccessPlist = swizzledDataSet.getAccessPlist();
+   size_t rdccNumSlots = 0;
+   size_t rdccNumBytes = 0;
+   double rdccW0 = 0.0;
+   currentAccessPlist.getChunkCache(rdccNumSlots, rdccNumBytes, rdccW0);
+
+   std::cout << "DEBUG chunk cache: nslots=" << rdccNumSlots
+             << " nbytes=" << rdccNumBytes << " (" << (rdccNumBytes / 1e6) << " MB)"
+             << " w0=" << rdccW0 << std::endl;
+   // --- END DEBUG ---
+
+}
+
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
@@ -178,12 +263,46 @@ void Converter::convert() {
 
     if (depth > 1) {
         statsXYZ.createDatasets(outputGroup, "XYZ");
-        statsZ.createDatasets(outputGroup, "Z");
+        // statsZ.createDatasets(outputGroup, "Z");
+        hsize_t zChunkHeight = std::min((hsize_t)TILE_SIZE, height);
+        hsize_t zChunkWidth  = std::min((hsize_t)TILE_SIZE, width);
+        statsZ.createDatasets(outputGroup, "Z", trimAxes({1, zChunkHeight, zChunkWidth}, N - 1));
         
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
-        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims);
+        
+        // just being explicit that there is no chunking for the rotated dataset 
+        // and we do not want anything like this there because the main point here
+        // is to have continous channels. However, perhaps it would make sense 
+        // TODO: to consider chunks of "depth = number of channels" length so that we basically read 
+        //       all the channels for a given pixel at once
+        auto swizzledChunkDims = EMPTY_DIMS;
+        
+        if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 || strcmp(getConverterType(),"SLOW")==0 ) {
+           hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
+           hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
+           
+           // Keep individual chunk size under ~2GB to safely beat HDF5's 4GB limit
+           const hsize_t MAX_CHUNK_BYTES = 2048ULL * 1024ULL * 1024ULL; // 512 MB
+           while (chunkWidth * chunkHeight * depth * sizeof(float) > MAX_CHUNK_BYTES && (chunkWidth > 1 || chunkHeight > 1)) {
+               if (chunkWidth >= chunkHeight && chunkWidth > 1) {
+                   chunkWidth = std::max((hsize_t)1, chunkWidth / 2);
+               } else if (chunkHeight > 1) {
+                   chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
+               }
+           }
+
+           swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
+           // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
+           printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
+        }
+        // TODO : what to do for eSmartFastConverter ??? perhaps the same or difference ChunkDims ???
+        
+        createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims, swizzledChunkDims);
+        
+        // debug dimensions and parameters (like cache size):
+        DebugDimsAndParameters( swizzledDims, swizzledChunkDims, swizzledDataSet );
     }
     
     mipMaps.createDatasets(outputGroup);

@@ -25,24 +25,25 @@ Stats::~Stats() {
 
 hsize_t Stats::size(std::vector<hsize_t> dims, hsize_t numBins, hsize_t partialHistMultiplier) {
     auto statsSize = product(dims);
+    DEBUG(std::cout << "DEBUG: Stats::size statsSize = " << statsSize << " , numBins = " << numBins << " , partialHistMultiplier = " << partialHistMultiplier << std::endl;);
     return (2 * sizeof(float) + 2 * sizeof(double) + sizeof(int64_t)) * statsSize + sizeof(int64_t) * (statsSize * numBins + statsSize * numBins * partialHistMultiplier);
 }
 
-void Stats::createDatasets(H5::Group group, std::string name) {
+void Stats::createDatasets(H5::Group group, std::string name, const std::vector<hsize_t>& chunkDims /* = {}*/) {
     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
     floatType.setOrder(H5T_ORDER_LE);
     
     H5::IntType intType(H5::PredType::NATIVE_INT64);
     intType.setOrder(H5T_ORDER_LE);
     
-    createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, basicDatasetDims);
-    createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, basicDatasetDims);
-    createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, basicDatasetDims);
-    createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, basicDatasetDims);
-    createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, basicDatasetDims);
+    createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, basicDatasetDims, chunkDims);
     
     if (numBins) {
-        createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}));
+        createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}), chunkDims.empty() ? chunkDims : extend(chunkDims, {numBins}));
     }
 }
 

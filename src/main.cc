@@ -25,7 +25,7 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
 }
 
 bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, eSmartConverterType& smartconverter_type, bool& progress, 
-                bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks) {
+                bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks, std::string& exclude_list, std::string& include_list) {
     extern int optind;
     extern char *optarg;
     
@@ -51,7 +51,9 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
     << std::endl
     << "Additional options specifying parameters of the convertion (e.g. allow for approximations):" << std::endl
-    << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl;
+    << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl
+    << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
+    << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
 
     while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:AT:")) != -1) {
         switch (opt) {
@@ -65,6 +67,16 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'B':
                 if (optarg) {
                    n_io_blocks = atol(optarg);
+                }
+                break;
+            case 'E':
+                if (optarg) {
+                   exclude_list = optarg;
+                }
+                break;
+            case 'I':
+                if (optarg) {
+                   include_list = optarg;
                 }
                 break;
             case 'r':
@@ -169,8 +181,9 @@ int main(int argc, char** argv) {
     int memoryLimitInMb(0);
     int n_io_blocks(1);
     eSmartConverterType smartconverter_type(eAutoSelectedSmartConverter);
+    std::string exclude_list, include_list;
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks, exclude_list, include_list)) {
         return 1;
     }
     

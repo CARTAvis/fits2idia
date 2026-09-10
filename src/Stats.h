@@ -72,7 +72,7 @@ struct Stats {
     static hsize_t size(std::vector<hsize_t> dims, hsize_t numBins = 0, hsize_t partialHistMultiplier = 0);
     
     // Setup
-    void createDatasets(H5::Group group, std::string name);
+    void createDatasets(H5::Group group, std::string name, const std::vector<hsize_t>& chunkDims = EMPTY_DIMS);
     void createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultiplier = 0);
     
     // Basic stats

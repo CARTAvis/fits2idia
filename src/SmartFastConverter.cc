@@ -35,7 +35,7 @@ MemoryUsage SmartFastConverter::calculateMemoryUsage() {
        std::cout << "MEMORY_ESTIMATE: XYZ stats  = " << m.sizes["XYZ stats"]* 1e-9 << " GB" << std::endl;
        
        m.sizes["Z stats"] = Stats::size({height, width}); // statsZ.createBuffers({height, width});
-       std::cout << "MEMORY_ESTIMATE: Z stats  = " << m.sizes["Z stats"]* 1e-9 << " GB" << std::endl;
+       std::cout << "MEMORY_ESTIMATE: Z stats  = " << m.sizes["Z stats"]* 1e-9 << " GB , for numBins = " << numBins << std::endl;
        
        m.sizes["globalCountersZ"] = height  * width * sizeof(StatsCounter);
        std::cout << "MEMORY_ESTIMATE: globalCountersZ  = " << m.sizes["globalCountersZ"]* 1e-9 << " GB" << std::endl;
@@ -299,6 +299,7 @@ void SmartFastConverter::copyAndCalculate() {
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
             block_io_ms += double(duration_io.count());
+            std::cout << "I/O (writeHdf5Data(standardDataSet) + writeHdf5Data(swizzledDataSet)) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
 
             // Fourth loop handles mipmaps        
             // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel
@@ -341,6 +342,8 @@ void SmartFastConverter::copyAndCalculate() {
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
             block_io_ms += double(duration_io.count());
+            std::cout << "I/O (mipMaps.write) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+            
             
             // Write the statistics                
             // Clear the mipmaps before the next BLOCK (not Stokes)

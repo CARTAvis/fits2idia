@@ -32,6 +32,9 @@ public:
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
+    
+    // parse list of included and excluded datasets to be saved in the output file(s):
+    void ParseExcludeIncludeOptions( std::string exclude_list, std::string include_list );
 
     // checks the order of STOKES and FREQUENCY axis an if it is STOKES,FREQ sets flat swapStokesFreqAxis to true:
     bool checkIfSwapAxisRequired();
@@ -49,8 +52,11 @@ public:
     
     bool getCubeHistogramApproximated(){ return false; }
     
+    
 protected:
     virtual void copyAndCalculate() = 0;
+    
+    void DebugDimsAndParameters( const std::vector<hsize_t>& swizzledDims, const std::vector<hsize_t>& swizzledChunkDims, const H5::DataSet& swizzledDataSet );
     
     Timer timer;
     bool progress;
@@ -60,6 +66,12 @@ protected:
     std::string outputFileName;
     fitsfile* inputFilePtr;
     bool      swapStokesFreqAxis;
+    
+    // flags which Datasets to created in the output file(s):
+    // empty set means - all the datasets are created
+    // when the set is not empty then only the specified datasets will be saved:
+    std::unordered_map<std::string, bool> output_datasets;
+    bool includeDataset(const char* dataset);
     
     // Main HDF5 objects
     H5::H5File outputFile;
