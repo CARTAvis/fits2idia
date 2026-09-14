@@ -283,8 +283,13 @@ void SmartFastConverter::copyAndCalculate() {
                  
             start_io = std::chrono::high_resolution_clock::now();                        
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            end_io = std::chrono::high_resolution_clock::now();
+            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            block_io_ms += double(duration_io.count());
+            std::cout << "I/O writeHdf5Data(standardDataSet) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
         
             if (depth > 1) {
+                start_io = std::chrono::high_resolution_clock::now();
                 // This all technically worked if we reused the standard filespace and memspace
                 // But it's probably not a good idea to rely on two incorrect values cancelling each other out
                 // Use n_channels instead of depth            
@@ -295,11 +300,12 @@ void SmartFastConverter::copyAndCalculate() {
                 std::vector<hsize_t> swizzledStart = trimAxes({currentStokes, 0, 0, c_start}, N);
                 
                 writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
+                
+                end_io = std::chrono::high_resolution_clock::now();
+                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                block_io_ms += double(duration_io.count());
+                std::cout << "I/O writeHdf5Data(swizzledDataSet) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
             }
-            end_io = std::chrono::high_resolution_clock::now();
-            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            block_io_ms += double(duration_io.count());
-            std::cout << "I/O (writeHdf5Data(standardDataSet) + writeHdf5Data(swizzledDataSet)) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
 
             // Fourth loop handles mipmaps        
             // In the fast algorithm, we keep one Stokes of mipmaps in memory at once and parallelise by channel

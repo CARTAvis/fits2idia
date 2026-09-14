@@ -279,7 +279,8 @@ void Converter::convert() {
         //       all the channels for a given pixel at once
         auto swizzledChunkDims = EMPTY_DIMS;
         
-        if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 || strcmp(getConverterType(),"SLOW")==0 ) {
+//        if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 || strcmp(getConverterType(),"SLOW")==0 ) {
+        if( strstr(getConverterType(),"SMART") || strcmp(getConverterType(),"SLOW")==0 ) {
            hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
            hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
            
@@ -293,7 +294,11 @@ void Converter::convert() {
                }
            }
 
-           swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
+           if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
+              swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
+           } else {
+              swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
+           }
            // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
            printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
         }
