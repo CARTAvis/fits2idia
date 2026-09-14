@@ -92,8 +92,8 @@ make VERBOSE=1
 make install
 
 # This may not be the most elegant way to do this, but will fix later:
-echo "cp ../scripts/pawsey_submit_smart_converter.sh ${INSTALL_DIR}/bin/"
-cp ../scripts/pawsey_submit_smart_converter.sh ${INSTALL_DIR}/bin/
+echo "cp ../scripts/pawsey_*.sh ${INSTALL_DIR}/bin/"
+cp ../scripts/pawsey_*.sh ${INSTALL_DIR}/bin/
 
 # test:
 # if [[ $dotests -gt 0 ]]; then
