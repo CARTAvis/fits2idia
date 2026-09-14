@@ -73,7 +73,7 @@ if [ $PAWSEY_CLUSTER = "setonix" ]; then
    module_load cfitsio/4.4.0 cray-hdf5/1.14.3.7
    
    # cmake is only required at build time, so we use the normal module load
-   module load cmake/3.24.3
+   module load cmake/3.30.5
 else 
    echo "ERROR Currently only Setonix is handled correctly"
    exit -1
