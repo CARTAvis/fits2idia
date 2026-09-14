@@ -26,6 +26,8 @@ Options:
                          (default: ${fitsfile})
   -m, --mem-mb INT       Memory limit in MB
                          (default: ${max_mem_mb})
+  -M, --mem-gb INT       Memory limit in GB
+                         (default: ${max_mem_mb} MB)
   -a, --algo STRING      Algorithm: channel, spatial, fast, or slow
                          (default: ${algorithm})
   -H, --approx-hist      Calculate approximate XYZ histogram (flag)
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -m|--mem-mb)
             max_mem_mb="$2"
+            shift 2
+            ;;
+        -M|--mem-gb)
+            max_mem_mb=$(( $2 * 1024 ))
             shift 2
             ;;
         -a|--algo)
