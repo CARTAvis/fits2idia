@@ -79,7 +79,7 @@ done
 # --- Environment & Modules ---
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 
-module use /software/projects/ja3/setonix/2025.08/modules/zen3/gcc/14.2.0/fits2idia/
+module use /software/projects/ja3/setonix/2025.08/modules/zen3/gcc/14.2.0/
 module load cfitsio/4.4.0 cray-hdf5/1.14.3.7 fits2idia/devel
 
 
