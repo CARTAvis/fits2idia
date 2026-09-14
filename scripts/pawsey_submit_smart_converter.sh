@@ -7,71 +7,114 @@
 #SBATCH --partition=highmem
 #SBATCH --time=96:00:00
 
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+set -euo pipefail
 
-module use TODO 
-module load cfitsio/4.4.0 cray-hdf5/1.14.3.7 fits2idia-msok
-
-# FITS FILE TO CONVERT:
-fitsfile=image.restored.i.SB9992.contcube.linmos.13arcsec.leakage.zernike.holoI.Rotated-Axis3.fits
-if [[ -n "$1" && "$1" != "-" ]]; then
-   fitsfile="$1"
-fi
-base_fitsfile=`basename $fitsfile`
-template_hdf5_file=${fitsfile%%fits}hdf5
-
-# limit in MB (default 31 GB)
+# --- Default Parameters ---
+fitsfile="image.restored.i.SB9992.contcube.linmos.13arcsec.leakage.zernike.holoI.Rotated-Axis3.fits"
 max_mem_mb=31000
-if [[ -n "$2" && "$2" != "-" ]]; then
-   max_mem_mb=$2
-fi
-
-# slow, channel, spatial, fast
 algorithm="channel"
-if [[ -n "$3" && "$3" != "-" ]]; then
-   algorithm="$3"
-fi
-
-# calculate approximate XYZ histogram
 approx_cube_histogram=0
-if [[ -n "$4" && "$4" != "-" ]]; then
-   approx_cube_histogram=$4
-fi
-
 use_ssd=1
-if [[ -n "$5" && "$5" != "-" ]]; then
-   use_ssd=$5
+work_dir="./"
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  -f, --file PATH        Path to FITS file to convert
+                         (default: ${fitsfile})
+  -m, --mem-mb INT       Memory limit in MB
+                         (default: ${max_mem_mb})
+  -a, --algo STRING      Algorithm: channel, spatial, fast, or slow
+                         (default: ${algorithm})
+  -H, --approx-hist      Calculate approximate XYZ histogram (flag)
+  -s, --no-ssd           Disable SSD partition usage (default: SSD enabled)
+  -w, --work-dir PATH    Working directory to execute conversion in
+                         (default: ${work_dir})
+  -h, --help             Show this help message and exit
+
+EOF
+    exit 0
+}
+
+# --- Parse Command-Line Options ---
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f|--file)
+            fitsfile="$2"
+            shift 2
+            ;;
+        -m|--mem-mb)
+            max_mem_mb="$2"
+            shift 2
+            ;;
+        -a|--algo)
+            algorithm="$2"
+            shift 2
+            ;;
+        -H|--approx-hist)
+            approx_cube_histogram=1
+            shift 1
+            ;;
+        -s|--no-ssd)
+            use_ssd=0
+            shift 1
+            ;;
+        -w|--work-dir)
+            work_dir="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option '$1'" >&2
+            echo "Run '$(basename "$0") --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# --- Environment & Modules ---
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
+
+module use /software/projects/ja3/setonix/2025.08/modules/zen3/gcc/14.2.0/fits2idia/
+module load cfitsio/4.4.0 cray-hdf5/1.14.3.7 fits2idia/devel
+
+
+if [[ -n "$work_dir" && "$work_dir" != "./" ]]; then
+   cd "${work_dir}"
 fi
 
-work_dir="./"
-if [[ -n "$6" && "$6" != "-" ]]; then
-   work_dir="$6"
-   cd ${work_dir}
-fi
+base_fitsfile=$(basename "$fitsfile")
+template_hdf5_file="${fitsfile%%fits}hdf5"
 
 echo "-------------------------------------------------------------------------------------------------"
 echo "PARAMETERS:"
 echo "--------------------------"
-echo "max_mem_mb = $max_mem_mb"
-echo "fitsfile   = $fitsfile"
-echo "algorithm  = $algorithm"
+echo "max_mem_mb            = $max_mem_mb"
+echo "fitsfile              = $fitsfile"
+echo "algorithm             = $algorithm"
 echo "approx_cube_histogram = $approx_cube_histogram"
-echo "OMP_NUM_THREADS = $OMP_NUM_THREADS"
-echo "use_ssd = $use_ssd"
-echo "work_dir = $work_dir"
+echo "OMP_NUM_THREADS       = $OMP_NUM_THREADS"
+echo "use_ssd               = $use_ssd"
+echo "work_dir              = $work_dir"
 echo "--------------------------"
 
 date
 pwd
-start_dir=`pwd`
+start_dir=$(pwd)
 temp_dir="./"
 
 if [[ $use_ssd -gt 0 ]]; then
    temp_dir=$(mktemp -d)
-   mkdir -p ${temp_dir}
    
    echo "lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G ${temp_dir}/"
-   lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G ${temp_dir}/
+   lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G "${temp_dir}/"      
+   
+   echo "cp ${fitsfile} ${temp_dir}/"
+   cp ${fitsfile} ${temp_dir}/
 else
    echo "WARNING : SSD partition will not be used in conversion consider using this option!"
 fi
@@ -82,33 +125,24 @@ if [[ $algorithm == "slow" ]]; then
    echo "SLOW CONVERTER:"
    date
 
-   outfile=${fitsfile%%.fits}_SLOW.hdf5
+   outfile="${fitsfile%%.fits}_SLOW.hdf5"
 
-   date
-   echo "rm -f $outfile"
-   rm -f $outfile
-   date
-
-   # -m 
+   rm -f "$outfile"
    echo "srun fits2idia $fitsfile -o $outfile -p -s"
-   srun fits2idia $fitsfile -o $outfile -p -s
+   srun fits2idia "$fitsfile" -o "$outfile" -p -s
    date
+
 elif [[ $algorithm == "fast" ]]; then
    echo
    echo "-------------------------------------------------------------------------------------------------"
    echo "FAST CONVERTER:"
    date
 
-   outfile=${fitsfile%%.fits}_FAST.hdf5
+   outfile="${fitsfile%%.fits}_FAST.hdf5"
 
-   date
-   echo "rm -f $outfile"
-   rm -f $outfile
-   date
-
-   # -m 
+   rm -f "$outfile"
    echo "srun fits2idia $fitsfile -o $outfile -p"
-   srun fits2idia $fitsfile -o $outfile -p
+   srun fits2idia "$fitsfile" -o "$outfile" -p
    date
 
 else
@@ -128,27 +162,22 @@ else
       options="$options -A"
    fi
 
-   outfile=${fitsfile%%.fits}_SMARTALGO-${algorithm}_approx${approx_cube_histogram}.hdf5
+   outfile="${fitsfile%%.fits}_SMARTALGO-${algorithm}_approx${approx_cube_histogram}.hdf5"
 
-   date
-   echo "rm -f $outfile"
-   rm -f $outfile
-   date
-
+   rm -f "$outfile"
    echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options}"
-   srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options}
+   srun fits2idia "$fitsfile" -o "$outfile" -p -S -M "${max_mem_mb}" -a ${options}
    date        
 fi
 
 if [[ $use_ssd -gt 0 ]]; then
    echo "mv ${temp_dir}/${outfile} ${start_dir}"
-   mv ${temp_dir}/${outfile} ${start_dir}
+   mv "${temp_dir}/${outfile}" "${start_dir}"
    
    echo "rm -fr ${temp_dir}/"
 # TODO : uncomment when I am sure it works and will not remove anything wrong !!!
-#   rm -fr ${temp_dir}/
+#   rm -fr "${temp_dir}/"
 fi
-
 
 echo "-------------------------------------------------------------------------------------------------"
 echo "Finished all at:"
