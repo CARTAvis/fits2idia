@@ -127,6 +127,9 @@ if [[ $use_ssd -gt 0 ]]; then
    
    echo "cp ${fitsfile} ${temp_dir}/"
    cp ${fitsfile} ${temp_dir}/
+   
+   echo "cd ${temp_dir}/"
+   cd ${temp_dir}/
 else
    echo "WARNING : SSD partition will not be used in conversion consider using this option!"
 fi
@@ -183,6 +186,9 @@ else
 fi
 
 if [[ $use_ssd -gt 0 ]]; then
+   echo "cd ${start_dir}"
+   cd ${start_dir}
+
    echo "mv ${temp_dir}/${outfile} ${start_dir}"
    mv "${temp_dir}/${outfile}" "${start_dir}"
    
