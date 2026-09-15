@@ -113,6 +113,8 @@ pwd
 start_dir=$(pwd)
 temp_dir="./"
 
+start_ux=`date +%s`
+
 if [[ $use_ssd -gt 0 ]]; then
    temp_dir=$(mktemp -d)
    
@@ -188,3 +190,8 @@ fi
 echo "-------------------------------------------------------------------------------------------------"
 echo "Finished all at:"
 date
+
+end_ux=`date +%s`
+total_time=$(($end_ux-$start_ux))
+echo "Total execution time (including copying to and moving from SSD partition) took : $total_time [sec]"
+echo "-------------------------------------------------------------------------------------------------"
