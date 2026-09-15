@@ -106,7 +106,8 @@ echo "approx_cube_histogram = $approx_cube_histogram"
 echo "OMP_NUM_THREADS       = $OMP_NUM_THREADS"
 echo "use_ssd               = $use_ssd"
 echo "work_dir              = $work_dir"
-echo "--------------------------"
+echo "SLURM_CPUS_PER_TASK   = $SLURM_CPUS_PER_TASK (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
+echo "-------------------------------------------------------------------------------------------------"
 
 date
 pwd
