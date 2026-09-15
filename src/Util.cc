@@ -166,6 +166,22 @@ void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize
     }
 }
 
+void readFitsDataRow(fitsfile* filePtr, hsize_t channel, hsize_t row, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
+    long fpixel[] = {1, (long)row + 1, (long)channel + 1, stokes + 1};
+    if (bSwapStokesFreqAxis) {
+       // basically should instead be : long fpixel[] = {1, (long)row + 1, stokes + 1, (long)channel + 1};
+       fpixel[2] = stokes + 1;
+       fpixel[3] = (long)channel + 1;
+    }
+    int status(0);
+    
+    fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
+    
+    if (status != 0) {
+        throw "Could not read image data row";
+    }
+}
+
 // Only available in C++ API from 1.10.1
 bool hdf5Exists(H5::H5Location& location, const std::string& name) {
     return H5Lexists(location.getId(), name.c_str(), H5P_DEFAULT) > 0;

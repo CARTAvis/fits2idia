@@ -54,6 +54,7 @@ set(SOURCE_FILES
     src/SlowConverter.cc
     src/SmartConverter.cc
     src/SmartFastConverter.cc
+    src/MicroMemoryConverter.cc
     src/Util.cc)
 
 add_executable(fits2idia ${SOURCE_FILES})

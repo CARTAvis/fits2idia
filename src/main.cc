@@ -13,7 +13,12 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
    char first_char[2];
    first_char[0] = smartconverter_type[0];
    first_char[1] = '\0';
+   
+   printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
 
+   if (strcasecmp(smartconverter_type,"micro")==0 || strcasecmp(first_char,"m")==0) {
+      return eSmartMicroMemoryConverter;
+   }
    if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
       return eSmartConverterSpatialParallel;
    }
@@ -42,7 +47,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
-    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel' or 'fast' (parallelised over channels)" << std::endl
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'micro' or 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
@@ -111,6 +116,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'T':
                 if (optarg) {
                    smartconverter_type = parse_smartconverter_type(optarg);   
+                   printf("DEBUG : smartconverter_type = %d\n",(int)smartconverter_type);
                 }
                 break;
             case 'z':

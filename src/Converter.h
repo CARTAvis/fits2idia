@@ -12,7 +12,7 @@
 #include "Timer.h"
 #include "Util.h"
 
-enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2 };
+enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3 };
 
 struct MemoryUsage {
     MemoryUsage() : total(0) {}
@@ -188,7 +188,7 @@ protected:
     double calculateRotatedChannel( unsigned int s, hsize_t c_start, hsize_t c_end, float* standardCube, float* rotatedCube, int sliceIncrement );
     
     // reduce memory usage:
-    bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
     
     void SetChunkDivider( int divider );
     
@@ -236,5 +236,18 @@ public:
 protected:
     void copyAndCalculate() override;
 };
+
+class MicroMemoryConverter : public SmartConverter {
+public:
+    MicroMemoryConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    MemoryUsage calculateMemoryUsage() override;
+    virtual bool ReduceMemoryUsage(hsize_t memoryLimit, int max_iter) override;
+
+    virtual const char* getConverterType() override { return "MICRO-MEMORY"; }
+
+protected:
+    void copyAndCalculate() override;
+};
+
 
 #endif

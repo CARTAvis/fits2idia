@@ -114,7 +114,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         std::cout << "DEBUG : using SlowConverter object" << std::endl;
         return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
      } else if (smart) { // was also && memoryLimitInMb > 0
-        std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << std::endl;
+        std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << " smarttype = " << smarttype << std::endl;
         SmartConverter* ptr = NULL;
         if (smarttype == eAutoSelectedSmartConverter) {
            std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
@@ -129,6 +129,9 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
             if (smarttype == eSmartConverterChannelParallel) {
                 ptr = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using SmartFastConverter object" << std::endl;
+            } else if (smarttype == eSmartMicroMemoryConverter) {
+                ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
+                std::cout << "DEBUG : using MicroMemoryConverter object" << std::endl;
             } else {
                 ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using SmartConverter object" << std::endl;
