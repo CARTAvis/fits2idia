@@ -168,7 +168,7 @@ else
    
    options=""
    if [[ $algorithm == "channel" ]]; then
-      options="-T fast"
+      options="-T channel"
    elif [[ $algorithm == "spatial" ]]; then   
       options="-T spatial"
    fi
