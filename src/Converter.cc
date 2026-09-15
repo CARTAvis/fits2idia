@@ -117,6 +117,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << std::endl;
         SmartConverter* ptr = NULL;
         if (smarttype == eAutoSelectedSmartConverter) {
+           std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
            if( auto_mode ){
                // TODO : automatically select algorithms based on data dimensions etc. Currently just using the default one:
                //        Looks like it will be tricky here as these dimentions are not yet known so this decision/call may need to be moved elsewhere.
@@ -127,8 +128,10 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         } else {
             if (smarttype == eSmartConverterChannelParallel) {
                 ptr = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
+                std::cout << "DEBUG : using SmartFastConverter object" << std::endl;
             } else {
                 ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+                std::cout << "DEBUG : using SmartConverter object" << std::endl;
             }
         }
         ptr->setMemoryLimit(memoryLimitInMb);
