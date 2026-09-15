@@ -116,7 +116,11 @@ temp_dir="./"
 start_ux=`date +%s`
 
 if [[ $use_ssd -gt 0 ]]; then
-   temp_dir=$(mktemp -d)
+   temp_dir=$(mktemp -d ./tmp_dir_XXXXXX)
+   # Generate the name locally
+   # temp_dir=$(mktemp -u ./tmp_dir.XXXXXX)
+   # Create the directory manually
+   # mkdir -p "$temp_dir"
    
    echo "lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G ${temp_dir}/"
    lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G "${temp_dir}/"      
