@@ -193,8 +193,7 @@ if [[ $use_ssd -gt 0 ]]; then
    mv "${temp_dir}/${outfile}" "${start_dir}"
    
    echo "rm -fr ${temp_dir}/"
-# TODO : uncomment when I am sure it works and will not remove anything wrong !!!
-#   rm -fr "${temp_dir}/"
+   rm -fr "${temp_dir}/"
 fi
 
 echo "-------------------------------------------------------------------------------------------------"
