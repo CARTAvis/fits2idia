@@ -55,7 +55,8 @@ set(SOURCE_FILES
     src/SmartConverter.cc
     src/SmartFastConverter.cc
     src/MicroMemoryConverter.cc
-    src/Util.cc)
+    src/Util.cc
+    src/IOCost.cc)
 
 add_executable(fits2idia ${SOURCE_FILES})
 target_link_libraries(fits2idia ${LINK_LIBS})
