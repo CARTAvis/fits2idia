@@ -109,6 +109,74 @@ void Converter::ParseExcludeIncludeOptions( std::string exclude_list, std::strin
    
 }
 
+std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
+    hsize_t memoryLimit  = memoryLimitInMb*1e6; // memory limit in bytes
+    std::unique_ptr<SlowConverter> slow_ptr = std::unique_ptr<SlowConverter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
+               
+    // first check what is the minimum requirement of the slow converter (one channel at a time no parallelisation) :
+    MemoryUsage slow_converter_memory = slow_ptr->calculateMemoryUsage();
+    double slow_converter_memory_mb = slow_converter_memory.total/1e6;
+                
+    // safety buffer factor - how much more memory is required than calculated, currently 10%
+    double safety_buffer_factor = 1.1; 
+    
+    // maximum numbe of iterations when checking memory limits:
+    int max_iter = 10;
+               
+    double single_channel_image_mb = slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
+    double cube_size_mb = slow_ptr->depth*slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
+               
+    if ( memoryLimitInMb > (slow_converter_memory_mb*1.1) ) { 
+       // use this path if we have at least enough memory for SlowConverter
+       std::unique_ptr<SmartFastConverter> smartfast_ptr = std::unique_ptr<SmartFastConverter>(new SmartFastConverter(inputFileName, outputFileName, progress, zMips)); 
+       bool can_use_smartfast = smartfast_ptr->ReduceMemoryUsage( memoryLimit, max_iter );
+       MemoryUsage smartfast_converter_memory = smartfast_ptr->calculateMemoryUsage();
+       double smartfast_converter_memory_mb = smartfast_converter_memory.total/1e6;
+                  
+       SmartConverter* smart_ptr = dynamic_cast<SmartConverter*>(smartfast_ptr.get());
+       bool can_use_smart = smart_ptr->ReduceMemoryUsage( memoryLimit, max_iter ); 
+       MemoryUsage smart_converter_memory = smartfast_ptr->calculateMemoryUsage();
+       double smart_converter_memory_mb = smartfast_converter_memory.total/1e6;
+       
+       if (!can_use_smartfast && !can_use_smart ) { // was empirical : if ( cube_size_mb >= 5000 && memoryLimitInMb < 10000 ) { BASED ON TESTS : if image is at least 5GB and available memory <= 12 GB:
+          // if cannot use any of the smart converters -> use slow converter:
+          std::cout << "AUTOMATIC ALGORITHM SELECTION : using SlowConverter as there is not enough memory to use Smart or SmartFast converter" << std::endl;
+          return slow_ptr;
+       } else {
+         // we can use at least one of the smart converters :
+         
+         std::cout << "AUTOMATIC ALGORITHM SELECTION : returning Smart or " << std::endl;
+         if (can_use_smartfast && can_use_smart ) {
+            // if both can be used, calculate expected cost/execution time and decide based on this :
+            // TODO :
+            // CompCost smartfast_comp_cost = smartfast_ptr->calculateCompCost();
+            // CompCost smart_comp_cost = smart_ptr->calculateCompCost();
+            // std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartFastConverter" << std::endl;
+            // if ( smartfast_comp_cost < smart_comp_cost ) { return smartfast_ptr } else { return smart_ptr }
+            std::cout << "ERROR : AUTOMATIC ALGORITHM SELECTION : decision based on computational cost not yet implemented -> using SmartFastConverter" << std::endl;
+            return smartfast_ptr;
+         } else {
+            if (can_use_smartfast) {
+               std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartFastConverter" << std::endl;
+               return smartfast_ptr;
+            } else {
+               std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartConverter" << std::endl;
+               return std::unique_ptr<Converter>(smart_ptr);
+               // return std::unique_ptr<Converter>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
+            }
+         }
+       }
+    } else {
+       // if we do not even have enough memory for a the SlowConverter (total minimum - one image at a time), use 
+       // partial converter reading 1 row at a time:
+       std::cout << "AUTOMATIC ALGORITHM SELECTION : using MicroMemoryConverter" << std::endl;
+       return std::unique_ptr<Converter>(new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips));
+    }
+
+    // nothing optimal identified use SlowConverter as a fallback:
+    return slow_ptr;
+}
+
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
     if (slow) {
         std::cout << "DEBUG : using SlowConverter object" << std::endl;
@@ -119,8 +187,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         if (smarttype == eAutoSelectedSmartConverter) {
            std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
            if( auto_mode ){
-               // TODO : automatically select algorithms based on data dimensions etc. Currently just using the default one:
-               //        Looks like it will be tricky here as these dimentions are not yet known so this decision/call may need to be moved elsewhere.
+               return getOptimalConverter(inputFileName, outputFileName, slow, smart, smarttype, progress, zMips, memoryLimitInMb, auto_mode);
            } else {
               // otherwise use the default one:
               ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
@@ -445,3 +512,13 @@ void Converter::convert() {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Execution of entire Converter::convert took: " << duration.count() << " milliseconds." << std::endl;
 }
+
+
+IOCostBreakdown Converter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel)
+{
+   std::cout << "ERROR : virtual method Converter::estimateIO not implemented in this class !" << std::endl;
+   
+   IOCostBreakdown result;
+   return result;
+}
+

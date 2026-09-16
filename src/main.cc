@@ -63,6 +63,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:AT:")) != -1) {
         switch (opt) {
             case 'a':
+            case 'r':
                 auto_mode = true;
                 n_io_blocks = -1; // it will be automatically calculated based on memory limit
                 break;
@@ -84,9 +85,9 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
                    include_list = optarg;
                 }
                 break;
-            case 'r':
+/*            case 'r':
                 auto_mode = true;
-                break;
+                break;*/
             case 'o':
                 outputFileName.assign(optarg);
                 break;

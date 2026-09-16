@@ -11,6 +11,7 @@
 #include "MipMap.h"
 #include "Timer.h"
 #include "Util.h"
+#include "IOCost.h"
 
 enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3 };
 
@@ -28,7 +29,11 @@ public:
     Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     virtual ~Converter();
     
+    
+    // static factory function to get the required or automatically suggested converter object:
     static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode);
+    static std::unique_ptr<Converter> getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode);    
+    
     void convert();
     void reportMemoryUsage();
     virtual MemoryUsage calculateMemoryUsage() = 0;
@@ -41,6 +46,9 @@ public:
     
     // reduce memory usage:
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    
+    // calculate IO cost :
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
     
     void setIOBlocks( int _n_io_blocks ){ n_io_blocks = _n_io_blocks; }
     
@@ -138,6 +146,10 @@ public:
     virtual const char* getConverterType() override { return "SMART-XY-PARALLEL"; }
     
     bool getCubeHistogramApproximated(){  return bApproximateCubeHistogram; }
+    
+    // reduce memory usage:
+    // needs to be public to be used in a static function in Converter
+    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
 
 protected:
     int memoryLimitInMb;
@@ -187,9 +199,6 @@ protected:
     // TODO : check if I can simplify these parameters a bit more     
     double calculateRotatedChannel( unsigned int s, hsize_t c_start, hsize_t c_end, float* standardCube, float* rotatedCube, int sliceIncrement );
     
-    // reduce memory usage:
-    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
-    
     void SetChunkDivider( int divider );
     
     
@@ -232,6 +241,8 @@ public:
     MemoryUsage calculateMemoryUsage() override;
     
     virtual const char* getConverterType() override { return "SLOW"; }
+    
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
     
 protected:
     void copyAndCalculate() override;
