@@ -203,6 +203,9 @@ void SmartConverter::copyAndCalculate() {
 
 
     hsize_t image_size = width*height;
+    
+    std::vector<double> savedChanMin(stokes * depth), savedChanMax(stokes * depth);
+    std::vector<double> savedCubeMin(stokes), savedCubeMax(stokes);
 
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
@@ -300,7 +303,9 @@ void SmartConverter::copyAndCalculate() {
         // write channel stats to HDF5 files:
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats" << std::endl);
-        statsXY.write({1, depth}, {s, 0});
+//        statsXY.write({1, depth}, {s, 0});
+        { auto basicN = statsXY.basicDatasetDims.size();
+          statsXY.writeBasic(statsXY.fullBasicBufferDims, trimAxes({1, depth}, basicN), trimAxes({s, 0}, basicN)); }
         auto end_io = std::chrono::high_resolution_clock::now();
         auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
         total_io_ms += double(duration_io.count());
@@ -318,8 +323,16 @@ void SmartConverter::copyAndCalculate() {
             PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start(timerLabelStatsMipmaps););
             statsXYZ.copyStatsFromCounter(0, depth * height * width, counterXYZ);
+            
+            savedCubeMin[s] = statsXYZ.minVals[0];
+            savedCubeMax[s] = statsXYZ.maxVals[0];
+        }    
+
+        for (hsize_t c = 0; c < depth; c++) {
+           savedChanMin[s * depth + c] = statsXY.minVals[c];
+           savedChanMax[s * depth + c] = statsXY.maxVals[c];
         }
-        
+       
         // XY and XYZ histograms
         // We need a second pass over all channels because we need cube min and max (and channel min and max per channel)
         // We do the second pass backwards to take advantage of caching
@@ -332,10 +345,10 @@ void SmartConverter::copyAndCalculate() {
         
 
         // calculate cube (statsXYZ) histogram:
-        auto start2 = std::chrono::high_resolution_clock::now();        
-        statsXYZ.clearHistogramBuffers();
-        double total_second_pass_processing_ms = 0.00;
-        if( bApproximateCubeHistogram ) {
+//        auto start2 = std::chrono::high_resolution_clock::now();        
+//        statsXYZ.clearHistogramBuffers();
+//        double total_second_pass_processing_ms = 0.00;
+/*        if( bApproximateCubeHistogram ) {
            // calculate approximate cube histogram by merging channel histograms
            // which is perfectly enough for selecting the right colour scale
            total_second_pass_processing_ms = calcApproxCubeHistogram(s);
@@ -343,20 +356,22 @@ void SmartConverter::copyAndCalculate() {
            // calculate exect cube histogram by doing second pass 
            // thought the data (slower)
            total_second_pass_processing_ms = doSecondPass(s, n_blocks, sliceIncrement, leftOverSlices, total_io_ms);
-        }
+        }*/
 
-        auto end2 = std::chrono::high_resolution_clock::now();
+/*        auto end2 = std::chrono::high_resolution_clock::now();
         auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);        
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
         std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
-        total_pureprocessing_ms += total_second_pass_processing_ms;
+        total_pureprocessing_ms += total_second_pass_processing_ms;*/
 
         
         PROGRESS(std::endl);
         
         start_io = std::chrono::high_resolution_clock::now();
         if (depth > 1) {
-            statsXYZ.write({1}, {s});
+            // statsXYZ.write({1}, {s});
+            auto basicN = statsXYZ.basicDatasetDims.size();
+            statsXYZ.writeBasic(statsXYZ.fullBasicBufferDims, trimAxes({1}, basicN), trimAxes({s}, basicN));
         }
         end_io = std::chrono::high_resolution_clock::now();
         duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
@@ -375,7 +390,9 @@ void SmartConverter::copyAndCalculate() {
 // Probably rotation can also be done in the first loop, why not ?
     // Swizzle
     if (depth > 1) {
-        double total_rotation_pass_processing_ms = calculateRotatedData(total_io_ms);
+        // double total_rotation_pass_processing_ms = calculateRotatedData(total_io_ms);
+         double total_rotation_pass_processing_ms =
+             calculateRotatedDataAndCubeHistogram(total_io_ms, savedChanMin, savedChanMax, savedCubeMin, savedCubeMax);
         total_pureprocessing_ms += total_rotation_pass_processing_ms;
     }
     std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
@@ -1007,4 +1024,368 @@ double SmartConverter::calcApproxCubeHistogram( unsigned int s ) {
    std::cout << "Execution of Approx histogram calculation took: " << duration.count() << " milliseconds." << std::endl;
 
    return total_second_pass_processing_ms;
+}
+
+// New SmartConverter method, replacing the call to calculateRotatedData() +
+// doSecondPass()/calcApproxCubeHistogram() with a single pass that folds the
+// channel (XY) and cube (XYZ) histograms into the existing rotation pass --
+// same principle as MicroMemoryConverter.cc's STEP 4 (see its top-of-file
+// comment block). This eliminates doSecondPass's extra depth-many FITS
+// channel rereads entirely.
+//
+// ============================== INTEGRATION NEEDED ==============================
+//
+// 1) Converter.h, SmartConverter class body -- add alongside the existing
+//    calculateRotatedData() declaration:
+//
+//    virtual double calculateRotatedDataAndCubeHistogram(double& total_io_ms,
+//                                                         const std::vector<double>& savedChanMin,
+//                                                         const std::vector<double>& savedChanMax,
+//                                                         const std::vector<double>& savedCubeMin,
+//                                                         const std::vector<double>& savedCubeMax);
+//
+// 2) SmartConverter::copyAndCalculate() needs three changes, mirroring
+//    MicroMemoryConverter.cc's copyAndCalculate() exactly:
+//
+//    a) Before the stokes loop, declare the saved-value cache (statsXY/statsXYZ
+//       are single reused buffers -- by the time the rotation pass's own stokes
+//       loop runs, pass 1's stokes loop has already finished ALL stokes and
+//       overwritten them):
+//
+//         std::vector<double> savedChanMin(stokes * depth), savedChanMax(stokes * depth);
+//         std::vector<double> savedCubeMin(stokes), savedCubeMax(stokes);
+//
+//    b) Inside the stokes loop, right after `statsXYZ.copyStatsFromCounter(0, ...)`
+//       (which is where cube min/max become correct for this stokes) and BEFORE
+//       the old doSecondPass/calcApproxCubeHistogram call, cache this stokes'
+//       values and switch the writes to writeBasic() (the histogram half isn't
+//       ready yet -- it gets written after the rotation pass, see the new
+//       function below):
+//
+//         for (hsize_t c = 0; c < depth; c++) {
+//             savedChanMin[s * depth + c] = statsXY.minVals[c];
+//             savedChanMax[s * depth + c] = statsXY.maxVals[c];
+//         }
+//         savedCubeMin[s] = statsXYZ.minVals[0];
+//         savedCubeMax[s] = statsXYZ.maxVals[0];
+//
+//       Then DELETE the `statsXY.write({1, depth}, {s, 0});` call and replace
+//       with:
+//         { auto basicN = statsXY.basicDatasetDims.size();
+//           statsXY.writeBasic(statsXY.fullBasicBufferDims, trimAxes({1, depth}, basicN), trimAxes({s, 0}, basicN)); }
+//
+//       And DELETE the entire `if (bApproximateCubeHistogram) {...} else {
+//       doSecondPass(...) }` block and the `statsXYZ.write({1}, {s});` call
+//       that follows it -- both are now redundant, replaced by the new function.
+//
+//    c) Replace the existing call:
+//         double total_rotation_pass_processing_ms = calculateRotatedData(total_io_ms);
+//       with:
+//         double total_rotation_pass_processing_ms =
+//             calculateRotatedDataAndCubeHistogram(total_io_ms, savedChanMin, savedChanMax, savedCubeMin, savedCubeMax);
+//
+// ==================================================================================
+
+double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
+                                                              const std::vector<double>& savedChanMin,
+                                                              const std::vector<double>& savedChanMax,
+                                                              const std::vector<double>& savedCubeMin,
+                                                              const std::vector<double>& savedCubeMax)
+{
+    auto start = std::chrono::high_resolution_clock::now();
+    hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
+    const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
+
+    DEBUG(std::cout << "Performing tiled rotation with folded cube/channel histograms." << std::endl;);
+    PROGRESS("Tiled rotation, Z stats & histograms" << std::endl);
+    TIMER(timer.start("Allocate"););
+
+    hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+    std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
+    std::cout << "MEMORY (SmartConverter::calculateRotatedDataAndCubeHistogram for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
+    float* standardSlice = new float[sliceSize];
+    float* rotatedSlice = new float[sliceSize];
+
+    printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",TILE_SIZE,TILE_SIZE);
+    statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+
+    bool doHistograms = (numBins > 0);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double total_rotation_pass_processing_ms = double(duration.count());;
+    double total_rotation_io_ms = 0.00;
+
+    for (unsigned int s = 0; s < stokes; s++) {
+        DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
+        PROGRESS("\tStokes " << s << "\t");
+
+        // Pull this stokes' cached channel/cube min-max (pass 1's in-memory
+        // statsXY/statsXYZ buffers have since moved on to later stokes -- see
+        // the caller-side caching this function depends on).
+        auto starthist = std::chrono::high_resolution_clock::now();
+
+        double cubeMin = 0, cubeMax = 0, cubeRange = 0;
+        bool cubeHist = false;
+        std::vector<double> chanMinArr(depth), chanRangeArr(depth);
+        std::vector<bool> chanHistArr(depth, false);
+
+        if (doHistograms) {
+            statsXY.clearHistogramBuffers();
+            statsXYZ.clearHistogramBuffers();
+
+            cubeMin = savedCubeMin[s];
+            cubeMax = savedCubeMax[s];
+            cubeRange = cubeMax - cubeMin;
+            cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
+
+            for (hsize_t c = 0; c < depth; c++) {
+                double chanMin = savedChanMin[s * depth + c];
+                double chanMax = savedChanMax[s * depth + c];
+                chanMinArr[c] = chanMin;
+                chanRangeArr[c] = chanMax - chanMin;
+                chanHistArr[c] = std::isfinite(chanMin) && std::isfinite(chanMax) && chanRangeArr[c] > 0;
+            }
+            DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
+        }
+        auto endhist = std::chrono::high_resolution_clock::now();
+        total_rotation_pass_processing_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(endhist - starthist).count());
+
+        hsize_t tileCount(0);
+        for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
+            for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
+                tileCount++;
+                hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
+                hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
+
+                DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
+                PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
+
+                // read tile slice
+                auto start_io = std::chrono::high_resolution_clock::now();
+
+                DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+                TIMER(timer.start("Read"););
+
+                auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
+                auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
+                auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
+
+                readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                auto end_io = std::chrono::high_resolution_clock::now();
+                auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_rotation_io_ms += double(duration_io.count());
+                std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+
+                auto starttile = std::chrono::high_resolution_clock::now();
+                // rotate tile slice
+                DEBUG(std::cout << " Calculating rotation..." << std::flush;);
+                TIMER(timer.start("Rotation"););
+
+                hsize_t tile_size = (ySize * xSize);
+                hsize_t ysize_depth = (ySize * depth);
+                hsize_t i;
+
+                // Tune this parameter based on target CPU architecture.
+                // 16 or 32 are usually the sweet spots for L1/L2 cache sizes handling 32-bit floats.
+                const hsize_t BLOCK_SIZE = 16;
+
+                // Pre-calculate stride multipliers outside the loop to avoid redundant math
+                const size_t dest_y_stride = depth;
+                const size_t dest_z_stride = depth * ySize; // This acts as your 'image_size' jump
+                const size_t src_y_stride  = xSize;
+                const size_t src_z_stride  = ySize * xSize;
+
+                // perform rotation:
+                // Collapse the outer block loops so OpenMP has a rich pool of independent tasks
+                #pragma omp parallel for collapse(3) schedule(dynamic)
+                for (hsize_t i0 = 0; i0 < depth; i0 += BLOCK_SIZE) {
+                    for (hsize_t j0 = 0; j0 < ySize; j0 += BLOCK_SIZE) {
+                        for (hsize_t k0 = 0; k0 < xSize; k0 += BLOCK_SIZE) {
+
+
+                            // Calculate boundaries for the inner loops. 
+                            // This is critical to prevent segfaults on the edges of the chunk 
+                            // if your dimensions are not perfect multiples of BLOCK_SIZE.
+                            hsize_t i_max = std::min(i0 + BLOCK_SIZE, depth);
+                            hsize_t j_max = std::min(j0 + BLOCK_SIZE, ySize);
+                            hsize_t k_max = std::min(k0 + BLOCK_SIZE, xSize);
+
+                            // --- Cache-Hot Inner Loops ---
+                            // These loops process exactly one BLOCK_SIZE^3 volume of data.
+                            for (hsize_t i = i0; i < i_max; ++i) {
+                                for (hsize_t j = j0; j < j_max; ++j) {
+
+                                    // Precompute invariant destination index parts for this specific i, j
+                                    size_t i_plus_depth_j = i + dest_y_stride * j;
+                                    
+                                    // Precompute invariant source index parts for this specific i, j
+                                    // (Assuming standard C-style row-major mapping: [i][j][k])
+                                    size_t src_base_idx = i * src_z_stride + j * src_y_stride;
+
+                                    // Optional: Hint to the compiler to vectorize this innermost loop
+                                    #pragma omp simd
+                                    for (hsize_t k = k0; k < k_max; ++k) {
+                                        size_t destIndex = i_plus_depth_j + dest_z_stride * k;
+                                        size_t srcIndex  = src_base_idx + k;
+
+                                        rotatedSlice[destIndex] = standardSlice[srcIndex];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // A separate pass over the same slice depth-last
+                DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
+                TIMER(timer.start("Z statistics"););
+
+                // calculte statistics in Z (frequency) direction:
+                Stats* statsZ_ptr = &statsZ;
+
+                // this is to avoid once per pixel creation of StatsCounter counterZ object and instead having it once per thread:
+                #pragma omp parallel default(none) shared(ySize, xSize, depth, standardSlice, statsZ_ptr, tile_size)
+                {
+                   // 1. Declare once per thread on the stack
+                   StatsCounter counterZ;
+
+                  // 2. Distribute the loop iterations across threads
+                  #pragma omp for collapse(2) // Collapse j and k loops for better load balancing
+                  for (hsize_t j = 0; j < ySize; j++) {
+                     for (hsize_t k = 0; k < xSize; k++) {
+
+                        counterZ.reset(); // 3. Just reset the existing memory
+                        auto indexZ = k + xSize * j;
+
+                        for (hsize_t i = 0; i < depth; i++) {
+                           auto sourceIndex = indexZ + tile_size * i;
+                           auto& val = standardSlice[sourceIndex];
+                           if (std::isfinite(val)) {
+                              counterZ.accumulateFinite(val);
+                           } else {
+                              counterZ.accumulateNonFinite();
+                           }
+                        }
+                        statsZ_ptr->copyStatsFromCounter(indexZ, depth, counterZ);
+                     }
+                  }
+                }
+
+                // NEW: fold channel (XY) and cube (XYZ) histograms into this same
+                // pass, on the same standardSlice values already read above --
+                // same principle as MicroMemoryConverter's STEP 4, no extra I/O.
+                //
+                // Deliberately SEQUENTIAL, not folded into the #pragma omp block
+                // above: histogram bins are value-based, not spatial -- threads
+                // handling different (j,k) still share the same per-channel bins,
+                // and Stats::accumulateHistogram's plain `++` isn't atomic. The
+                // Z-statistics loop above has no such collision (each (j,k) owns
+                // its own statsZ slot), so it's safe to keep parallel as-is.
+                if (doHistograms) {
+                    TIMER(timer.start("Histograms"););
+                    for (hsize_t j = 0; j < ySize; j++) {
+                        for (hsize_t k = 0; k < xSize; k++) {
+                            for (hsize_t i = 0; i < depth; i++) {
+                                auto sourceIndex = k + xSize * j + tile_size * i;
+                                auto& val = standardSlice[sourceIndex];
+                                if (std::isfinite(val)) {
+                                    if (chanHistArr[i]) {
+                                        statsXY.accumulateHistogram(val, chanMinArr[i], chanRangeArr[i], i);
+                                    }
+                                    if (cubeHist) {
+                                        statsXYZ.accumulateHistogram(val, cubeMin, cubeRange, 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                auto swizzledMemDims = trimAxes({1, xSize, ySize, depth}, N);
+                auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
+                auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
+
+                auto endtile = std::chrono::high_resolution_clock::now();
+                auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                total_rotation_pass_processing_ms += double(durationtile.count());
+                std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
+
+                // write tile slice
+                DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
+                TIMER(timer.start("Write"););
+
+                // NEXT I/O write operation:
+                // write rotated slice:
+                start_io = std::chrono::high_resolution_clock::now();
+                writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                end_io = std::chrono::high_resolution_clock::now();
+                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_rotation_io_ms += double(duration_io.count());
+                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+
+                // write Z statistics
+                DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
+                start_io = std::chrono::high_resolution_clock::now();
+                // write Z statistics
+                statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                end_io = std::chrono::high_resolution_clock::now();
+                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                total_rotation_io_ms += double(duration_io.count());
+                std::cout << "5th I/O (statsZ.write) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+            }
+        }
+
+        // Write the histogram half now that this stokes' tile loop has filled it
+        // in -- the basic half was already written by the caller, right after
+        // pass 1, before this stokes' slot in the shared buffer got overwritten
+        // by a later stokes.
+        if (doHistograms) {
+            auto start_io = std::chrono::high_resolution_clock::now();
+            {
+                auto basicN = statsXY.basicDatasetDims.size();
+                auto histN = basicN + 1;
+                statsXY.writeHistogram(statsXY.fullBasicBufferDims, trimAxes(extend({1, depth}, {statsXY.numBins}), histN), trimAxes(extend({s, 0}, {0}), histN));
+            }
+            {
+                auto basicN = statsXYZ.basicDatasetDims.size();
+                auto histN = basicN + 1;
+                statsXYZ.writeHistogram(statsXYZ.fullBasicBufferDims, trimAxes(extend({1}, {statsXYZ.numBins}), histN), trimAxes(extend({s}, {0}), histN));
+            }
+            auto end_io = std::chrono::high_resolution_clock::now();
+            total_rotation_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+        }
+
+        auto end1 = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start);
+        std::cout << "Execution of loop over X/Y Offsets for Stokes = " << s << " took: " << duration1.count() << " milliseconds." << std::endl;
+
+        PROGRESS(std::endl);
+
+    } // end of loop over Stokeses
+
+    // Add rotation I/O to total I/O:
+    total_io_ms += total_rotation_io_ms;
+    std::cout << "BENCHMARKING : total rotation I/O took: " << total_rotation_io_ms << " milliseconds "
+               << (float(total_rotation_io_ms)/1000.0) << " seconds" << std::endl;
+
+    // Add time of delete:
+    auto startfree = std::chrono::high_resolution_clock::now();
+    TIMER(timer.start("Free"););
+    DEBUG(std::cout << "Freeing memory from main and rotated dataset slices... " << std::endl;);
+    delete[] standardSlice;
+    delete[] rotatedSlice;
+    end = std::chrono::high_resolution_clock::now();
+    auto duration_free = std::chrono::duration_cast<std::chrono::milliseconds>(end - startfree);
+    total_rotation_pass_processing_ms += double(duration_free.count());
+    std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
+              << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
+
+    // measure total execution time of rotation function:
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double total_rotation_ms = double(duration.count());
+    std::cout << "BENCHMARKING : rotation pass took: " << total_rotation_ms << " milliseconds "
+              << (float(total_rotation_ms)/1000.0) << " seconds" << std::endl;
+
+    return total_rotation_pass_processing_ms;
 }

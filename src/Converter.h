@@ -162,6 +162,16 @@ protected:
  
     void copyAndCalculate() override;
     
+    // calculate rotated dataset:
+    // Return value:
+    //     execution time in milli-seconds
+    // used to be double calculateRotatedData(double& total_io_ms)
+    virtual double calculateRotatedDataAndCubeHistogram(double& total_io_ms,
+                                                        const std::vector<double>& savedChanMin,
+                                                        const std::vector<double>& savedChanMax,
+                                                        const std::vector<double>& savedCubeMin,
+                                                        const std::vector<double>& savedCubeMax);
+    
     // optional second pass to calculate exect XYZ (cube) histogram:
     // double doSecondPass( unsigned int s, double& total_io_ms );
     
@@ -191,12 +201,6 @@ protected:
     //     execution time in milli-seconds
     // TODO : check if I can simplify these parameters a bit more     
     double calculateChannelHistogram( hsize_t indexXY, hsize_t block_pos );
-    
-    // calculate rotated dataset:
-    // Return value:
-    //     execution time in milli-seconds
-    // TODO : check if I can simplify these parameters a bit more     
-    double calculateRotatedData(double& total_io_ms);
     
     // calculate rotated channel:
     // Return value:
