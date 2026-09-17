@@ -155,6 +155,9 @@ public:
     // reduce memory usage:
     // needs to be public to be used in a static function in Converter
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    
+    // calculate IO cost :
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
 
 protected:
     int memoryLimitInMb;
@@ -167,20 +170,11 @@ protected:
     //     execution time in milli-seconds
     // used to be double calculateRotatedData(double& total_io_ms)
     virtual double calculateRotatedDataAndCubeHistogram(double& total_io_ms,
-                                                        const std::vector<double>& savedChanMin,
-                                                        const std::vector<double>& savedChanMax,
                                                         const std::vector<double>& savedCubeMin,
                                                         const std::vector<double>& savedCubeMax);
     
     // optional second pass to calculate exect XYZ (cube) histogram:
     // double doSecondPass( unsigned int s, double& total_io_ms );
-    
-    // SmartFastConverter.cc requires extra arguments:
-    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
-    
-    // calculates approximate XYZ (cube) histogram using channel histograms
-    // it is not exact, but good enough for visualisation purposes
-    double calcApproxCubeHistogram( unsigned int s );
     
     // calculate Stats for channel (min/max etc):
     // Parameters:
@@ -239,7 +233,11 @@ protected:
     void copyAndCalculate() override;
 
     // SmartFastConverter.cc requires extra arguments:
-    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms ) override;
+    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
+    
+    // calculates approximate XYZ (cube) histogram using channel histograms
+    // it is not exact, but good enough for visualisation purposes
+    double calcApproxCubeHistogram( unsigned int s );
 };    
 
 
