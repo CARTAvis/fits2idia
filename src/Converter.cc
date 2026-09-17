@@ -213,6 +213,13 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
+void Converter::setSystemName(const char* system_name )
+{
+   if (system_name && system_name[0]) {
+      systemName = system_name;
+   }
+}
+
 void Converter::reportMemoryAndExecTime()
 {
    reportMemoryUsage();

@@ -449,6 +449,12 @@ void SlowConverter::copyAndCalculate() {
     std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
 }
 
+// Walks the same three passes as SlowConverter::copyAndCalculate(), in the
+// same order, and estimates the I/O cost of each HDF5/FITS call using
+// estimateHyperslabIO. Mirrors the real loop structure (including the tile
+// grid loop) so it can be checked line-by-line against SlowConverter.cc.
+//
+// numBins: pass Converter::numBins (0 disables histogram-write terms).
 IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel)
 {
     IOCostBreakdown result;
@@ -539,40 +545,7 @@ IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t
     }
 
     // ---------- 3rd pass: tiled rotation, SlowConverter.cc lines ~300-436 ----------
-    if (depth > 1) {
-        std::vector<hsize_t> swizzledDims = {stokes, width, height, depth};
-        std::vector<hsize_t> statsZDims   = {stokes, height, width};
-
-        PhaseAccumulator readAcc, writeAcc, statsZAcc;
-
-        // Mirrors the real tile grid loop exactly, so boundary tiles (smaller
-        // than TILE_SIZE) get their own, correctly-sized cost lookup instead
-        // of being averaged in with interior tiles.
-        for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
-            hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
-            for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
-                hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
-
-                auto r = estimateHyperslabIO(standardDims, chunkDims,
-                                              {1, depth, ySize, xSize}, sizeof(float));
-                readAcc.add(repeatEstimate(r, stokes), readModel);
-
-                auto w = estimateHyperslabIO(swizzledDims, {},
-                                              {1, xSize, ySize, depth}, sizeof(float));
-                writeAcc.add(repeatEstimate(w, stokes), writeModel);
-
-                hsize_t elemSizes[] = {4, 4, 8, 8, 8};
-                for (auto es : elemSizes) {
-                    auto s = estimateHyperslabIO(statsZDims, {}, {1, ySize, xSize}, es);
-                    statsZAcc.add(repeatEstimate(s, stokes), writeModel);
-                }
-            }
-        }
-
-        result.phases.push_back(readAcc.toPhase("3rd pass: standardDataSet tile read"));
-        result.phases.push_back(writeAcc.toPhase("3rd pass: swizzledDataSet tile write"));
-        result.phases.push_back(statsZAcc.toPhase("3rd pass: statsZ tile write"));
-    }
+    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel);
 
     return result;
 

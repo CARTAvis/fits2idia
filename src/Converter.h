@@ -54,6 +54,8 @@ public:
     
     void setIOBlocks( int _n_io_blocks ){ n_io_blocks = _n_io_blocks; }
     
+    void setSystemName(const char* system_name );
+    
     void getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width );
     
     // functions about the type of the converter and its parameters to be used 
@@ -71,6 +73,7 @@ protected:
     Timer timer;
     bool progress;
     bool zMips;
+    std::string systemName; // can help with predictions by using system-specific measured BWs etc
     
     std::string tempOutputFileName;
     std::string outputFileName;
@@ -244,7 +247,7 @@ public:
     
     virtual const char* getConverterType() override { return "SLOW"; }
     
-    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
     
 protected:
     void copyAndCalculate() override;
@@ -255,6 +258,7 @@ public:
     MicroMemoryConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
     virtual bool ReduceMemoryUsage(hsize_t memoryLimit, int max_iter) override;
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 
     virtual const char* getConverterType() override { return "MICRO-MEMORY"; }
 

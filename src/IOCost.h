@@ -142,17 +142,10 @@ struct IOCostBreakdown {
     }
 };
 
-// Walks the same three passes as SlowConverter::copyAndCalculate(), in the
-// same order, and estimates the I/O cost of each HDF5/FITS call using
-// estimateHyperslabIO. Mirrors the real loop structure (including the tile
-// grid loop) so it can be checked line-by-line against SlowConverter.cc.
-//
-// numBins: pass Converter::numBins (0 disables histogram-write terms).
-IOCostBreakdown estimateSlowConverterIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
-                                         hsize_t numBins,
-                                         const IOCostModel& readModel,
-                                         const IOCostModel& writeModel);
+void addTiledRotationPhases(IOCostBreakdown& result,
+                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                             const IOCostModel& readModel, const IOCostModel& writeModel);
 
-bool get_io_cost_model(const char* system_name, IOCostModel& setonixWrite, IOCostModel& setonixRead );
+bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCostModel& setonixWrite, bool use_random_read_write=false );
 
 #endif

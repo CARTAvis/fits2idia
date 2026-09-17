@@ -578,3 +578,109 @@ void MicroMemoryConverter::copyAndCalculate() {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Execution of entire MicroMemoryConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
 }
+
+IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) 
+{
+    IOCostBreakdown result;
+
+    std::vector<hsize_t> standardDims = {stokes, depth, height, width};
+    std::vector<hsize_t> chunkDims    = {1, 1, TILE_SIZE, TILE_SIZE};
+
+    // ---------- Main per-row loop: MicroMemoryConverter.cc lines ~174-281 ----------
+    // Same total bytes as SlowConverter's per-channel read/write, but issued one ROW
+    // at a time instead of one CHANNEL at a time -- `height` times as many logical
+    // HDF5/FITS calls for the same data. This is the real cost story for this
+    // converter: it trades memory footprint for transaction count.
+
+    {
+        PhaseAccumulator acc;
+        hsize_t bytesPerOp = width * sizeof(float);
+        acc.add({ stokes * depth * height, bytesPerOp, stokes * depth * height * bytesPerOp }, readModel);
+        result.phases.push_back(acc.toPhase("1st pass: FITS row read (readFitsDataRow)"));
+    }
+    {
+        PhaseAccumulator acc;
+        // One row (width elements) of one channel, into a dataset chunked at
+        // TILE_SIZE x TILE_SIZE. This call still touches every chunk spanning
+        // the row's full width, but only fills 1 of each chunk's TILE_SIZE rows
+        // -- see the note below on why that matters more than it looks.
+        auto perRow = estimateHyperslabIO(standardDims, chunkDims,
+                                           {1, 1, 1, width}, sizeof(float));
+        acc.add(repeatEstimate(perRow, stokes * depth * height), writeModel);
+        result.phases.push_back(acc.toPhase("1st pass: standardDataSet row write"));
+    }
+
+    // mipMaps.write(s, c): still once per channel (the row loop only computes one
+    // channel's mip contribution before this write happens) -- same shape and cost
+    // as SlowConverter's mipmap-write phase.
+    {
+        PhaseAccumulator acc;
+        hsize_t mipXY = 1, hLevel = height, wLevel = width;
+        do {
+            mipXY *= 2;
+            hLevel = (hsize_t)std::ceil((double)height / mipXY);
+            wLevel = (hsize_t)std::ceil((double)width  / mipXY);
+            IOOpEstimate perLevel{ 1, hLevel * wLevel * sizeof(double), hLevel * wLevel * sizeof(double) };
+            acc.add(repeatEstimate(perLevel, stokes * depth), writeModel);
+        } while (2 * wLevel > MIN_MIPMAP_SIZE || 2 * hLevel > MIN_MIPMAP_SIZE);
+        result.phases.push_back(acc.toPhase("1st pass: mipmap writes (all levels)"));
+    }
+
+    if (depth <= 1) {
+        // ---------- depth == 1: single-channel histogram pass, lines ~298-345 ----------
+        // Same row-at-a-time FITS reread as SlowConverter's whole-channel reread,
+        // just issued as `height` row-sized calls instead of one channel-sized call.
+        PhaseAccumulator acc;
+        hsize_t bytesPerOp = width * sizeof(float);
+        acc.add({ stokes * height, bytesPerOp, stokes * height * bytesPerOp }, readModel);
+        result.phases.push_back(acc.toPhase("Histogram pass (depth==1): FITS row reread"));
+
+        PhaseAccumulator statsAcc;
+        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        for (auto es : elemSizes) {
+            auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+            statsAcc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, 8);
+            statsAcc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(statsAcc.toPhase("Histogram pass (depth==1): statsXY write"));
+    } else {
+        // ---------- depth > 1: writeBasic()/writeHistogram() split, lines ~356-372, ~552-563 ----------
+        // Two separate small metadata calls instead of SlowConverter's one combined
+        // write() -- but each is still 1 transaction (same reasoning as SlowConverter's
+        // statsXY write), so the total cost here is essentially the same as
+        // SlowConverter's statsXY+statsXYZ phase, just split into more, smaller calls.
+        PhaseAccumulator basicAcc;
+        {
+            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            for (auto es : elemSizes) {
+                auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+                basicAcc.add(repeatEstimate(e, stokes), writeModel);
+            }
+        }
+        {
+            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            for (auto es : elemSizes) {
+                auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
+                basicAcc.add(repeatEstimate(e, stokes), writeModel);
+            }
+        }
+        result.phases.push_back(basicAcc.toPhase("1st pass: statsXY/statsXYZ writeBasic"));
+
+        if (numBins > 0) {
+            PhaseAccumulator histAcc;
+            auto hXY = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, 8);
+            histAcc.add(repeatEstimate(hXY, stokes), writeModel);
+            auto hXYZ = estimateHyperslabIO({stokes, numBins}, {}, {1, numBins}, 8);
+            histAcc.add(repeatEstimate(hXYZ, stokes), writeModel);
+            result.phases.push_back(histAcc.toPhase("Rotation pass: statsXY/statsXYZ writeHistogram"));
+        }
+
+        // ---------- Tiled rotation pass: lines ~386-538, byte-for-byte the same as SlowConverter ----------
+        addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel);
+    }
+
+    return result;
+}
