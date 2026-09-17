@@ -36,6 +36,8 @@ public:
     
     void convert();
     void reportMemoryUsage();
+    void reportExecTime();
+    void reportMemoryAndExecTime();
     virtual MemoryUsage calculateMemoryUsage() = 0;
     
     // parse list of included and excluded datasets to be saved in the output file(s):

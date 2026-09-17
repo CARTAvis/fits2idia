@@ -30,7 +30,7 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
 }
 
 bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, eSmartConverterType& smartconverter_type, bool& progress, 
-                bool& onlyReportMemory, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks, std::string& exclude_list, std::string& include_list) {
+                bool& onlyReportMemory, bool& onlyReportMemoryAndExectime, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks, std::string& exclude_list, std::string& include_list) {
     extern int optind;
     extern char *optarg;
     
@@ -50,7 +50,8 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'micro' or 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
-    << "-m\tReport predicted memory usage and exit without performing the conversion" << std::endl
+    << "-R\nReport predicted memory usage and execution time without performing the conversion" << std::endl
+    << "-m\tReport predicted memory usage and exit without performing the conversion. This is for backward compatibility, use -R to also see predicted exection time." << std::endl
     << "-M\tSpecify memory limit in MB" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
@@ -60,7 +61,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
     << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmzM:B:AT:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRzM:B:AT:")) != -1) {
         switch (opt) {
             case 'a':
             case 'r':
@@ -108,6 +109,10 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
             case 'm':
                 // only print memory usage and exit
                 onlyReportMemory = true;
+                break;
+            case 'R':
+                // only print memory usage and exit
+                onlyReportMemoryAndExectime = true;
                 break;
             case 'M':
                 if (optarg) {
@@ -183,14 +188,14 @@ int main(int argc, char** argv) {
     bool smart(false);
     bool auto_mode(false);
     bool progress(false);
-    bool onlyReportMemory(false);
+    bool onlyReportMemory(false), onlyReportMemoryAndExectime(false);
     bool zMips(false);
     int memoryLimitInMb(0);
     int n_io_blocks(1);
     eSmartConverterType smartconverter_type(eAutoSelectedSmartConverter);
     std::string exclude_list, include_list;
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, zMips, memoryLimitInMb, auto_mode, n_io_blocks, exclude_list, include_list)) {
+    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, onlyReportMemoryAndExectime, zMips, memoryLimitInMb, auto_mode, n_io_blocks, exclude_list, include_list)) {
         return 1;
     }
     
@@ -232,9 +237,14 @@ int main(int argc, char** argv) {
            converter->setIOBlocks(n_io_blocks);
         }
         
-        if (onlyReportMemory) {
-            converter->reportMemoryUsage();
+        if (onlyReportMemoryAndExectime) {
+            converter->reportMemoryAndExecTime();
             return 0;
+        } else {
+            if (onlyReportMemory) {
+                converter->reportMemoryUsage();
+                return 0;
+            }
         }
         
         if( checkMemoryUsage(converter.get(), n_io_blocks, memoryLimit, auto_mode) ) {

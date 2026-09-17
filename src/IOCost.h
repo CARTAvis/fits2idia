@@ -127,6 +127,9 @@ struct IOCostBreakdown {
     }
 
     void print(std::ostream& out = std::cout) const {
+        out << std::endl;
+        std::cout << "--------------------------------------------------------------------------" << std::endl;
+        out << "Estimated execution time due to I/O operations:" << std::endl;
         for (auto& p : phases) {
             out << p.name
                 << " : transactions=" << p.estimate.transactions

@@ -213,11 +213,28 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     }
 }
 
+void Converter::reportMemoryAndExecTime()
+{
+   reportMemoryUsage();
+   
+   reportExecTime();
+}
+
+void Converter::reportExecTime()
+{
+   // predict execution time:
+   IOCostModel readModel, writeModel;
+   get_io_cost_model("SETONIX", readModel, writeModel );
+   IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
+   iocost.print();
+}
+
 void Converter::reportMemoryUsage() {
     MemoryUsage m = calculateMemoryUsage();
-
-    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;
     
+    std::cout << std::endl;
+    std::cout << "--------------------------------------------------------------------------" << std::endl;
+    std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;    
     hsize_t maxAllocationBytes = 0;
     std::string maxAllocationDataset = "";
     for (auto& kv : m.sizes) {
@@ -228,8 +245,10 @@ void Converter::reportMemoryUsage() {
         }
     }
 
-    std::cout << "TOTAL:\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
-    std::cout << "MAX ALLOCATION:\t" << maxAllocationBytes * 1e-9 << "GB" << " required for " << maxAllocationDataset << std::endl;
+    std::cout << "MAX ALLOCATION:\t" << maxAllocationBytes * 1e-9 << "GB" << " required for " << maxAllocationDataset << std::endl;    
+    std::cout << "TOTAL ALLOCATION  :\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
+    double total_ram_gb = m.total * 1e-9 * 1.1;
+    std::cout << "TOTAL RAM REQUIRED:\t" << "Add additional 10% of RAM or SLURM job limit: --mem " << total_ram_gb << "GB" << std::endl;    
 }
 
 void Converter::getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width ) {
