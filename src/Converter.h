@@ -229,6 +229,8 @@ public:
     // in saving metadata to the output HDF5 file:
     virtual const char* getConverterType() override { return "SMART-CHAN-PARALLEL"; }
     
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
+    
 protected:
     void copyAndCalculate() override;
 

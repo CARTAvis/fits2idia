@@ -281,12 +281,12 @@ void SmartFastConverter::copyAndCalculate() {
             PROGRESS("\tWrite data" << std::endl);
             TIMER(timer.start("Write"););
                  
-            start_io = std::chrono::high_resolution_clock::now();                        
+/*            start_io = std::chrono::high_resolution_clock::now();                        
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
             block_io_ms += double(duration_io.count());
-            std::cout << "I/O writeHdf5Data(standardDataSet) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+            std::cout << "I/O writeHdf5Data(standardDataSet) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;*/
         
             if (depth > 1) {
                 start_io = std::chrono::high_resolution_clock::now();
@@ -697,3 +697,157 @@ double SmartFastConverter::doSecondPass( unsigned int s, int n_blocks, int slice
     return total_second_pass_processing_ms;
 }
 
+IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                                                hsize_t numBins,
+                                                const IOCostModel& readModel,
+                                                const IOCostModel& writeModel) {
+    IOCostBreakdown result;
+
+    std::vector<hsize_t> swizzledDims = {stokes, width, height, depth};
+
+    int sliceIncrement = n_io_blocks;
+    int sliceIncrementCount = (int)(depth / sliceIncrement);
+    int leftOverSlices = (int)(depth % sliceIncrement);
+    int nBlocks = sliceIncrementCount + (leftOverSlices > 0 ? 1 : 0);
+
+    // ---------- Pass 1: per-block read/write/rotate/mipmap ----------
+    {
+        PhaseAccumulator acc;
+        for (int block = 0; block < nBlocks; block++) {
+            hsize_t nChannels = sliceIncrement;
+            if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
+            hsize_t bytesPerOp = nChannels * height * width * sizeof(float);
+            acc.add(repeatEstimate(IOOpEstimate{1, bytesPerOp, bytesPerOp}, stokes), readModel);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: FITS block read (readFitsData)"));
+    }
+    {
+        // NOTE: writeHdf5Data(standardDataSet, ...) is called TWICE per block
+        // in the current code (lines ~169 and ~285), with identical arguments
+        // and nothing modifying standardCube in between -- modeled here as
+        // happening twice to match the code as it stands; worth checking
+        // whether that duplicate is intentional.
+        std::vector<hsize_t> standardDims = {stokes, depth, height, width};
+        std::vector<hsize_t> chunkDims    = {1, 1, TILE_SIZE, TILE_SIZE};
+        PhaseAccumulator acc;
+        for (int block = 0; block < nBlocks; block++) {
+            hsize_t nChannels = sliceIncrement;
+            if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
+            auto perBlock = estimateHyperslabIO(standardDims, chunkDims,
+                                                 {1, nChannels, height, width}, sizeof(float));
+            acc.add(repeatEstimate(perBlock, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: standardDataSet block write (x2, see note)"));
+    }
+
+    // calculateChannelHistogram-equivalent, XY stats accumulation, rotation
+    // (in-memory copy into rotatedCube), and Z-stats accumulation into
+    // globalCountersZ: all pure in-memory compute, zero I/O.
+
+    if (depth > 1) {
+        // writeHdf5Data(swizzledDataSet, ...): unchunked, and only n_channels
+        // (partial) of the innermost depth axis is selected each call -> no
+        // axis can merge -> width*height separate transactions per block,
+        // each just n_channels*sizeof(float) bytes. This is the phase most
+        // likely to dominate this converter's I/O cost.
+        PhaseAccumulator acc;
+        for (int block = 0; block < nBlocks; block++) {
+            hsize_t nChannels = sliceIncrement;
+            if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
+            auto perBlock = estimateHyperslabIO(swizzledDims, {},
+                                                 {1, width, height, nChannels}, sizeof(float));
+            acc.add(repeatEstimate(perBlock, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: swizzledDataSet block write"));
+    }
+
+    {
+        // mipMaps.write(s, c_start): once per BLOCK (not per channel). Each
+        // level's write always spans its full height/width for n_channels at
+        // once -> still 1 contiguous transaction per level per block, just
+        // covering n_channels worth of data instead of 1.
+        PhaseAccumulator acc;
+        for (int block = 0; block < nBlocks; block++) {
+            hsize_t nChannels = sliceIncrement;
+            if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
+            hsize_t mipXY = 1, hLevel = height, wLevel = width;
+            do {
+                mipXY *= 2;
+                hLevel = (hsize_t)std::ceil((double)height / mipXY);
+                wLevel = (hsize_t)std::ceil((double)width  / mipXY);
+                IOOpEstimate perLevel{ 1, nChannels * hLevel * wLevel * sizeof(double),
+                                           nChannels * hLevel * wLevel * sizeof(double) };
+                acc.add(repeatEstimate(perLevel, stokes), writeModel);
+            } while (2 * wLevel > MIN_MIPMAP_SIZE || 2 * hLevel > MIN_MIPMAP_SIZE);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: mipmap block writes (all levels)"));
+    }
+
+    // Post-block global consolidation (statsXYZ/statsZ from already-accumulated
+    // in-memory counters): pure compute, zero I/O.
+
+    // ---------- 2nd pass: conditional on bApproximateCubeHistogram ----------
+    if (!bApproximateCubeHistogram && depth > 1) {
+        // doSecondPass here genuinely re-reads block-by-block (unlike
+        // SmartConverter's version, which ignores its block arguments).
+        PhaseAccumulator acc;
+        for (int block = 0; block < nBlocks; block++) {
+            hsize_t nChannels = sliceIncrement;
+            if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
+            hsize_t bytesPerOp = nChannels * height * width * sizeof(float);
+            acc.add(repeatEstimate(IOOpEstimate{1, bytesPerOp, bytesPerOp}, stokes), readModel);
+        }
+        result.phases.push_back(acc.toPhase("2nd pass: FITS block reread (doSecondPass)"));
+    }
+    // else (bApproximateCubeHistogram, or depth<=1): calcApproxCubeHistogram
+    // rebins from statsXY's already-computed channel histograms -- zero I/O.
+
+    if (depth > 1) {
+        // statsZ.write(...): ONE full-height/width write per sub-dataset per
+        // stokes -- fully contiguous despite the dataset being unchunked,
+        // since the whole extent is written at once. No tiling bottleneck here.
+        {
+            PhaseAccumulator acc;
+            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            for (auto es : elemSizes) {
+                auto e = estimateHyperslabIO({stokes, height, width}, {}, {1, height, width}, es);
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsZ write (whole array, once per stokes)"));
+        }
+        // statsXYZ.write(...): combined basic+histogram -- by this point the
+        // cube histogram is already computed (either branch above), so no
+        // split/defer is needed, unlike SmartConverter's version.
+        {
+            PhaseAccumulator acc;
+            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            for (auto es : elemSizes) {
+                auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            if (numBins > 0) {
+                auto h = estimateHyperslabIO({stokes, numBins}, {}, {1, numBins}, 8);
+                acc.add(repeatEstimate(h, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsXYZ write (basic + histogram)"));
+        }
+    }
+
+    // statsXY.write(...): combined basic+histogram, once per stokes, always
+    // (not gated on depth > 1).
+    {
+        PhaseAccumulator acc;
+        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        for (auto es : elemSizes) {
+            auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+            acc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, 8);
+            acc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("statsXY write (basic + histogram)"));
+    }
+
+    return result;
+}
