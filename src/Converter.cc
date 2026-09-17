@@ -224,7 +224,7 @@ void Converter::reportExecTime()
 {
    // predict execution time:
    IOCostModel readModel, writeModel;
-   get_io_cost_model("SETONIX", readModel, writeModel );
+   get_io_cost_model(NULL, readModel, writeModel ); // NULL -> SystemName, for example "SETONIX" to get specific BW
    IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
    iocost.print();
 }

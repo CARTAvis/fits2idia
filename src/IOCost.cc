@@ -70,7 +70,10 @@ IOOpEstimate repeatEstimate(const IOOpEstimate& e, hsize_t times) {
 
 bool get_io_cost_model(const char* system_name, IOCostModel& setonixWrite, IOCostModel& setonixRead )
 {
-//   IOCostModel setonixWrite;
+   // TODO: implement System-specific BWs, and use system_name. 
+   //       for now all the same based measurements on my laptop
+
+   // IOCostModel setonixWrite;
    setonixWrite.bandwidthCurve = {
        {4*1024,     20e6},   // fio --bs=4k  --rw=randwrite
        {64*1024,   150e6},   // fio --bs=64k --rw=randwrite
@@ -78,7 +81,7 @@ bool get_io_cost_model(const char* system_name, IOCostModel& setonixWrite, IOCos
        {16*1024*1024, 1100e6} // fio --bs=16m --rw=write
    };    
        
-//   IOCostModel setonixWrite;
+   // IOCostModel setonixWrite;
    setonixRead.bandwidthCurve = {
        {4*1024,     20e6},   // fio --bs=4k  --rw=randwrite
        {64*1024,   150e6},   // fio --bs=64k --rw=randwrite
