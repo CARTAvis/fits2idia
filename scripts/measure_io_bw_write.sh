@@ -18,8 +18,9 @@ do
     # keeping the file for read tests -> no option --unlink=1
     echo "fio --name=iotest --filename=${test_file} --size=${file_size} --bs=${bs} --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_${bs}.out 2>&1"
     fio --name=iotest --filename=${test_file} --size=${file_size} --bs=${bs} --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_${bs}.out 2>&1
-    bw=`cat randwrite_${bs}.out | grep WRITE | awk '{gsub("\\(","");gsub("kB\\/s\\),","");print $3;}'`
-    size=`cat randwrite_${bs}.out | grep "iotest" | head -1 | awk '{gsub("B-"," ");print $5;}'`
+    filefrag -v ${test_file}
+    bw=$(cat randwrite_${bs}.out | grep WRITE | awk '{gsub("\\(","");gsub("kB\\/s\\),","");print $3;}')
+    size=$(cat randwrite_${bs}.out | grep "iotest" | head -1 | awk '{gsub("B-"," ");print $5;}')
     echo "$size $bw" >> randwrite_bw_vs_size.txt
     
     sleep 2    
@@ -41,8 +42,9 @@ do
     # keeping the file for read tests -> no option --unlink=1
     echo "fio --name=iotest --filename=${test_file} --size=${file_size} --bs=${bs} --rw=write --direct=1 --ioengine=libaio --runtime=300 --time_based > write_${bs}.out 2>&1"
     fio --name=iotest --filename=${test_file} --size=${file_size} --bs=${bs} --rw=write --direct=1 --ioengine=libaio --runtime=300 --time_based > write_${bs}.out 2>&1
-    bw=`cat write_${bs}.out | grep WRITE | awk '{gsub("\\(","");gsub("kB\\/s\\),","");print $3;}'`
-    size=`cat write_${bs}.out | grep "iotest" | head -1 | awk '{gsub("B-"," ");print $5;}'`
+    filefrag -v ${test_file}
+    bw=$(cat write_${bs}.out | grep WRITE | awk '{gsub("\\(","");gsub("kB\\/s\\),","");print $3;}')
+    size=$(cat write_${bs}.out | grep "iotest" | head -1 | awk '{gsub("B-"," ");print $5;}')
     echo "$size $bw" >> write_bw_vs_size.txt
     
     sleep 2    
