@@ -139,6 +139,8 @@ struct IOCostBreakdown {
                 << std::endl;
         }
         out << "TOTAL predicted I/O time: " << totalSeconds() << " s" << std::endl;
+        out << "--------------------------------------------------------------------------" << std::endl;
+        out << std::endl;
     }
 };
 

@@ -269,8 +269,9 @@ int main(int argc, char** argv) {
            converter->setIOBlocks(n_io_blocks);
         }
         
+        converter->reportMemoryAndExecTime();
+        
         if (onlyReportMemoryAndExectime) {
-            converter->reportMemoryAndExecTime();
             return 0;
         } else {
             if (onlyReportMemory) {
