@@ -100,13 +100,14 @@ if [[ -n "$work_dir" && "$work_dir" != "./" ]]; then
 fi
 
 base_fitsfile=$(basename "$fitsfile")
+fullpath_fitsfile=$(realpath "$fitsfile")
 template_hdf5_file="${fitsfile%%fits}hdf5"
 
 echo "-------------------------------------------------------------------------------------------------"
 echo "PARAMETERS:"
 echo "--------------------------"
 echo "max_mem_mb            = $max_mem_mb"
-echo "fitsfile              = $fitsfile"
+echo "fitsfile              = $fitsfile ($fullpath_fitsfile)"
 echo "algorithm             = $algorithm"
 echo "approx_cube_histogram = $approx_cube_histogram"
 echo "OMP_NUM_THREADS       = $OMP_NUM_THREADS"
@@ -133,16 +134,16 @@ if [[ $use_ssd -gt 0 ]]; then
    echo "lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G ${temp_dir}/"
    lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G "${temp_dir}/"      
 
-   if [[ $copy -gt 0 ]]; then      
-      echo "cp ${fitsfile} ${temp_dir}/"
-      cp ${fitsfile} ${temp_dir}/
-   else
-      echo "ln -sf ${fitsfile} ${temp_dir}/${fitsfile}"
-      ln -sf ${fitsfile} ${temp_dir}/${fitsfile}
-   fi
-   
    echo "cd ${temp_dir}/"
    cd ${temp_dir}/
+
+   if [[ $copy -gt 0 ]]; then      
+      echo "cp ${fullpath_fitsfile} ."
+      cp ${fullpath_fitsfile} .
+   else      
+      echo "ln -sf ${fullpath_fitsfile}"
+      ln -sf ${fullpath_fitsfile}
+   fi
 else
    echo "WARNING : SSD partition will not be used in conversion consider using this option!"
 fi
