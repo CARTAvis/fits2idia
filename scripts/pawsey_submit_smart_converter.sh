@@ -16,6 +16,7 @@ algorithm="channel"
 approx_cube_histogram=0
 use_ssd=1
 work_dir="./"
+do_copy=0
 
 usage() {
     cat << EOF
@@ -32,6 +33,7 @@ Options:
                          (default: ${algorithm})
   -H, --approx-hist      Calculate approximate XYZ histogram (flag)
   -s, --no-ssd           Disable SSD partition usage (default: SSD enabled)
+  -c, --copy             Copy input FITS file to temporary directory (default: disabled)
   -w, --work-dir PATH    Working directory to execute conversion in
                          (default: ${work_dir})
   -h, --help             Show this help message and exit
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s|--no-ssd)
             use_ssd=0
+            shift 1
+            ;;
+        -c|--copy)
+            do_copy=1
             shift 1
             ;;
         -w|--work-dir)
@@ -105,6 +111,7 @@ echo "algorithm             = $algorithm"
 echo "approx_cube_histogram = $approx_cube_histogram"
 echo "OMP_NUM_THREADS       = $OMP_NUM_THREADS"
 echo "use_ssd               = $use_ssd"
+echo "copy                  = $copy"
 echo "work_dir              = $work_dir"
 echo "SLURM_CPUS_PER_TASK   = $SLURM_CPUS_PER_TASK (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
 echo "-------------------------------------------------------------------------------------------------"
@@ -125,9 +132,14 @@ if [[ $use_ssd -gt 0 ]]; then
    
    echo "lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G ${temp_dir}/"
    lfs setstripe --pool flash --stripe-count 10 --stripe-size 3G "${temp_dir}/"      
-   
-   echo "cp ${fitsfile} ${temp_dir}/"
-   cp ${fitsfile} ${temp_dir}/
+
+   if [[ $copy -gt 0 ]]; then      
+      echo "cp ${fitsfile} ${temp_dir}/"
+      cp ${fitsfile} ${temp_dir}/
+   else
+      echo "ln -sf ${fitsfile} ${temp_dir}/${fitsfile}"
+      ln -sf ${fitsfile} ${temp_dir}/${fitsfile}
+   fi
    
    echo "cd ${temp_dir}/"
    cd ${temp_dir}/
