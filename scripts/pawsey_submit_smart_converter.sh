@@ -16,7 +16,7 @@ algorithm="channel"
 approx_cube_histogram=0
 use_ssd=1
 work_dir="./"
-do_copy=0
+copy=0
 
 usage() {
     cat << EOF
@@ -70,7 +70,7 @@ while [[ $# -gt 0 ]]; do
             shift 1
             ;;
         -c|--copy)
-            do_copy=1
+            copy=1
             shift 1
             ;;
         -w|--work-dir)
