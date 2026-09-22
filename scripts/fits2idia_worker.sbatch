@@ -22,7 +22,7 @@ max_mem_mb="${MAX_MEM_MB:-31000}"
 algorithm="${ALGORITHM:-channel}"
 approx_cube_histogram="${APPROX_CUBE_HISTOGRAM:-0}"
 use_ssd="${USE_SSD:-1}"
-remove_ssd="${REMOVE_SSD:1}"
+remove_ssd="${REMOVE_SSD:-1}"
 work_dir="${WORK_DIR:-./}"
 copy="${COPY:-0}"
 
