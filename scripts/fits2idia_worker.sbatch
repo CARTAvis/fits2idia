@@ -121,11 +121,13 @@ else
       options="-T spatial"
    fi
 
+   outfile=""
    if [[ $approx_cube_histogram -gt 0 ]]; then
       options="$options -A"
+      outfile="${fitsfile%%.fits}_SMARTALGO-${algorithm}-approxhisto.hdf5"
+   else
+      outfile="${fitsfile%%.fits}_SMARTALGO-${algorithm}-accuratehisto.hdf5"
    fi
-
-   outfile="${fitsfile%%.fits}_SMARTALGO-${algorithm}_approx${approx_cube_histogram}.hdf5"
 
    rm -f "$outfile"
    echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options}"
