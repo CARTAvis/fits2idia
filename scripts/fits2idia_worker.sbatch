@@ -23,6 +23,7 @@ algorithm="${ALGORITHM:-channel}"
 approx_cube_histogram="${APPROX_CUBE_HISTOGRAM:-0}"
 use_ssd="${USE_SSD:-1}"
 remove_ssd="${REMOVE_SSD:-1}"
+report="${REPORT:-1}"
 work_dir="${WORK_DIR:-./}"
 copy="${COPY:-0}"
 
@@ -40,6 +41,11 @@ base_fitsfile=$(basename "$fitsfile")
 fullpath_fitsfile=$(realpath "$fitsfile")
 template_hdf5_file="${fitsfile%%fits}hdf5"
 
+extra_options=""
+if [[ $report -gt 0 ]]; then
+   extra_options="-R"
+fi
+
 echo "-------------------------------------------------------------------------------------------------"
 echo "PARAMETERS:"
 echo "--------------------------"
@@ -52,7 +58,9 @@ echo "use_ssd               = $use_ssd"
 echo "remove_ssd            = $remove_ssd"
 echo "copy                  = $copy"
 echo "work_dir              = $work_dir"
+echo "report                = $report"
 echo "SLURM_CPUS_PER_TASK   = ${SLURM_CPUS_PER_TASK:-} (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
+echo "Extra options         = ${extra_options}"
 echo "-------------------------------------------------------------------------------------------------"
 
 date
@@ -91,8 +99,8 @@ if [[ $algorithm == "slow" ]]; then
    outfile="${fitsfile%%.fits}_SLOW.hdf5"
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p -s"
-   srun fits2idia "$fitsfile" -o "$outfile" -p -s
+   echo "srun fits2idia $fitsfile -o $outfile -p -s ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p -s ${extra_options}
    date
 
 elif [[ $algorithm == "fast" ]]; then
@@ -104,8 +112,8 @@ elif [[ $algorithm == "fast" ]]; then
    outfile="${fitsfile%%.fits}_FAST.hdf5"
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p"
-   srun fits2idia "$fitsfile" -o "$outfile" -p
+   echo "srun fits2idia $fitsfile -o $outfile -p ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p ${extra_options}
    date
 
 else
@@ -130,8 +138,8 @@ else
    fi
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options}"
-   srun fits2idia "$fitsfile" -o "$outfile" -p -S -M "${max_mem_mb}" -a ${options}
+   echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options} ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p -S -M "${max_mem_mb}" -a ${options} ${extra_options}
    date
 fi
 

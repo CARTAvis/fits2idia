@@ -10,6 +10,7 @@ use_ssd=1
 remove_ssd=1
 work_dir="./"
 copy=0
+report=0
 
 # --- SLURM resource parameters (defaults; these become sbatch flags) ---
 cpus_per_task=128
@@ -40,6 +41,7 @@ fits2idia options:
   -k, --keep             Keep the output file on SSD partition to avoid moving it (default: disabled) 
   -w, --work-dir PATH    Working directory to execute conversion in
                          (default: ${work_dir})
+  -R, --report           Only reports on required memory and I/O execution time
 
 SLURM resource options (these become sbatch flags for this submission):
   --cpus INT             --cpus-per-task for the job (default: ${cpus_per_task})
@@ -75,6 +77,8 @@ while [[ $# -gt 0 ]]; do
             copy=1; shift 1 ;;
         -w|--work-dir)
             work_dir="$2"; shift 2 ;;
+        -R|--report)
+            report=1; shift 1 ;;
         --cpus)
             cpus_per_task="$2"; shift 2 ;;
         --slurm-mem)
@@ -108,6 +112,7 @@ echo "  use_ssd                = ${use_ssd}"
 echo "  copy                   = ${copy}"
 echo "  remove_ssd             = ${remove_ssd}"
 echo "  work_dir               = ${work_dir}"
+echo "  report                 = ${report}"
 echo "  --- SLURM resources ---"
 echo "  cpus-per-task          = ${cpus_per_task}"
 echo "  mem                    = ${mem}"
@@ -121,5 +126,5 @@ sbatch \
     --time="${time_limit}" \
     --cpus-per-task="${cpus_per_task}" \
     --mem="${mem}" \
-    --export=ALL,FITSFILE="${fitsfile}",MAX_MEM_MB="${max_mem_mb}",ALGORITHM="${algorithm}",APPROX_CUBE_HISTOGRAM="${approx_cube_histogram}",USE_SSD="${use_ssd}",WORK_DIR="${work_dir}",COPY="${copy}",REMOVE_SSD="${remove_ssd}" \
+    --export=ALL,FITSFILE="${fitsfile}",MAX_MEM_MB="${max_mem_mb}",ALGORITHM="${algorithm}",APPROX_CUBE_HISTOGRAM="${approx_cube_histogram}",USE_SSD="${use_ssd}",WORK_DIR="${work_dir}",COPY="${copy}",REMOVE_SSD="${remove_ssd}",REPORT="${report}" \
     "${worker_script}"
