@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
             max_mem_mb="$2"; shift 2 ;;
         -M|--mem-gb)
             max_mem_mb=$(( $2 * 1024 )); shift 2 ;;
-        -L|--load)
+        -L|--module)
             module="$2"; shift 2 ;;
         -a|--algo)
             algorithm="$2"; shift 2 ;;
