@@ -12,6 +12,7 @@ work_dir="./"
 copy=0
 report=0
 module="fits2idia/devel"
+account="ja3"
 
 # --- SLURM resource parameters (defaults; these become sbatch flags) ---
 cpus_per_task=128
@@ -44,6 +45,7 @@ fits2idia options:
                          (default: ${work_dir})
   -R, --report           Only reports on required memory and I/O execution time
   -L, --module           Load specific module
+  -A, --account          Account (default: $account)
 
 SLURM resource options (these become sbatch flags for this submission):
   --cpus INT             --cpus-per-task for the job (default: ${cpus_per_task})
@@ -81,6 +83,8 @@ while [[ $# -gt 0 ]]; do
             copy=1; shift 1 ;;
         -w|--work-dir)
             work_dir="$2"; shift 2 ;;
+        -A|--account)
+            account="$2"; shift 2 ;;
         -R|--report)
             report=1; shift 1 ;;
         --cpus)
@@ -123,6 +127,7 @@ echo "  mem                    = ${mem}"
 echo "  job-name               = ${job_name}"
 echo "  partition              = ${partition}"
 echo "  time                   = ${time_limit}"
+echo "  account                = ${account}"
 echo "  module                 = ${module}"
 
 sbatch \
@@ -131,5 +136,6 @@ sbatch \
     --time="${time_limit}" \
     --cpus-per-task="${cpus_per_task}" \
     --mem="${mem}" \
+    --account=${account} \
     --export=ALL,FITSFILE="${fitsfile}",MAX_MEM_MB="${max_mem_mb}",ALGORITHM="${algorithm}",APPROX_CUBE_HISTOGRAM="${approx_cube_histogram}",USE_SSD="${use_ssd}",WORK_DIR="${work_dir}",COPY="${copy}",REMOVE_SSD="${remove_ssd}",REPORT="${report}",MODULE="${module}" \
     "${worker_script}"
