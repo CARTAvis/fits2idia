@@ -68,7 +68,7 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix)" << std::endl
-    << "-R\nReport predicted memory usage and execution time without performing the conversion" << std::endl
+    << "-R\tReport predicted memory usage and execution time without performing the conversion" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion. This is for backward compatibility, use -R to also see predicted exection time." << std::endl
     << "-M\tSpecify memory limit in MB" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
@@ -269,6 +269,18 @@ int main(int argc, char** argv) {
            converter->setIOBlocks(n_io_blocks);
         }
         
+        // needs to be before memory and I/O and compute cost report 
+        // as this function also selects the most optimal algorithm
+        // so the report is based on what is decided here:
+        if( checkMemoryUsage(converter.get(), n_io_blocks, memoryLimit, auto_mode) ) {
+            if (!onlyReportMemoryAndExectime && !onlyReportMemory) {
+               // only exit in the full execution mode, not in report-only mode
+               return 1;
+            }
+        }
+
+        // always print the memory and exec time report before starting processing
+        // just to show the initial estimates for comparison with the actual results
         converter->reportMemoryAndExecTime();
         
         if (onlyReportMemoryAndExectime) {
@@ -279,11 +291,7 @@ int main(int argc, char** argv) {
                 return 0;
             }
         }
-        
-        if( checkMemoryUsage(converter.get(), n_io_blocks, memoryLimit, auto_mode) ) {
-            return 1;
-        }
-        
+                
         DEBUG(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();

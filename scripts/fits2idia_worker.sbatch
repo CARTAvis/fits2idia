@@ -26,12 +26,13 @@ remove_ssd="${REMOVE_SSD:-1}"
 report="${REPORT:-1}"
 work_dir="${WORK_DIR:-./}"
 copy="${COPY:-0}"
+module="${MODULE:-fits2idia/devel}"
 
 # --- Environment & Modules ---
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 
 module use /software/projects/ja3/setonix/2025.08/modules/zen3/gcc/14.2.0/
-module load cfitsio/4.4.0 cray-hdf5/1.14.3.7 fits2idia/devel
+module load cfitsio/4.4.0 cray-hdf5/1.14.3.7 ${module}
 
 if [[ -n "$work_dir" && "$work_dir" != "./" ]]; then
    cd "${work_dir}"
@@ -60,6 +61,7 @@ echo "copy                  = $copy"
 echo "work_dir              = $work_dir"
 echo "report                = $report"
 echo "SLURM_CPUS_PER_TASK   = ${SLURM_CPUS_PER_TASK:-} (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
+echo "module                = ${MODULE}}
 echo "Extra options         = ${extra_options}"
 echo "-------------------------------------------------------------------------------------------------"
 
