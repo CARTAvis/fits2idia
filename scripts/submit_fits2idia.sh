@@ -4,6 +4,7 @@ set -euo pipefail
 # --- fits2idia parameters (defaults) ---
 fitsfile="IMAGE_CUBE.fits"
 max_mem_mb=31000
+extra_mem_mb=5000 # currently extra is 5GB but could also be 10 or 20 % 
 algorithm="channel"
 approx_cube_histogram=0
 use_ssd=1
@@ -16,7 +17,7 @@ account="ja3"
 
 # --- SLURM resource parameters (defaults; these become sbatch flags) ---
 cpus_per_task=128
-mem="400GB"
+mem="" # this is now calculated based the limit max_mem_mb (see above), but can be overwritten
 job_name="fits2idia"
 partition="highmem"
 time_limit="96:00:00"
@@ -49,7 +50,7 @@ fits2idia options:
 
 SLURM resource options (these become sbatch flags for this submission):
   --cpus INT             --cpus-per-task for the job (default: ${cpus_per_task})
-  --slurm-mem STR        --mem for the job, e.g. 400GB (default: ${mem})
+  --slurm-mem STR        --mem for the job, e.g. 400GB (default: $max_mem_mb + $extra_mem_mb [MB])
   --job-name STR         --job-name for the job (default: ${job_name})
   --partition STR        --partition for the job (default: ${partition})
   --time STR             --time for the job (default: ${time_limit})
@@ -106,6 +107,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# If --slurm-mem option was not provided calculate SLURM limit as max_mem_mb + extra_mem_mb:
+slurm_mem_mb=$(($max_mem_mb+$extra_mem_mb))
+if [[ ! -n "$mem" ]]; then
+   mem=`echo $slurm_mem | awk '{printf("%.5fGB",$1);}'`
+fi   
+
 if [[ ! -f "$worker_script" ]]; then
     echo "Error: worker script not found at ${worker_script}" >&2
     exit 1
@@ -115,6 +122,7 @@ echo "Submitting fits2idia job:"
 echo "  fitsfile              = ${fitsfile}"
 echo "  algorithm              = ${algorithm}"
 echo "  max_mem_mb             = ${max_mem_mb}"
+echo "  extra_mem_mb           = ${extra_mem_mb}"
 echo "  approx_cube_histogram = ${approx_cube_histogram}"
 echo "  use_ssd                = ${use_ssd}"
 echo "  copy                   = ${copy}"
