@@ -226,6 +226,7 @@ void printOptions()
    std::cout << "PARAMETERS:" << std::endl;
    std::cout << "Approximations:" << std::endl;
    std::cout << "\tApproximate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
+   std::cout << "\tChunking of rotated dataset: " << Converter::rotatedDatasetChunking << std::endl;
    std::cout << "##########################################" << std::endl;
 }
 
