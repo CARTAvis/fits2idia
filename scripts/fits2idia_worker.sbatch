@@ -61,7 +61,7 @@ echo "copy                  = $copy"
 echo "work_dir              = $work_dir"
 echo "report                = $report"
 echo "SLURM_CPUS_PER_TASK   = ${SLURM_CPUS_PER_TASK:-} (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
-echo "module                = ${MODULE}}
+echo "module                = ${MODULE}"
 echo "Extra options         = ${extra_options}"
 echo "-------------------------------------------------------------------------------------------------"
 
