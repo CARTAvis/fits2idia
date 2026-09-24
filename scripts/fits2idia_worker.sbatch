@@ -27,6 +27,7 @@ report="${REPORT:-1}"
 work_dir="${WORK_DIR:-./}"
 copy="${COPY:-0}"
 module="${MODULE:-fits2idia/devel}"
+extra_options="${EXTRA_OPTIONS:-}"
 
 # --- Environment & Modules ---
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
@@ -44,7 +45,7 @@ template_hdf5_file="${fitsfile%%fits}hdf5"
 
 extra_options=""
 if [[ $report -gt 0 ]]; then
-   extra_options="-R"
+   extra_options="${extra_options} -R"
 fi
 
 echo "-------------------------------------------------------------------------------------------------"

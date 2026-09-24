@@ -14,6 +14,7 @@ copy=0
 report=0
 module="fits2idia/devel"
 account="ja3"
+extra_options=""
 
 # --- SLURM resource parameters (defaults; these become sbatch flags) ---
 cpus_per_task=128
@@ -47,6 +48,7 @@ fits2idia options:
   -R, --report           Only reports on required memory and I/O execution time
   -L, --module           Load specific module
   -A, --account          Account (default: $account)
+  -O, --options          Extra options of the converter (default: $extra_options)
 
 SLURM resource options (these become sbatch flags for this submission):
   --cpus INT             --cpus-per-task for the job (default: ${cpus_per_task})
@@ -88,6 +90,8 @@ while [[ $# -gt 0 ]]; do
             account="$2"; shift 2 ;;
         -R|--report)
             report=1; shift 1 ;;
+        -O|--options)
+            extra_options="$2"; shift 2 ;;
         --cpus)
             cpus_per_task="$2"; shift 2 ;;
         --slurm-mem)
@@ -129,6 +133,7 @@ echo "  copy                   = ${copy}"
 echo "  remove_ssd             = ${remove_ssd}"
 echo "  work_dir               = ${work_dir}"
 echo "  report                 = ${report}"
+echo "  extra_options          = ${extra_options}"
 echo "  --- SLURM resources ---"
 echo "  cpus-per-task          = ${cpus_per_task}"
 echo "  mem                    = ${mem}"
@@ -145,5 +150,5 @@ sbatch \
     --cpus-per-task="${cpus_per_task}" \
     --mem="${mem}" \
     --account=${account} \
-    --export=ALL,FITSFILE="${fitsfile}",MAX_MEM_MB="${max_mem_mb}",ALGORITHM="${algorithm}",APPROX_CUBE_HISTOGRAM="${approx_cube_histogram}",USE_SSD="${use_ssd}",WORK_DIR="${work_dir}",COPY="${copy}",REMOVE_SSD="${remove_ssd}",REPORT="${report}",MODULE="${module}" \
+    --export=ALL,FITSFILE="${fitsfile}",MAX_MEM_MB="${max_mem_mb}",ALGORITHM="${algorithm}",APPROX_CUBE_HISTOGRAM="${approx_cube_histogram}",USE_SSD="${use_ssd}",WORK_DIR="${work_dir}",COPY="${copy}",REMOVE_SSD="${remove_ssd}",REPORT="${report}",MODULE="${module}",EXTRA_OPTIONS="${extra_options}" \
     "${worker_script}"

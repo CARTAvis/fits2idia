@@ -45,9 +45,27 @@ void getSystemName(std::string& systemName)
    }
 }
 
-bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& outputFileName, bool& slow, bool& smart, eSmartConverterType& smartconverter_type, bool& progress, 
-                bool& onlyReportMemory, bool& onlyReportMemoryAndExectime, bool& zMips, int& memoryLimitInMb, bool& auto_mode, int& n_io_blocks, std::string& exclude_list, 
-                std::string& include_list, std::string& systemName) {
+struct commandLineOptions 
+{
+   std::string inputFileName;
+   std::string outputFileName;
+   bool slow{false};
+   bool smart{false};
+   eSmartConverterType smartconverter_type{eAutoSelectedSmartConverter};
+   bool progress;
+   bool onlyReportMemory{false};
+   bool onlyReportMemoryAndExectime{false};
+   bool zMips{false};
+   bool rotatedDatasetChunking{false};
+   int memoryLimitInMb{0};
+   bool auto_mode{false};
+   int n_io_blocks{1};
+   std::string exclude_list;
+   std::string include_list;
+   std::string systemName;
+};
+
+bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     extern int optind;
     extern char *optarg;
     
@@ -60,7 +78,8 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
-    << "-B\tNumber of freq-images (i.e. blocks) read in one read transation [default " << n_io_blocks << "]" << std::endl
+    << "-B\tNumber of freq-images (i.e. blocks) read in one read transation [default " << cmdLineOptions.n_io_blocks << "]" << std::endl
+    << "-C\tEnable chunking of the rotated dataset [default: " << cmdLineOptions.rotatedDatasetChunking << "]" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
@@ -79,77 +98,81 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
     << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
     << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmRzM:B:AT:H:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRCzM:B:AT:H:")) != -1) {
         switch (opt) {
             case 'a':
             case 'r':
-                auto_mode = true;
-                n_io_blocks = -1; // it will be automatically calculated based on memory limit
+                cmdLineOptions.auto_mode = true;
+                cmdLineOptions.n_io_blocks = -1; // it will be automatically calculated based on memory limit
                 break;
             case 'A':
                 SmartConverter::bApproximateCubeHistogram = true;
                 break;
             case 'B':
                 if (optarg) {
-                   n_io_blocks = atol(optarg);
+                   cmdLineOptions.n_io_blocks = atol(optarg);
                 }
                 break;
+            case 'C':
+                Converter::rotatedDatasetChunking = cmdLineOptions.rotatedDatasetChunking;
+                break;
+
             case 'E':
                 if (optarg) {
-                   exclude_list = optarg;
+                   cmdLineOptions.exclude_list = optarg;
                 }
                 break;
             case 'H':
                 if (optarg) {
-                   systemName = optarg;
+                   cmdLineOptions.systemName = optarg;
                 }
                 break;
             case 'I':
                 if (optarg) {
-                   include_list = optarg;
+                   cmdLineOptions.include_list = optarg;
                 }
                 break;
 /*            case 'r':
-                auto_mode = true;
+                cmdLineOptions.auto_mode = true;
                 break;*/
             case 'o':
-                outputFileName.assign(optarg);
+                cmdLineOptions.outputFileName.assign(optarg);
                 break;
             case 's':
                 // use slower but less memory-intensive method
-                slow = true;
+                cmdLineOptions.slow = true;
                 break;
             case 'S':
                 // use smart converter
-                smart = true;
+                cmdLineOptions.smart = true;
                 break;
             case 'p':
-                progress = true;
+                cmdLineOptions.progress = true;
                 break;
             case 'q':
                 std::cerr << "The -q flag is deprecated. The converter is quiet by default." << std::endl;
                 break;
             case 'm':
                 // only print memory usage and exit
-                onlyReportMemory = true;
+                cmdLineOptions.onlyReportMemory = true;
                 break;
             case 'R':
                 // only print memory usage and exit
-                onlyReportMemoryAndExectime = true;
+                cmdLineOptions.onlyReportMemoryAndExectime = true;
                 break;
             case 'M':
                 if (optarg) {
-                    memoryLimitInMb = atof(optarg);   
+                    cmdLineOptions.memoryLimitInMb = atof(optarg);   
                 }
                 break;
             case 'T':
                 if (optarg) {
-                   smartconverter_type = parse_smartconverter_type(optarg);   
-                   printf("DEBUG : smartconverter_type = %d\n",(int)smartconverter_type);
+                   cmdLineOptions.smartconverter_type = parse_smartconverter_type(optarg);   
+                   printf("DEBUG : smartconverter_type = %d\n",(int)cmdLineOptions.smartconverter_type);
                 }
                 break;
             case 'z':
-                zMips = true;
+                cmdLineOptions.zMips = true;
                 break;
             case ':':
                 err = true;
@@ -162,15 +185,15 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
         }
     }
     
-    if (strlen(systemName.c_str()) <= 0 ) {
-       getSystemName(systemName);
+    if (strlen(cmdLineOptions.systemName.c_str()) <= 0 ) {
+       getSystemName(cmdLineOptions.systemName);
     }
     
     if (optind >= argc) {
         err = true;
         std::cerr << "Missing input filename parameter." << std::endl;
     } else {
-        inputFileName.assign(argv[optind]);
+        cmdLineOptions.inputFileName.assign(argv[optind]);
         optind++;
     }
     
@@ -184,13 +207,13 @@ bool getOptions(int argc, char** argv, std::string& inputFileName, std::string& 
         return false;
     }
     
-    if (outputFileName.empty()) {
-        auto fitsIndex = inputFileName.find_last_of(".fits");
+    if (cmdLineOptions.outputFileName.empty()) {
+        auto fitsIndex = cmdLineOptions.inputFileName.find_last_of(".fits");
         if (fitsIndex != std::string::npos) {
-            outputFileName = inputFileName.substr(0, fitsIndex - 4);
-            outputFileName += ".hdf5";
+            cmdLineOptions.outputFileName = cmdLineOptions.inputFileName.substr(0, fitsIndex - 4);
+            cmdLineOptions.outputFileName += ".hdf5";
         } else {
-            outputFileName = inputFileName + ".hdf5";
+            cmdLineOptions.outputFileName = cmdLineOptions.inputFileName + ".hdf5";
         }
     }
     
@@ -209,27 +232,16 @@ void printOptions()
 int checkMemoryUsage( Converter* converter, int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
 
 int main(int argc, char** argv) {
-    std::string inputFileName;
-    std::string outputFileName;
-    std::string systemName;
-    bool slow(false);
-    bool smart(false);
-    bool auto_mode(false);
-    bool progress(false);
-    bool onlyReportMemory(false), onlyReportMemoryAndExectime(false);
-    bool zMips(false);
-    int memoryLimitInMb(0);
-    int n_io_blocks(1);
-    eSmartConverterType smartconverter_type(eAutoSelectedSmartConverter);
-    std::string exclude_list, include_list;
+    bool progress(false);    
+    commandLineOptions cmdLineOptions;    
     
-    if (!getOptions(argc, argv, inputFileName, outputFileName, slow, smart, smartconverter_type, progress, onlyReportMemory, onlyReportMemoryAndExectime, zMips, memoryLimitInMb, auto_mode, n_io_blocks, exclude_list, include_list, systemName)) {
+    if (!getOptions(argc, argv, cmdLineOptions)) {
         return 1;
     }
     
     printOptions();
 
-    if (slow && zMips){
+    if (cmdLineOptions.slow && cmdLineOptions.zMips){
         std::cerr << "Currently unable to include depth in mipmap calculation for -s mode." << std::endl;
         return -1;
     }
@@ -252,28 +264,30 @@ int main(int argc, char** argv) {
             }
         }
     }
-    if (memoryLimitInMb > 0) {
-       memoryLimit = memoryLimitInMb * 1e6; // converting from MB to bytes
+    if (cmdLineOptions.memoryLimitInMb > 0) {
+       memoryLimit = cmdLineOptions.memoryLimitInMb * 1e6; // converting from MB to bytes
     }
     
     std::unique_ptr<Converter> converter;
         
     try {
-        converter = Converter::getConverter(inputFileName, outputFileName, slow, smart, smartconverter_type, progress, zMips, memoryLimitInMb, auto_mode);
+        converter = Converter::getConverter(cmdLineOptions.inputFileName, cmdLineOptions.outputFileName, 
+                                            cmdLineOptions.slow, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, progress, 
+                                            cmdLineOptions.zMips, cmdLineOptions.memoryLimitInMb, cmdLineOptions.auto_mode);
         
-        if (strlen(systemName.c_str())>0) {
-           converter->setSystemName(systemName.c_str());
+        if (strlen(cmdLineOptions.systemName.c_str())>0) {
+           converter->setSystemName(cmdLineOptions.systemName.c_str());
         }
         
-        if (n_io_blocks>1) {
-           converter->setIOBlocks(n_io_blocks);
+        if (cmdLineOptions.n_io_blocks>1) {
+           converter->setIOBlocks(cmdLineOptions.n_io_blocks);
         }
         
         // needs to be before memory and I/O and compute cost report 
         // as this function also selects the most optimal algorithm
         // so the report is based on what is decided here:
-        if( checkMemoryUsage(converter.get(), n_io_blocks, memoryLimit, auto_mode) ) {
-            if (!onlyReportMemoryAndExectime && !onlyReportMemory) {
+        if( checkMemoryUsage(converter.get(), cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
+            if (!cmdLineOptions.onlyReportMemoryAndExectime && !cmdLineOptions.onlyReportMemory) {
                // only exit in the full execution mode, not in report-only mode
                return 1;
             }
@@ -283,16 +297,16 @@ int main(int argc, char** argv) {
         // just to show the initial estimates for comparison with the actual results
         converter->reportMemoryAndExecTime();
         
-        if (onlyReportMemoryAndExectime) {
+        if (cmdLineOptions.onlyReportMemoryAndExectime) {
             return 0;
         } else {
-            if (onlyReportMemory) {
+            if (cmdLineOptions.onlyReportMemory) {
                 converter->reportMemoryUsage();
                 return 0;
             }
         }
                 
-        DEBUG(std::cout << "Converting FITS file " << inputFileName << " to HDF5 file " << outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
+        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {

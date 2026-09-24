@@ -5,6 +5,8 @@
 
 #include "Converter.h"
 
+bool Converter::rotatedDatasetChunking=false;
+
 Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), n_io_blocks(1) {
     TIMER(timer.start("Setup"););
     
@@ -378,30 +380,30 @@ void Converter::convert() {
         //       all the channels for a given pixel at once
         auto swizzledChunkDims = EMPTY_DIMS;
         
-//        if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 || strcmp(getConverterType(),"SLOW")==0 ) {
-        if( strstr(getConverterType(),"SMART") || strcmp(getConverterType(),"SLOW")==0 ) {
-           hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
-           hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
+        if ( Converter::rotatedDatasetChunking ) {
+            if ( strstr(getConverterType(),"SMART") || strcmp(getConverterType(),"SLOW")==0 ) {
+               hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
+               hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
            
-           // Keep individual chunk size under ~2GB to safely beat HDF5's 4GB limit
-           const hsize_t MAX_CHUNK_BYTES = 2048ULL * 1024ULL * 1024ULL; // 512 MB
-           while (chunkWidth * chunkHeight * depth * sizeof(float) > MAX_CHUNK_BYTES && (chunkWidth > 1 || chunkHeight > 1)) {
-               if (chunkWidth >= chunkHeight && chunkWidth > 1) {
-                   chunkWidth = std::max((hsize_t)1, chunkWidth / 2);
-               } else if (chunkHeight > 1) {
-                   chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
+               // Keep individual chunk size under ~2GB to safely beat HDF5's 4GB limit
+               const hsize_t MAX_CHUNK_BYTES = 2048ULL * 1024ULL * 1024ULL; // 512 MB
+               while (chunkWidth * chunkHeight * depth * sizeof(float) > MAX_CHUNK_BYTES && (chunkWidth > 1 || chunkHeight > 1)) {
+                   if (chunkWidth >= chunkHeight && chunkWidth > 1) {
+                       chunkWidth = std::max((hsize_t)1, chunkWidth / 2);
+                   } else if (chunkHeight > 1) {
+                       chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
+                   }
                }
-           }
 
-           if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
-              swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
-           } else {
-              swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
-           }
-           // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
-           printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
+               if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
+                  swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
+               } else {
+                  swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
+               }
+               // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
+               printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
+            }
         }
-        // TODO : what to do for eSmartFastConverter ??? perhaps the same or difference ChunkDims ???
         
         createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims, swizzledChunkDims);
         

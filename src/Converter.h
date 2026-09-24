@@ -64,6 +64,8 @@ public:
     
     bool getCubeHistogramApproximated(){ return false; }
     
+    // options:
+    static bool rotatedDatasetChunking;
     
 protected:
     virtual void copyAndCalculate() = 0;
