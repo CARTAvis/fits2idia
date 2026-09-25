@@ -76,23 +76,47 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
 
       if (use_random_read_write) {
          writeBW.bandwidthCurve = { // randwrite_bw_vs_size.cc
-             { 4*1024 , 1.597e6 },
+             // MORNING : /scratch less used: 20260916_IO_BW_measurements_SETONIX.odt
+             /*{ 4*1024 , 1.597e6 },
              { 64*1024 , 15.9e6 },
              { 1024*1024 , 353e6 },
              { 16*1024*1024 , 1250e6 },
              { 32*1024*1024 , 1308e6 },
              { 64*1024*1024 , 2169e6 },
-             { 128*1024*1024 , 610e6 }
+             { 128*1024*1024 , 610e6 } */                          
+
+             // AFTERNOON : /scratch more busy (more users etc): 20260916_IO_BW_measurements_SETONIX-REPEAT-NON-SSD.odt
+             { 4*1024 , 0.0239e6 },
+             { 64*1024 , 0.858e6 },
+             { 1024*1024 , 50.7e6 },
+             { 16*1024*1024 , 156e6 },
+             { 32*1024*1024 , 225e6 },
+             { 64*1024*1024 , 290e6 },
+             { 128*1024*1024 , 652e6 },
+             { 256*1024*1024 , 953e6 },
+             { 512*1024*1024 , 982e6 }
          };
       } else {
          writeBW.bandwidthCurve = { // write_bw_vs_size.cc
-             { 4*1024 , 3.773e6 },
+             // MORNING : /scratch less used: 20260916_IO_BW_measurements_SETONIX.odt
+             /*{ 4*1024 , 3.773e6 },
              { 64*1024 , 38.2e6 },
              { 1024*1024 , 326e6 },
              { 16*1024*1024 , 1414e6 },
              { 32*1024*1024 , 1491e6 },
              { 64*1024*1024 , 1974e6 },
-             { 128*1024*1024 , 2297e6 }
+             { 128*1024*1024 , 2297e6 }*/
+
+             // AFTERNOON : /scratch more busy (more users etc): 20260916_IO_BW_measurements_SETONIX-REPEAT-NON-SSD.odt
+             { 4*1024 , 1.376e6 },
+             { 64*1024 , 3.445e6 },
+             { 1024*1024 , 57.5e6 },
+             { 16*1024*1024 , 172e6 },
+             { 32*1024*1024 , 280e6 },
+             { 64*1024*1024 , 403e6 },
+             { 128*1024*1024 , 525e6 },
+             { 256*1024*1024 , 1194e6 },
+             { 512*1024*1024 , 1350e6 }
          };
       }
       if (use_random_read_write) {
