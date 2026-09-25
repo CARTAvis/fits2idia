@@ -36,8 +36,8 @@ do
     sleep 2    
 done
 
-cat randwrite_bw_vs_size.txt | awk '{if(NR==1){gsub("4096","4*1024",$1);$2=$2/1000.00;$2=$2"e6"}else{gsub("Ki","*1024",$1);gsub("Mi","*1024*1024",$1);gsub("\\.0","",$1);$1=$1;gsub("MB/s),","e6",$2);}print "{ "$1" , "$2" },";}' > randwrite_bw_vs_size.cc
-cat randwrite_bw_vs_size.txt | awk '{if(NR==1){$2=($2/1000.0)"e6"}else{gsub("MB/s),","",$2); if($1~/Ki/){sub("Ki","",$1);$1=$1*1024}else if($1~/Mi/){sub("Mi","",$1);$1=$1*1024*1024}}; print $1" "$2;}' > randwrite_bw_vs_size_PLOT.txt
+cat randwrite_bw_vs_size.txt | awk '{if(NR==1){gsub("4096","4*1024",$1);}gsub("Ki","*1024",$1);gsub("Mi","*1024*1024",$1);gsub("\\.0","",$1);$1=$1;gsub("MB/s),","e6",$2);if(index($2,"kB/s")>0){gsub("kB/s),","",$2);$2=$2/1000.00;$2=$2"e6";}print "{ "$1" , "$2" },";}' > randwrite_bw_vs_size.cc
+cat randwrite_bw_vs_size.txt | awk '{if($1~/Ki/){sub("Ki","",$1);$1=$1*1024}else if($1~/Mi/){sub("Mi","",$1);$1=$1*1024*1024}; gsub("MB/s),","",$2); if(index($2,"kB/s")>0){gsub("kB/s),","",$2);$2=$2/1000.00}; print $1" "$2;}' > randwrite_bw_vs_size_PLOT.txt
 echo "TESTING randwrite complated at:"
 date
 sleep 30
@@ -64,8 +64,8 @@ do
     sleep 2    
 done
 
-cat write_bw_vs_size.txt | awk '{if(NR==1){gsub("4096","4*1024",$1);$2=$2/1000.00;$2=$2"e6"}else{gsub("Ki","*1024",$1);gsub("Mi","*1024*1024",$1);gsub("\\.0","",$1);$1=$1;gsub("MB/s),","e6",$2);}print "{ "$1" , "$2" },";}' > write_bw_vs_size.cc
-cat write_bw_vs_size.txt | awk '{if(NR==1){$2=($2/1000.0)"e6"}else{gsub("MB/s),","",$2); if($1~/Ki/){sub("Ki","",$1);$1=$1*1024}else if($1~/Mi/){sub("Mi","",$1);$1=$1*1024*1024}}; print $1" "$2;}' > write_bw_vs_size_PLOT.txt
+cat write_bw_vs_size.txt | awk '{if(NR==1){gsub("4096","4*1024",$1);}gsub("Ki","*1024",$1);gsub("Mi","*1024*1024",$1);gsub("\\.0","",$1);$1=$1;gsub("MB/s),","e6",$2);if(index($2,"kB/s")>0){gsub("kB/s),","",$2);$2=$2/1000.00;$2=$2"e6";}print "{ "$1" , "$2" },";}' > write_bw_vs_size.cc
+cat write_bw_vs_size.txt | awk '{if($1~/Ki/){sub("Ki","",$1);$1=$1*1024}else if($1~/Mi/){sub("Mi","",$1);$1=$1*1024*1024}; gsub("MB/s),","",$2); if(index($2,"kB/s")>0){gsub("kB/s),","",$2);$2=$2/1000.00}; print $1" "$2;}' > write_bw_vs_size_PLOT.txt
 
 echo "TESTING write complated at:"
 date
