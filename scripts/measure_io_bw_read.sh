@@ -1,4 +1,11 @@
 #!/bin/bash
+#SBATCH --job-name=read_bw_measurement
+#SBATCH --output=%x-%j.out
+#SBATCH --error=%x-%j.err
+#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8GB
+
 
 file_size=1G
 test_file=./fio_benchmark_scratch.dat
