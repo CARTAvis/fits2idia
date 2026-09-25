@@ -6,6 +6,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8GB
 
+# for SETONIX ONLY:
+export PATH=/software/projects/mwasci/msok/fio/fio:$PATH
 
 file_size=1G
 test_file=./fio_benchmark_scratch.dat
