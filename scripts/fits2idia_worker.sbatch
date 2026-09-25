@@ -48,6 +48,11 @@ if [[ $report -gt 0 ]]; then
    extra_options="${extra_options} -R"
 fi
 
+system_name="setonix"
+if [[ $use_ssd -gt 0 ]]; then
+   system_name="setonix-ssd"
+fi
+
 echo "-------------------------------------------------------------------------------------------------"
 echo "PARAMETERS:"
 echo "--------------------------"
@@ -61,6 +66,7 @@ echo "remove_ssd            = $remove_ssd"
 echo "copy                  = $copy"
 echo "work_dir              = $work_dir"
 echo "report                = $report"
+echo "system                = $system_name"
 echo "SLURM_CPUS_PER_TASK   = ${SLURM_CPUS_PER_TASK:-} (OMP_NUM_THREADS = $OMP_NUM_THREADS)"
 echo "module                = ${MODULE}"
 echo "Extra options         = ${extra_options}"
@@ -102,8 +108,8 @@ if [[ $algorithm == "slow" ]]; then
    outfile="${fitsfile%%.fits}_SLOW.hdf5"
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p -s ${extra_options}"
-   srun fits2idia "$fitsfile" -o "$outfile" -p -s ${extra_options}
+   echo "srun fits2idia $fitsfile -o $outfile -p -s -H ${system_name} ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p -s -H ${system_name} ${extra_options}
    date
 
 elif [[ $algorithm == "fast" ]]; then
@@ -115,8 +121,8 @@ elif [[ $algorithm == "fast" ]]; then
    outfile="${fitsfile%%.fits}_FAST.hdf5"
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p ${extra_options}"
-   srun fits2idia "$fitsfile" -o "$outfile" -p ${extra_options}
+   echo "srun fits2idia $fitsfile -o $outfile -p -H ${system_name} ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p -H ${system_name} ${extra_options}
    date
 
 else
@@ -141,8 +147,8 @@ else
    fi
 
    rm -f "$outfile"
-   echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a ${options} ${extra_options}"
-   srun fits2idia "$fitsfile" -o "$outfile" -p -S -M "${max_mem_mb}" -a ${options} ${extra_options}
+   echo "srun fits2idia $fitsfile -o $outfile -p -S -M ${max_mem_mb} -a -H ${system_name} ${options} ${extra_options}"
+   srun fits2idia "$fitsfile" -o "$outfile" -p -S -M "${max_mem_mb}" -a -H ${system_name} ${options} ${extra_options}
    date
 fi
 

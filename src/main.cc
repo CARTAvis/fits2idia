@@ -86,7 +86,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'micro' or 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
-    << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix)" << std::endl
+    << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
     << "-R\tReport predicted memory usage and execution time without performing the conversion" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion. This is for backward compatibility, use -R to also see predicted exection time." << std::endl
     << "-M\tSpecify memory limit in MB" << std::endl

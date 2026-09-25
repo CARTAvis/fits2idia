@@ -68,28 +68,122 @@ IOOpEstimate repeatEstimate(const IOOpEstimate& e, hsize_t times) {
     return { e.transactions * times, e.bytesPerTransaction, e.totalBytes * times };
 }
 
-bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCostModel& setonixWrite, bool use_random_read_write /*=false*/ )
+bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write /*=false*/ )
 {
-   // TODO: implement System-specific BWs, and use system_name. 
-   //       for now all the same based measurements on my laptop
+   // see 20260916_IO_BW_measurements_SETONIX.odt
+   if (strcasecmp(system_name,"setonix") == 0 ) {
+      printf("BW INFO : using BW measured on SETONIX (normal Luster partition)\n");
 
+      if (use_random_read_write) {
+         writeBW.bandwidthCurve = { // randwrite_bw_vs_size.cc
+             { 4*1024 , 1.597e6 },
+             { 64*1024 , 15.9e6 },
+             { 1024*1024 , 353e6 },
+             { 16*1024*1024 , 1250e6 },
+             { 32*1024*1024 , 1308e6 },
+             { 64*1024*1024 , 2169e6 },
+             { 128*1024*1024 , 610e6 }
+         };
+      } else {
+         writeBW.bandwidthCurve = { // write_bw_vs_size.cc
+             { 4*1024 , 3.773e6 },
+             { 64*1024 , 38.2e6 },
+             { 1024*1024 , 326e6 },
+             { 16*1024*1024 , 1414e6 },
+             { 32*1024*1024 , 1491e6 },
+             { 64*1024*1024 , 1974e6 },
+             { 128*1024*1024 , 2297e6 }
+         };
+      }
+      if (use_random_read_write) {
+         readBW.bandwidthCurve = { // randread_bw_vs_size.cc
+             { 4*1024 , 0.22e6 },
+             { 64*1024 , 4.317e6 },
+             { 1024*1024 , 24.0e6 },
+             { 16*1024*1024 , 3230e6 },
+             { 32*1024*1024 , 3771e6 },
+             { 64*1024*1024 , 4658e6 },
+             { 128*1024*1024 , 5369e6 },
+             { 256*1024*1024 , 5863e6 },
+             { 512*1024*1024 , 5831e6 }
+         };
+      } else {
+         readBW.bandwidthCurve = { // read_bw_vs_size.cc
+             { 4*1024 , 8.237e6 },
+             { 64*1024 , 22.2e6 },
+             { 1024*1024 , 170e6 },
+             { 16*1024*1024 , 3379e6 },
+             { 32*1024*1024 , 4051e6 },
+             { 64*1024*1024 , 4366e6 },
+             { 128*1024*1024 , 5271e6 },
+             { 256*1024*1024 , 5471e6 },
+             { 512*1024*1024 , 6542e6 }
+         };
+      }
+   }
 
-   // LAPTOP BENCHMARKS on EXTERNAL HDD (see 20260916_IO_BW_measurements.odt)
-   // RANDOM WRITES (bytes written at random position of the file)
-   // IOCostModel setonixWrite;
-   /*setonixWrite.bandwidthCurve = {
-       {4*1024,      2.556e6}, // was 20e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=4k --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_4k.out 2>&1
-       {64*1024,      22.8e6}, // was 150e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64k --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_64k.out 2>&1
-       {1024*1024,    80.4e6}, // was 600e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=1M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_1M.out 2>&1
-       {16*1024*1024, 70.0e6}, // was 1100e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=16M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_16M.out 2>&1
-       {32*1024*1024, 76.3e6}, // fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=32M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_32M.out 2>&1
-       {64*1024*1024, 82.0e6}, // fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_64M.out 2>&1
-       {128*1024*1024,80.9e6}  // fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=128M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_128M.out 2>&1
-   };*/    
-  
+   // page 4 in 20260916_IO_BW_measurements_SETONIX.odt
+   if (strcasecmp(system_name,"setonix-ssd") == 0 ) {
+      printf("BW INFO : using BW measured on SETONIX (SSD/flash partition)\n");
+
+      if (use_random_read_write) {
+         writeBW.bandwidthCurve = { // SSD/randwrite_bw_vs_size.txt
+            { 4*1024 , 7.26e6 },
+            { 64*1024 , 94.3e6 },
+            { 1024*1024 , 567e6 },
+            { 16*1024*1024 , 1616e6 },
+            { 32*1024*1024 , 2047e6 },
+            { 64*1024*1024 , 2250e6 },
+            { 128*1024*1024 , 2472e6 },
+            { 256*1024*1024 , 2568e6 },
+            { 512*1024*1024 , 2545e6 },         
+         };
+      } else {
+         writeBW.bandwidthCurve = { // SSD/write_bw_vs_size.txt
+            { 4*1024 , 11.8e6 },
+            { 64*1024 , 88.0e6 },
+            { 1024*1024 , 558e6 },
+            { 16*1024*1024 , 1590e6 },
+            { 32*1024*1024 , 2003e6 },
+            { 64*1024*1024 , 2204e6 },
+            { 128*1024*1024 , 2429e6 },
+            { 256*1024*1024 , 2415e6 },
+            { 512*1024*1024 , 2512e6 }
+         };
+      }
+      if (use_random_read_write) {
+         readBW.bandwidthCurve = { // SSD/randread_bw_vs_size.cc
+            { 4*1024 , 19.6e6 },
+            { 64*1024 , 149e6 },
+            { 1024*1024 , 755e6 },
+            { 16*1024*1024 , 2091e6 },
+            { 32*1024*1024 , 2123e6 },
+            { 64*1024*1024 , 2391e6 },
+            { 128*1024*1024 , 2374e6 },
+            { 256*1024*1024 , 2587e6 },
+            { 512*1024*1024 , 2785e6 }
+         };
+      } else {
+         readBW.bandwidthCurve = { // SSD/read_bw_vs_size.cc
+            { 4*1024 , 17.8e6 },
+            { 64*1024 , 127e6 },
+            { 1024*1024 , 464e6 },
+            { 16*1024*1024 , 1546e6 },
+            { 32*1024*1024 , 1784e6 },
+            { 64*1024*1024 , 2072e6 },
+            { 128*1024*1024 , 2294e6 },
+            { 256*1024*1024 , 2482e6 },
+            { 512*1024*1024 , 2569e6 }
+         };
+      }
+
+   }
+
+   // if specific system was not found above use the defaults below:  
+   // LAPTOP BENCHMARKS on EXTERNAL HDD (see 20260916_IO_BW_measurements.odt) - these are used as default:
    // SEQUENTIAL WRITE (bytes written where the previous write finished)
-   // IOCostModel setonixWrite;
-   setonixWrite.bandwidthCurve = {
+   // IOCostModel writeBW;
+   writeBW.bandwidthCurve = {
        {4*1024,       28.6e6},    // was 20e6,  fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=4k --rw=write --direct=1 --ioengine=libaio --runtime=300 --time_based > write_4k.out 2>&1
        {64*1024,      93.8e6},    // was 150e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64k --rw=write --direct=1 --ioengine=libaio --runtime=300 --time_based > write_64k.out 2>&1
        {1024*1024,    93.0e6},    // was 600e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=1M --rw=write --direct=1 --ioengine=libaio --runtime=300 --time_based > write_1M.out 2>&1
@@ -101,8 +195,8 @@ bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCost
    
    if (use_random_read_write) {
       // RANDOM WRITES (bytes written at random position of the file)
-      // IOCostModel setonixWrite;
-      setonixWrite.bandwidthCurve = {
+      // IOCostModel writeBW;
+      writeBW.bandwidthCurve = {
           {4*1024,      2.556e6}, // was 20e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=4k --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_4k.out 2>&1
           {64*1024,      22.8e6}, // was 150e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64k --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_64k.out 2>&1
           {1024*1024,    80.4e6}, // was 600e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=1M --rw=randwrite --direct=1 --ioengine=libaio --runtime=300 --time_based > randwrite_1M.out 2>&1
@@ -115,8 +209,8 @@ bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCost
 
    // LAPTOP BENCHMARKS on EXTERNAL HDD:
    // SEQUENTIAL READ (bytes read where the previous write finished)
-   // IOCostModel setonixRead;
-   setonixRead.bandwidthCurve = {
+   // IOCostModel readBW;
+   readBW.bandwidthCurve = {
        {4*1024,       26.1e6},    // was 20e6,  fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=4k --rw=read --direct=1 --ioengine=libaio --runtime=300 --time_based > read_4k.out 2>&1
        {64*1024,      91.9e6},    // was 150e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64k --rw=read --direct=1 --ioengine=libaio --runtime=300 --time_based > read_64k.out 2>&1 
        {1024*1024,    92.4e6},    // was 600e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=1M --rw=read --direct=1 --ioengine=libaio --runtime=300 --time_based > read_1M.out 2>&1
@@ -128,8 +222,8 @@ bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCost
    
    if (use_random_read_write) {
       // RANDOM READS (bytes read at random position of the file)
-      // IOCostModel setonixRead;
-      setonixRead.bandwidthCurve = {
+      // IOCostModel readBW;
+      readBW.bandwidthCurve = {
           {4*1024,      0.384e6}, // was 20e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=4k --rw=randread --direct=1 --ioengine=libaio --runtime=300 --time_based > randread_4k.out 2>&1
           {64*1024,      6.541e6}, // was 150e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=64k --rw=randread --direct=1 --ioengine=libaio --runtime=300 --time_based > randread_64k.out 2>&1
           {1024*1024,    48.3e6}, // was 600e6, fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=1M --rw=randread --direct=1 --ioengine=libaio --runtime=300 --time_based > randread_1M.out 2>&1
@@ -139,9 +233,6 @@ bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCost
           {128*1024*1024,90.6e6}  //  // fio --name=iotest --filename=./fio_benchmark_scratch.dat --size=1G --bs=128M --rw=randread --direct=1 --ioengine=libaio --runtime=300 --time_based > randread_128M.out 2>&1
       };
    }
-
-    
-   // TODO: if (strcasecmp(system_name,"SETONIX") == 0 ){ return true; }  
     
    return true;
 }

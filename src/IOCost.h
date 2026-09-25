@@ -148,6 +148,6 @@ void addTiledRotationPhases(IOCostBreakdown& result,
                              hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                              const IOCostModel& readModel, const IOCostModel& writeModel);
 
-bool get_io_cost_model(const char* system_name, IOCostModel& setonixRead, IOCostModel& setonixWrite, bool use_random_read_write=false );
+bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write=false );
 
 #endif
