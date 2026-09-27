@@ -121,7 +121,8 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
       }
       if (use_random_read_write) {
          readBW.bandwidthCurve = { // randread_bw_vs_size.cc
-             { 4*1024 , 0.22e6 },
+// OLD Friday morning / off-peak :
+/*             { 4*1024 , 0.22e6 },
              { 64*1024 , 4.317e6 },
              { 1024*1024 , 24.0e6 },
              { 16*1024*1024 , 3230e6 },
@@ -130,10 +131,22 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
              { 128*1024*1024 , 5369e6 },
              { 256*1024*1024 , 5863e6 },
              { 512*1024*1024 , 5831e6 }
+*/
+             // SATURDAY MORNING:
+             { 4*1024 , 0.0805e6 },
+             { 64*1024 , 3.794e6 },
+             { 1024*1024 , 24.6e6 },
+             { 16*1024*1024 , 81.5e6 },
+             { 32*1024*1024 , 506e6 },
+             { 64*1024*1024 , 2079e6 },
+             { 128*1024*1024 , 3133e6 },
+             { 256*1024*1024 , 3678e6 },
+             { 512*1024*1024 , 2981e6 }              
          };
       } else {
          readBW.bandwidthCurve = { // read_bw_vs_size.cc
-             { 4*1024 , 8.237e6 },
+// OLD Friday morning / off-peak :
+/*             { 4*1024 , 8.237e6 },
              { 64*1024 , 22.2e6 },
              { 1024*1024 , 170e6 },
              { 16*1024*1024 , 3379e6 },
@@ -141,7 +154,18 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
              { 64*1024*1024 , 4366e6 },
              { 128*1024*1024 , 5271e6 },
              { 256*1024*1024 , 5471e6 },
-             { 512*1024*1024 , 6542e6 }
+             { 512*1024*1024 , 6542e6 }*/
+             
+             // SATURDAY MORNING:
+             { 4*1024 , 5.783e6 },
+             { 64*1024 , 5.585e6 },
+             { 1024*1024 , 29.3e6 },
+             { 16*1024*1024 , 2064e6 },
+             { 32*1024*1024 , 159e6 },
+             { 64*1024*1024 , 2915e6 },
+             { 128*1024*1024 , 3053e6 },
+             { 256*1024*1024 , 2044e6 },
+             { 512*1024*1024 , 3632e6 }
          };
       }
    }
