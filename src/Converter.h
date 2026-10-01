@@ -13,7 +13,7 @@
 #include "Util.h"
 #include "IOCost.h"
 
-enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3 };
+enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4 };
 
 struct MemoryUsage {
     MemoryUsage() : total(0) {}
@@ -242,6 +242,26 @@ protected:
     // calculates approximate XYZ (cube) histogram using channel histograms
     // it is not exact, but good enough for visualisation purposes
     double calcApproxCubeHistogram( unsigned int s );
+};    
+
+class SmartFastTwoPassConverter : public SmartFastConverter {
+public:
+    SmartFastTwoPassConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    MemoryUsage calculateMemoryUsage() override;
+    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 ) override;
+    
+    // functions about the type of the converter and its parameters to be used 
+    // in saving metadata to the output HDF5 file:
+    virtual const char* getConverterType() override { return "SMART-CHAN-PARALLEL-2PASS"; }
+    
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
+    
+protected:
+    void copyAndCalculate() override;
+
+    // SmartFastConverter.cc requires extra arguments:
+    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
+    
 };    
 
 

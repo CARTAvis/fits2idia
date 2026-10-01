@@ -27,9 +27,13 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
    if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
       return eSmartConverterSpatialParallel;
    }
-   if (strcasecmp(smartconverter_type,"frequency") || strcasecmp(smartconverter_type,"channel") || strcasecmp(smartconverter_type,"fast") ||
+   if (strcasecmp(smartconverter_type,"frequency")==0 || strcasecmp(smartconverter_type,"channel")==0 || strcasecmp(smartconverter_type,"fast")==0 ||
        strcasecmp(first_char,"f")==0 || strcasecmp(first_char,"c")==0) {
       return eSmartConverterChannelParallel;
+   }
+   if (strcasecmp(smartconverter_type,"frequency-twopass")==0 || strcasecmp(smartconverter_type,"channel-twopass")==0 || strcasecmp(smartconverter_type,"fast-twopass")==0 ||
+       strcasecmp(smartconverter_type,"twopass")==0 || strcasecmp(smartconverter_type,"2pass")==0) {
+      return eSmartConverterChannelParallelTwoPass;
    }
    return eAutoSelectedSmartConverter;
 }
@@ -83,7 +87,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
-    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'micro' or 'fast' (parallelised over channels)" << std::endl
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', 'micro' or 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl

@@ -70,6 +70,8 @@ IOOpEstimate repeatEstimate(const IOOpEstimate& e, hsize_t times) {
 
 bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write /*=false*/ )
 {
+   std::cout << "COST_REPORT for " << system_name << std::endl;
+
    // see 20260916_IO_BW_measurements_SETONIX.odt
    if (strcasecmp(system_name,"setonix") == 0 ) {
       printf("BW INFO : using BW measured on SETONIX (normal Luster partition)\n");
@@ -168,6 +170,8 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
              { 512*1024*1024 , 3632e6 }
          };
       }
+      
+      return true;
    }
 
    // page 4 in 20260916_IO_BW_measurements_SETONIX.odt
@@ -224,8 +228,11 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
             { 512*1024*1024 , 2569e6 }
          };
       }
-
+      
+      return true;
    }
+   
+   printf("BW INFO : using BW measured on laptop/external-hdd (DEFAULT)\n");
 
    // if specific system was not found above use the defaults below:  
    // LAPTOP BENCHMARKS on EXTERNAL HDD (see 20260916_IO_BW_measurements.odt) - these are used as default:

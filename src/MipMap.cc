@@ -43,6 +43,12 @@ void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDim
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     bufferSize = product(bufferDims);
     
+    // NEW as otherwise memory leak may happen
+    if (!this->bufferDims.empty()) { 
+       delete [] vals; 
+       delete[] count; 
+    }
+    
     vals = new double[bufferSize];
     count = new int[bufferSize];
     

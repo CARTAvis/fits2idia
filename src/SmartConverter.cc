@@ -532,7 +532,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     PROGRESS("Tiled rotation, Z stats & cube histogram" << std::endl);
     TIMER(timer.start("Allocate"););
 
-    hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+    hsize_t sliceSize = product(trimAxes({1, depth, TILE_SIZE, TILE_SIZE}, N));   // was {stokes, ...} but just 1 stokes at a time
     std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
     std::cout << "MEMORY (SmartConverter::calculateRotatedDataAndCubeHistogram for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     float* standardSlice = new float[sliceSize];

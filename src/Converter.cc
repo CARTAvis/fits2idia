@@ -195,7 +195,10 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
               ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
            }
         } else {
-            if (smarttype == eSmartConverterChannelParallel) {
+            if (smarttype == eSmartConverterChannelParallelTwoPass) {
+                ptr = new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips);
+                std::cout << "DEBUG : using SmartFastTwoPassConverter object" << std::endl;
+            } else if (smarttype == eSmartConverterChannelParallel) {
                 ptr = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using SmartFastConverter object" << std::endl;
             } else if (smarttype == eSmartMicroMemoryConverter) {
@@ -233,7 +236,7 @@ void Converter::reportExecTime()
 {
    // predict execution time:
    IOCostModel readModel, writeModel;
-   get_io_cost_model(NULL, readModel, writeModel ); // NULL -> SystemName, for example "SETONIX" to get specific BW
+   get_io_cost_model(systemName.c_str(), readModel, writeModel ); // NULL -> SystemName, for example "SETONIX" to get specific BW
    IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
    iocost.print();
 }
