@@ -372,3 +372,123 @@ void FastConverter::copyAndCalculate() {
     double duration_ms = double(duration.count());
     std::cout << "BENCHMARKING : entire processing: " << duration_ms << " milliseconds " << duration_ms/1000.00 << " seconds" << std::endl;
 }
+
+// I/O cost model for FastConverter -- mirrors copyAndCalculate() call by call. Everything is done
+// one whole Stokes at a time, so every phase is one call (or one call per dataset/level) per Stokes:
+//
+//   FITS read of the whole Stokes cube -> standardDataSet write -> swizzledDataSet write
+//   -> mipmap writes (all XY levels) -> statsXY write -> statsXYZ write -> statsZ write
+//
+// Same modelling conventions as SmartFastTwoPassConverter::estimateIO (layouts as created in
+// Converter::convert(), on-disk element sizes), so the two estimates are directly comparable.
+IOCostBreakdown FastConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                                          hsize_t numBins,
+                                          const IOCostModel& readModel,
+                                          const IOCostModel& writeModel) {
+    IOCostBreakdown result;
+
+    // ---- on-disk layouts (as created in Converter::convert()) ----
+    const std::vector<hsize_t> standardDims4 = {stokes, depth, height, width};
+    const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
+    const std::vector<hsize_t> statsZDims    = {stokes, height, width};
+
+    // standardDataSet: chunked {1,1,TILE,TILE} only if both image dims >= TILE_SIZE (useChunks)
+    const std::vector<hsize_t> standardChunks =
+        useChunks({height, width}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE} : std::vector<hsize_t>{};
+
+    // swizzledDataSet: always contiguous for FAST -- Converter::convert() only chunks it (-C) for
+    // SMART* and SLOW converters.
+    const std::vector<hsize_t> swizzledChunks = {};
+
+    // statsZ: chunked {1, min(TILE,H), min(TILE,W)}
+    const std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};
+
+    // On-disk element sizes of the 5 basic-stats datasets: MIN, MAX, SUM, SUM_SQ are float,
+    // NAN_COUNT is int64.
+    const hsize_t basicElemSizes[] = {4, 4, 4, 4, 8};
+
+    const hsize_t cubeBytes = depth * height * width * sizeof(float);
+
+    {
+        // readFitsData(..., cubeSize, ...): one contiguous read of the whole Stokes cube
+        PhaseAccumulator acc;
+        acc.add(repeatEstimate(IOOpEstimate{1, cubeBytes, cubeBytes}, stokes), readModel);
+        result.phases.push_back(acc.toPhase("FITS read (whole Stokes cube)"));
+    }
+    {
+        // writeHdf5Data(standardDataSet, ...) of {1, depth, height, width}
+        PhaseAccumulator acc;
+        auto e = estimateHyperslabIO(standardDims4, standardChunks, {1, depth, height, width}, sizeof(float));
+        acc.add(repeatEstimate(e, stokes), writeModel);
+        result.phases.push_back(acc.toPhase("standardDataSet write"));
+    }
+    if (depth > 1) {
+        // writeHdf5Data(swizzledDataSet, ...) of {1, width, height, depth}: covers the whole Stokes
+        // plane of a contiguous dataset -> a single contiguous run
+        PhaseAccumulator acc;
+        auto e = estimateHyperslabIO(swizzledDims4, swizzledChunks, {1, width, height, depth}, sizeof(float));
+        acc.add(repeatEstimate(e, stokes), writeModel);
+        result.phases.push_back(acc.toPhase("swizzledDataSet write (contiguous)"));
+    }
+    {
+        // mipMaps.write(currentStokes, 0): one full-depth write per XY level. Levels mirror the MipMaps
+        // constructor without Z-mips. Datasets are float on disk, chunked with tileDims only if the
+        // level is >= TILE_SIZE in both dims (useChunks).
+        // NOTE: with -z the Z-mip levels would add further writes; they are not modelled here.
+        PhaseAccumulator acc;
+        hsize_t hLevel = height, wLevel = width;
+        int mipXY = 1;
+        do {
+            if (mipXY > 1) {
+                std::vector<hsize_t> levelDims = {stokes, depth, hLevel, wLevel};
+                std::vector<hsize_t> levelChunks =
+                    useChunks({hLevel, wLevel}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE} : std::vector<hsize_t>{};
+                auto e = estimateHyperslabIO(levelDims, levelChunks, {1, depth, hLevel, wLevel}, sizeof(float));
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            mipXY *= 2;
+            hLevel = (hsize_t)std::ceil((float)hLevel / 2);
+            wLevel = (hsize_t)std::ceil((float)wLevel / 2);
+        } while (2 * wLevel > MIN_MIPMAP_SIZE || 2 * hLevel > MIN_MIPMAP_SIZE);
+        result.phases.push_back(acc.toPhase("mipmap writes (all XY levels)"));
+    }
+    {
+        // statsXY.write({1, depth}, {s, 0}): 5 basic datasets + channel histograms
+        PhaseAccumulator acc;
+        for (auto es : basicElemSizes) {
+            auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+            acc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, sizeof(int64_t));
+            acc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("statsXY write (basic + channel histograms)"));
+    }
+    if (depth > 1) {
+        {
+            // statsXYZ.write({1}, {s}): 5 single values + the cube histogram
+            PhaseAccumulator acc;
+            for (auto es : basicElemSizes) {
+                auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            if (numBins > 0) {
+                auto h = estimateHyperslabIO({stokes, numBins}, {}, {1, numBins}, sizeof(int64_t));
+                acc.add(repeatEstimate(h, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsXYZ write (basic + cube histogram)"));
+        }
+        {
+            // statsZ.write({1, height, width}, {s, 0, 0}): whole image into each of the 5 chunked datasets
+            PhaseAccumulator acc;
+            for (auto es : basicElemSizes) {
+                auto z = estimateHyperslabIO(statsZDims, statsZChunks, {1, height, width}, es);
+                acc.add(repeatEstimate(z, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsZ write"));
+        }
+    }
+
+    return result;
+}

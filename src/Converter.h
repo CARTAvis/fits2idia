@@ -132,6 +132,8 @@ public:
     
     virtual const char* getConverterType() override { return "FAST"; }
     
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
+    
 protected:
     void copyAndCalculate() override;
 };
@@ -258,9 +260,6 @@ public:
     
 protected:
     void copyAndCalculate() override;
-
-    // SmartFastConverter.cc requires extra arguments:
-    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
     
 };    
 
