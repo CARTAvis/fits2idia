@@ -118,7 +118,8 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 }
                 break;
             case 'C':
-                Converter::rotatedDatasetChunking = cmdLineOptions.rotatedDatasetChunking;
+                cmdLineOptions.rotatedDatasetChunking = true;
+                Converter::rotatedDatasetChunking = true;
                 break;
 
             case 'E':

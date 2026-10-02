@@ -41,7 +41,7 @@ void SlowConverter::copyAndCalculate() {
     
     // predict execution time:
     IOCostModel readModel, writeModel;
-    get_io_cost_model("SETONIX", readModel, writeModel );
+    get_io_cost_model( systemName.c_str(), readModel, writeModel );
     IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
     iocost.print();
     
