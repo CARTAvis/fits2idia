@@ -209,9 +209,11 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
         std::cerr << "Unexpected additional parameters." << std::endl;
     }
     
-    if (cmdLineOptions.smartconverter_type == eSmartConverterSpatialParallel && SmartConverter::bApproximateCubeHistogram) {
-        err = true;
-        std::cerr << "Approximate 3D histogram is not supported in " << converter_type.c_str() << " converter." << std::endl;
+    if (SmartConverter::bApproximateCubeHistogram) {
+        if (cmdLineOptions.smartconverter_type == eSmartConverterSpatialParallel || cmdLineOptions.smartconverter_type == eSmartConverterChannelParallelTwoPass) {
+            err = true;
+            std::cerr << "Approximate 3D histogram is not supported in " << converter_type.c_str() << " converter." << std::endl;
+        }
     }
         
     if (err) {
