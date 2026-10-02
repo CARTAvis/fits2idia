@@ -72,6 +72,7 @@ struct commandLineOptions
 bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     extern int optind;
     extern char *optarg;
+    std::string converter_type="unknown";
     
     int opt;
     bool err(false);
@@ -172,8 +173,9 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 break;
             case 'T':
                 if (optarg) {
-                   cmdLineOptions.smartconverter_type = parse_smartconverter_type(optarg);   
-                   printf("DEBUG : smartconverter_type = %d\n",(int)cmdLineOptions.smartconverter_type);
+                   converter_type = optarg;
+                   cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
+                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
                 }
                 break;
             case 'z':
@@ -205,6 +207,11 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     if (argc > optind) {
         err = true;
         std::cerr << "Unexpected additional parameters." << std::endl;
+    }
+    
+    if (cmdLineOptions.smartconverter_type == eSmartConverterSpatialParallel && SmartConverter::bApproximateCubeHistogram) {
+        err = true;
+        std::cerr << "Approximate 3D histogram is not supported in " << converter_type.c_str() << " converter." << std::endl;
     }
         
     if (err) {

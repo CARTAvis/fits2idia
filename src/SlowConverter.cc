@@ -446,7 +446,7 @@ void SlowConverter::copyAndCalculate() {
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
+    std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds" << std::endl;
 }
 
 // Walks the same three passes as SlowConverter::copyAndCalculate(), in the
