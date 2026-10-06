@@ -213,6 +213,15 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         std::unique_ptr<Converter> pSmartConverter(ptr);
         return pSmartConverter;
     } else {
+        if (memoryLimitInMb > 0) {
+            // Fast path with a memory limit: rotate in strips so the whole rotated cube
+            // (and full-size Z stats) never have to be in memory. Identical to FastConverter
+            // when the limit is large enough (single strip).
+            std::cout << "DEBUG : using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;
+            FastConverterLimitedMemory* ptr = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
+            ptr->setMemoryLimit(memoryLimitInMb);
+            return std::unique_ptr<Converter>(ptr);
+        }
         std::cout << "DEBUG : using FastConverter object" << std::endl;
         return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));
     }

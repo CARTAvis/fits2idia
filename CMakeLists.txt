@@ -51,6 +51,7 @@ set(SOURCE_FILES
     src/MipMap.cc
     src/Converter.cc
     src/FastConverter.cc
+    src/FastConverterLimitedMemory.cc
     src/SlowConverter.cc
     src/SmartConverter.cc
     src/SmartFastConverter.cc

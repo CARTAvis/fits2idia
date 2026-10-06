@@ -140,6 +140,41 @@ protected:
     void copyAndCalculate() override;
 };
 
+// Like FastConverter (whole Stokes cube in memory, one FITS read per Stokes), but the rotated dataset
+// and the Z statistics are produced in spatial strips of stripWidth columns, so only one strip of the
+// rotated cube (and of statsZ) is in memory at a time. stripWidth is derived from the memory limit;
+// with no limit (or enough memory) stripWidth == width and it behaves exactly like FastConverter.
+class FastConverterLimitedMemory : public FastConverter {
+public:
+    FastConverterLimitedMemory(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
+    MemoryUsage calculateMemoryUsage() override;
+    virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 ) override;
+
+    void setMemoryLimit(int _memoryLimitInMb);
+    hsize_t getStripWidth() const { return stripWidth; }
+    hsize_t getMipChannelBlock() const { return mipChannelBlock; }
+
+    virtual const char* getConverterType() override { return "FAST-LIMITED-MEMORY"; }
+
+    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
+
+protected:
+    void copyAndCalculate() override;
+
+    // memory model: peak = fixed + statsZ(sw) + max(strip(sw), mipmaps(cb))
+    hsize_t fixedMemory();                  // cube + XY/XYZ stats
+    hsize_t statsZMemory(hsize_t sw);       // Z stats for one strip (kept for the whole run)
+    hsize_t stripMemory(hsize_t sw);        // rotated strip (rotation phase only)
+    hsize_t mipMemory(hsize_t cb);          // mipmap buffers for cb channels (mipmap phase only)
+    hsize_t peakMemory(hsize_t sw, hsize_t cb);
+    hsize_t minMipChannelBlock();           // depth with Z-mips, otherwise 1
+    bool fitToMemory(hsize_t memoryLimit);  // sets stripWidth / mipChannelBlock, false if nothing fits
+
+    int memoryLimitInMb;
+    hsize_t stripWidth;      // number of image columns (x) per rotation strip
+    hsize_t mipChannelBlock; // number of channels per mipmap block
+};
+
 class SmartConverter : public Converter {
 public:
     SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);

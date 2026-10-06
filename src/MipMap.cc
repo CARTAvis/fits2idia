@@ -67,6 +67,18 @@ void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     stokes = N > 3 ? bufferDims[N - 4] : 1;        
 }
 
+void MipMap::freeBuffers() {
+    // the destructor and createBuffers() use a non-empty bufferDims as the "allocated" flag
+    if (!bufferDims.empty()) {
+        delete[] vals;
+        delete[] count;
+        vals = nullptr;
+        count = nullptr;
+        bufferDims.clear();
+        bufferSize = 0;
+    }
+}
+
 void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
     int N = datasetDims.size();
     std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
@@ -148,6 +160,12 @@ void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {
     for (auto& mipMap : mipMaps) {
         auto dims = mipDims(standardBufferDims, mipMap.mipXY, mipMap.mipZ);
         mipMap.createBuffers(dims);
+    }
+}
+
+void MipMaps::freeBuffers() {
+    for (auto& mipMap : mipMaps) {
+        mipMap.freeBuffers();
     }
 }
 

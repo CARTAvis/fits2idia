@@ -32,6 +32,7 @@ struct MipMap {
     
     void createDataset(H5::Group group, const std::vector<hsize_t>& chunkDims);
     void createBuffers(std::vector<hsize_t>& bufferDims);
+    void freeBuffers(); // release vals/count; safe to call createBuffers() again afterwards
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
         hsize_t mipIndex = (z / mipZ) * width * height + (y / mipXY) * width + (x / mipXY);
@@ -92,6 +93,7 @@ struct MipMaps {
     
     void createDatasets(H5::Group group);
     void createBuffers(const std::vector<hsize_t>& standardBufferDims);
+    void freeBuffers();
     
     void accumulate(double val, hsize_t x, hsize_t y, hsize_t z) {
         for (auto& mipMap : mipMaps) {
