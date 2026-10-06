@@ -130,7 +130,7 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
            allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
            std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
        }else{
-           std::cout << "ERROR : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
+           std::cout << "WARNING : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
            break;
        }
    }
@@ -198,7 +198,7 @@ void SmartConverter::copyAndCalculate() {
 
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
     auto end1 = std::chrono::high_resolution_clock::now();
-    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+    auto duration1 = ms_d(end1 - start1);
     total_pureprocessing_ms += double(duration1.count());
 
 
@@ -241,7 +241,7 @@ void SmartConverter::copyAndCalculate() {
             std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N); // std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);                       
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             auto end_io = std::chrono::high_resolution_clock::now();
-            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            auto duration_io = ms_d(end_io - start_io);
             total_io_ms += double(duration_io.count());
             std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
                     
@@ -274,7 +274,7 @@ void SmartConverter::copyAndCalculate() {
                 mipMaps.calculate();
                 // add everything to processing time of the 1st pass:
                 auto end1 = std::chrono::high_resolution_clock::now();
-                auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+                auto duration1 = ms_d(end1 - start1);
                 total_first_pass_processing_ms += double(duration1.count());
             
             
@@ -284,7 +284,7 @@ void SmartConverter::copyAndCalculate() {
                 TIMER(timer.start("Write"););
                 mipMaps.write(s, c);
                 auto end_io = std::chrono::high_resolution_clock::now();
-                auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                auto duration_io = ms_d(end_io - start_io);
                 total_io_ms += double(duration_io.count());
             
                 start1 = std::chrono::high_resolution_clock::now();
@@ -293,7 +293,7 @@ void SmartConverter::copyAndCalculate() {
                 TIMER(timer.start(timerLabelStatsMipmaps););
                 mipMaps.resetBuffers();
                 end1 = std::chrono::high_resolution_clock::now();
-                duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+                duration1 = ms_d(end1 - start1);
                 total_first_pass_processing_ms += double(duration1.count());            
             } // end of first channel loop
         } // end of loop over blocks
@@ -304,14 +304,8 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("\tWrite stats" << std::endl);
         statsXY.write({1, depth}, {s, 0});
         auto end_io = std::chrono::high_resolution_clock::now();
-        auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        auto duration_io = ms_d(end_io - start_io);
         total_io_ms += double(duration_io.count());
-
-
-        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
-        total_pureprocessing_ms += total_first_pass_processing_ms;
-                
-        PROGRESS(std::endl);
         
         auto start1 = std::chrono::high_resolution_clock::now();
         if (depth > 1) {
@@ -332,8 +326,11 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
         auto end1 = std::chrono::high_resolution_clock::now();
-        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        auto duration1 = ms_d(end1 - start1);
         total_first_pass_processing_ms += double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += total_first_pass_processing_ms;
+        PROGRESS(std::endl);
         
 
         // calculate cube (statsXYZ) histogram:
@@ -351,7 +348,7 @@ void SmartConverter::copyAndCalculate() {
         }*/
 
 /*        auto end2 = std::chrono::high_resolution_clock::now();
-        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);        
+        auto duration2 = ms_d(end2 - start2);        
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
         std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
         total_pureprocessing_ms += total_second_pass_processing_ms;*/
@@ -366,7 +363,7 @@ void SmartConverter::copyAndCalculate() {
             statsXYZ.writeBasic(statsXYZ.fullBasicBufferDims, trimAxes({1}, basicN), trimAxes({s}, basicN));
         }
         end_io = std::chrono::high_resolution_clock::now();
-        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        duration_io = ms_d(end_io - start_io);
         total_io_ms += double(duration_io.count());
     } // end of stokes
     
@@ -387,12 +384,14 @@ void SmartConverter::copyAndCalculate() {
              calculateRotatedDataAndCubeHistogram(total_io_ms, savedCubeMin, savedCubeMax);
         total_pureprocessing_ms += total_rotation_pass_processing_ms;
     }
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     std::cout << "Execution of entire SmartConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
 }
 
 
@@ -453,7 +452,7 @@ double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos
    statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
 
    auto end1 = std::chrono::high_resolution_clock::now();
-   auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+   auto duration1 = ms_d(end1 - start1);
    std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
 
    return duration1.count();
@@ -506,7 +505,7 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
    }
 
    auto end1 = std::chrono::high_resolution_clock::now();
-   auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+   auto duration1 = ms_d(end1 - start1);
    std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
 
    return duration1.count();
@@ -544,11 +543,12 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     bool doCubeHistogram = (numBins > 0);
 
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     double total_rotation_pass_processing_ms = double(duration.count());;
     double total_rotation_io_ms = 0.00;
 
     for (unsigned int s = 0; s < stokes; s++) {
+        auto startStokes = std::chrono::high_resolution_clock::now();
         DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
         PROGRESS("\tStokes " << s << "\t");
 
@@ -573,7 +573,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
             DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         }
         auto endhist = std::chrono::high_resolution_clock::now();
-        total_rotation_pass_processing_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(endhist - starthist).count());
+        total_rotation_pass_processing_ms += double(ms_d(endhist - starthist).count());
 
         hsize_t tileCount(0);
         for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
@@ -597,7 +597,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
 
                 readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
                 auto end_io = std::chrono::high_resolution_clock::now();
-                auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                auto duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
                 std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
 
@@ -707,7 +707,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
 
                 auto endtile = std::chrono::high_resolution_clock::now();
-                auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                auto durationtile = ms_d(endtile - starttile);
                 total_rotation_pass_processing_ms += double(durationtile.count());
                 std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
 
@@ -717,7 +717,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 start_io = std::chrono::high_resolution_clock::now();
                 writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
                 end_io = std::chrono::high_resolution_clock::now();
-                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
                 std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
 
@@ -725,7 +725,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 start_io = std::chrono::high_resolution_clock::now();
                 statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                 end_io = std::chrono::high_resolution_clock::now();
-                duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
                 std::cout << "5th I/O (statsZ.write) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
             }
@@ -740,11 +740,11 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
             auto histN = basicN + 1;
             statsXYZ.writeHistogram(statsXYZ.fullBasicBufferDims, trimAxes(extend({1}, {statsXYZ.numBins}), histN), trimAxes(extend({s}, {0}), histN));
             auto end_io = std::chrono::high_resolution_clock::now();
-            total_rotation_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+            total_rotation_io_ms += double(ms_d(end_io - start_io).count());
         }
 
         auto end1 = std::chrono::high_resolution_clock::now();
-        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start);
+        auto duration1 = ms_d(end1 - startStokes);
         std::cout << "Execution of loop over X/Y Offsets for Stokes = " << s << " took: " << duration1.count() << " milliseconds." << std::endl;
 
         PROGRESS(std::endl);
@@ -761,12 +761,12 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     delete[] standardSlice;
     delete[] rotatedSlice;
     end = std::chrono::high_resolution_clock::now();
-    auto duration_free = std::chrono::duration_cast<std::chrono::milliseconds>(end - startfree);
+    auto duration_free = ms_d(end - startfree);
     total_rotation_pass_processing_ms += double(duration_free.count());
     std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
               << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
 
-    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    duration = ms_d(end - start);
     double total_rotation_ms = double(duration.count());
     std::cout << "BENCHMARKING : rotation pass took: " << total_rotation_ms << " milliseconds "
               << (float(total_rotation_ms)/1000.0) << " seconds" << std::endl;

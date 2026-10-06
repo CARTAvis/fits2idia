@@ -540,7 +540,7 @@ void Converter::convert() {
     rename(tempOutputFileName.c_str(), outputFileName.c_str());
     
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     std::cout << "Execution of entire Converter::convert took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds" << std::endl;
 }
 

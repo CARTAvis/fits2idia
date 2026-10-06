@@ -93,9 +93,8 @@ void SlowConverter::copyAndCalculate() {
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             auto end_io = std::chrono::high_resolution_clock::now();
-            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
-            std::cout << "I/O (readFitsData+writeHdf5Data) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
+            total_io_ms += ms_d(end_io - start_io).count();
+            std::cout << "I/O (readFitsData+writeHdf5Data) for channel : " << c << " took " << ms_d(end_io - start_io).count() << " milliseconds." << std::endl;
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
@@ -149,7 +148,7 @@ void SlowConverter::copyAndCalculate() {
             mipMaps.calculate();
             
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
             total_first_pass_processing_ms += double(duration1.count());
             
@@ -159,8 +158,7 @@ void SlowConverter::copyAndCalculate() {
             start_io = std::chrono::high_resolution_clock::now();
             mipMaps.write(s, c);
             end_io = std::chrono::high_resolution_clock::now();
-            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
-            total_io_ms += double(duration_io.count());
+            total_io_ms += ms_d(end_io - start_io).count();
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
@@ -256,7 +254,7 @@ void SlowConverter::copyAndCalculate() {
             auto start_io = std::chrono::high_resolution_clock::now();
             readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             auto end_io = std::chrono::high_resolution_clock::now();
-            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            auto duration_io = ms_d(end_io - start_io);
             total_io_ms += double(duration_io.count());
             std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
 
@@ -272,13 +270,13 @@ void SlowConverter::copyAndCalculate() {
                     }
             } // end of XY loop
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             total_second_pass_processing_ms += double(duration1.count());
             std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
         total_pureprocessing_ms += total_second_pass_processing_ms;
         auto end2 = std::chrono::high_resolution_clock::now();
-        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+        auto duration2 = ms_d(end2 - start2);
         std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
         std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
         
@@ -288,14 +286,16 @@ void SlowConverter::copyAndCalculate() {
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
                 
+        auto start_io = std::chrono::high_resolution_clock::now();                
         statsXY.write({1, depth}, {s, 0});
         
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
-    
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = ms_d(end_io - start_io);
+        total_io_ms += double(duration_io.count());    
     } // end of stokes
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
@@ -340,8 +340,12 @@ void SlowConverter::copyAndCalculate() {
                     auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
-                    
+
+                    auto start_io = std::chrono::high_resolution_clock::now();                    
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = ms_d(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
@@ -361,8 +365,8 @@ void SlowConverter::copyAndCalculate() {
                         }
                     }
                     auto end2 = std::chrono::high_resolution_clock::now();
-                    auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
-                    std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
+                    auto duration2 = ms_d(end2 - start2);
+                    // std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
                     
                     // A separate pass over the same slice depth-last 
                     DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
@@ -390,9 +394,9 @@ void SlowConverter::copyAndCalculate() {
                         }
                     }
                     auto end3 = std::chrono::high_resolution_clock::now();
-                    auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
+                    auto duration3 = ms_d(end3 - start3);
                     std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
-                    auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start2);
+                    auto duration_processing = ms_d(end3 - start2);
                     total_rotation_pass_processing_ms += double(duration_processing.count());
                     
                     // write tile slice
@@ -403,10 +407,10 @@ void SlowConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
-                    auto start_io = std::chrono::high_resolution_clock::now();
+                    start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                    auto end_io = std::chrono::high_resolution_clock::now();
-                    auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = ms_d(end_io - start_io);
                     total_io_ms += double(duration_io.count());
                     DEBUG(std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
                     
@@ -415,18 +419,17 @@ void SlowConverter::copyAndCalculate() {
                     // write Z statistics
                     statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                     end_io = std::chrono::high_resolution_clock::now();
-                    duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    duration_io = ms_d(end_io - start_io);
                     total_io_ms += double(duration_io.count());
                     DEBUG(std::cout << "4th I/O (statsZ.write) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
-                    std::cout << "Is this printed ???" << std::endl;
                     
                     auto endtile = std::chrono::high_resolution_clock::now();
-                    auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                    auto durationtile = ms_d(endtile - starttile);
                     std::cout << "Execution of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
                 }
             }
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             std::cout << "Execution of loop over X/Y Offsets for Stokes = " << s << " took: " << duration1.count() << " milliseconds." << std::endl;
             std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
                       << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
@@ -441,12 +444,13 @@ void SlowConverter::copyAndCalculate() {
         delete[] rotatedSlice;
     }
 
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
-    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
-    
+    std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
+    std::cout << "BENCHMARKING: total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;    
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
 }
 
 // Walks the same three passes as SlowConverter::copyAndCalculate(), in the

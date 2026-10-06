@@ -186,7 +186,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             std::vector<hsize_t> start = trimAxes({s, c_start, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
             auto end_io = std::chrono::high_resolution_clock::now();
-            auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            auto duration_io = ms_d(end_io - start_io);
             auto block_io_ms = double(duration_io.count());
             std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
 
@@ -239,7 +239,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
                 } 
             }                     
             auto end_processing = std::chrono::high_resolution_clock::now();
-            auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+            auto duration_processing = ms_d(end_processing - start_processing);
             auto block_first_pass_processing_ms = double(duration_processing.count());
 
             // FIX 2: the per-block writeHdf5Data(swizzledDataSet, rotatedCube, ...) was removed here.
@@ -267,7 +267,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             PROGRESS(std::endl);
             mipMaps.calculate();
             end_processing = std::chrono::high_resolution_clock::now();
-            duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing);
+            duration_processing = ms_d(end_processing - start_processing);
             block_first_pass_processing_ms += double(duration_processing.count());
 
             // Write the mipmaps for this block (Z offset = c_start)
@@ -276,7 +276,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             start_io = std::chrono::high_resolution_clock::now();
             mipMaps.write(s, c_start);        
             end_io = std::chrono::high_resolution_clock::now();
-            duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+            duration_io = ms_d(end_io - start_io);
             block_io_ms += double(duration_io.count());
             std::cout << "I/O (mipMaps.write) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
             
@@ -304,7 +304,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             savedCubeMin[s] = statsXYZ.minVals[0];
             savedCubeMax[s] = statsXYZ.maxVals[0];
             auto end_processing = std::chrono::high_resolution_clock::now();
-            total_first_pass_processing_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_processing - start_processing).count());
+            total_first_pass_processing_ms += double(ms_d(end_processing - start_processing).count());
 
             // FIX 1: write ONLY the basic XYZ stats here. The cube histogram is written by
             //        calculateRotatedDataAndCubeHistogram() once it has been filled in.
@@ -312,7 +312,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             auto basicN = statsXYZ.basicDatasetDims.size();
             statsXYZ.writeBasic(statsXYZ.fullBasicBufferDims, trimAxes({1}, basicN), trimAxes({(hsize_t)s}, basicN));
             auto end_io = std::chrono::high_resolution_clock::now();
-            total_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+            total_io_ms += double(ms_d(end_io - start_io).count());
         }
         
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass (Stokes " << s << "): " << total_first_pass_processing_ms << " milliseconds " << (float(total_first_pass_processing_ms)/1000.00) << " seconds" << std::endl;
@@ -322,7 +322,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
         auto start_io = std::chrono::high_resolution_clock::now();
         statsXY.write({1, depth}, {(hsize_t)s, 0});
         auto end_io = std::chrono::high_resolution_clock::now();
-        total_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+        total_io_ms += double(ms_d(end_io - start_io).count());
     } // end of stokes
     
     // Free the 1st-pass block buffer BEFORE the rotation pass, so the two passes don't overlap in memory
@@ -339,16 +339,18 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
         auto start2 = std::chrono::high_resolution_clock::now();
         double total_rotation_pass_processing_ms = calculateRotatedDataAndCubeHistogram(total_io_ms, savedCubeMin, savedCubeMax);
         auto end2 = std::chrono::high_resolution_clock::now();
-        std::cout << "Execution of rotation pass (incl. Z stats and exact cube histogram) took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2).count() << " milliseconds." << std::endl;
+        std::cout << "Execution of rotation pass (incl. Z stats and exact cube histogram) took: " << ms_d(end2 - start2).count() << " milliseconds." << std::endl;
         total_pureprocessing_ms += total_rotation_pass_processing_ms;
     }
 
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     std::cout << "BENCHMARKING : total pure-processing time of 1st and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     std::cout << "Execution of entire SmartFastTwoPassConverter::copyAndCalculate took: " << duration.count() << " milliseconds " << (float(duration.count())/1000.00) << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
 }
 
 // I/O cost model for SmartFastTwoPassConverter -- mirrors copyAndCalculate() call by call:

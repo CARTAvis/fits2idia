@@ -55,7 +55,7 @@ void FastConverter::copyAndCalculate() {
     
     std::string timerLabelXYRotation = depth > 1 ? "XY statistics and rotation" : "XY statistics";
 
-    double total_io_ms = 0.00;
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
         PROGRESS("Stokes " << currentStokes << ":" << std::endl);
@@ -67,9 +67,9 @@ void FastConverter::copyAndCalculate() {
         auto start_io = std::chrono::high_resolution_clock::now();
         readFitsData(inputFilePtr, 0, currentStokes, cubeSize, standardCube, swapStokesFreqAxis);
         auto end_io = std::chrono::high_resolution_clock::now();
-        auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        auto duration_io = ms_d(end_io - start_io);
         total_io_ms += double(duration_io.count());
-        std::cout << "I/O (readFitsData+writeHdf5Data) for Stokes : " << currentStokes << " took " << duration_io.count() << " milliseconds." << std::endl;
+        std::cout << "I/O (readFitsData) for Stokes : " << currentStokes << " took " << duration_io.count() << " milliseconds." << std::endl;
 
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
@@ -126,9 +126,10 @@ void FastConverter::copyAndCalculate() {
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
         auto end1 = std::chrono::high_resolution_clock::now();
-        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        auto duration1 = ms_d(end1 - start1);
         double duration1_ms = double(duration1.count());
         std::cout << "BENCHMARKING : total pure-processing time of 1st pass (rotation and statsXY): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
 
         
         PROGRESS(std::endl);
@@ -179,9 +180,10 @@ void FastConverter::copyAndCalculate() {
                 }
             }
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             double duration1_ms = double(duration1.count());
             std::cout << "BENCHMARKING : total pure-processing time of 2nd pass (statsZ for all (X,Y) pixels): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+            total_pureprocessing_ms += duration1_ms;
 
 
             PROGRESS(std::endl);
@@ -266,9 +268,10 @@ void FastConverter::copyAndCalculate() {
         }
         
         end1 = std::chrono::high_resolution_clock::now();
-        duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        duration1 = ms_d(end1 - start1);
         duration1_ms = double(duration1.count());
         std::cout << "BENCHMARKING : total pure-processing time of 3rd pass (channel and cube Histograms): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
         
         PROGRESS(std::endl);
 
@@ -290,7 +293,7 @@ void FastConverter::copyAndCalculate() {
             writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);
         }
         end_io = std::chrono::high_resolution_clock::now();
-        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        duration_io = ms_d(end_io - start_io);
         total_io_ms += double(duration_io.count());
 
 
@@ -330,9 +333,10 @@ void FastConverter::copyAndCalculate() {
         mipMaps.calculate();
         
         end1 = std::chrono::high_resolution_clock::now();
-        duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+        duration1 = ms_d(end1 - start1);
         duration1_ms = double(duration1.count());
         std::cout << "BENCHMARKING : total pure-processing time of 4th pass (MipMaps accum and calc): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
         
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
@@ -349,7 +353,7 @@ void FastConverter::copyAndCalculate() {
             statsZ.write({1, height, width}, {currentStokes, 0, 0});
         }
         end_io = std::chrono::high_resolution_clock::now();
-        duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+        duration_io = ms_d(end_io - start_io);
         total_io_ms += double(duration_io.count());
                 
         // Clear the mipmaps before the next Stokes
@@ -359,7 +363,7 @@ void FastConverter::copyAndCalculate() {
     } // end of Stokes loop
     
     // total I/O time:
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
@@ -368,9 +372,12 @@ void FastConverter::copyAndCalculate() {
     delete[] standardCube;
     
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = ms_d(end - start);
     double duration_ms = double(duration.count());
-    std::cout << "BENCHMARKING : entire processing: " << duration_ms << " milliseconds " << duration_ms/1000.00 << " seconds" << std::endl;
+    std::cout << "Execution of entire FastConverter::copyAndCalculate took " << duration_ms << " milliseconds " << duration_ms/1000.00 << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
+
 }
 
 // I/O cost model for FastConverter -- mirrors copyAndCalculate() call by call. Everything is done

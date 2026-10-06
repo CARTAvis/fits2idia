@@ -13,6 +13,8 @@
 #include "Util.h"
 #include "IOCost.h"
 
+using ms_d = std::chrono::duration<double, std::milli>;
+
 enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4 };
 
 struct MemoryUsage {

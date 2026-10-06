@@ -188,7 +188,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                 TIMER(timer.start("Read"););
                 readFitsDataRow(inputFilePtr, c, y, s, width, standardCube, swapStokesFreqAxis);
                 auto end_io = std::chrono::high_resolution_clock::now();
-                channel_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+                channel_io_ms += double(ms_d(end_io - start_io).count());
 
                 // write the row to the standard dataset
                 TIMER(timer.start("Write"););
@@ -197,7 +197,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                 std::vector<hsize_t> rowStart = trimAxes({s, c, y, 0}, N);
                 writeHdf5Data(standardDataSet, standardCube, rowMemDims, rowCount, rowStart);
                 end_io = std::chrono::high_resolution_clock::now();
-                channel_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+                channel_io_ms += double(ms_d(end_io - start_io).count());
 
                 TIMER(timer.start(timerLabelStatsMipmaps););
 
@@ -262,7 +262,7 @@ void MicroMemoryConverter::copyAndCalculate() {
             mipMaps.calculate();
 
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             std::cout << "Execution of 1st loop (row I/O + stats/mipmap accumulation) for channel " << c << " took: " << duration1.count() << " milliseconds." << std::endl;
             total_first_pass_processing_ms += double(duration1.count()) - channel_io_ms;
 
@@ -272,7 +272,7 @@ void MicroMemoryConverter::copyAndCalculate() {
             auto start_io = std::chrono::high_resolution_clock::now();
             mipMaps.write(s, c);
             auto end_io = std::chrono::high_resolution_clock::now();
-            total_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+            total_io_ms += double(ms_d(end_io - start_io).count());
 
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
@@ -319,7 +319,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                     TIMER(timer.start("Read"););
                     readFitsDataRow(inputFilePtr, c, y, s, width, standardCube, swapStokesFreqAxis);
                     auto end_io = std::chrono::high_resolution_clock::now();
-                    channel_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+                    channel_io_ms += double(ms_d(end_io - start_io).count());
 
                     TIMER(timer.start("Histograms"););
                     for (hsize_t x = 0; x < width; x++) {
@@ -331,7 +331,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                 }
                 total_io_ms += channel_io_ms;
                 auto end1 = std::chrono::high_resolution_clock::now();
-                auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+                auto duration1 = ms_d(end1 - start1);
                 total_pureprocessing_ms += double(duration1.count()) - channel_io_ms;
                 std::cout << "Execution of single-channel histogram pass took: " << duration1.count() << " milliseconds." << std::endl;
             }
@@ -342,7 +342,11 @@ void MicroMemoryConverter::copyAndCalculate() {
             TIMER(timer.start("Write"););
             PROGRESS("\tWrite stats & mipmaps" << std::endl);
 
+            auto start_io = std::chrono::high_resolution_clock::now();
             statsXY.write({1, depth}, {s, 0});
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = ms_d(end_io - start_io);
+            total_io_ms += double(duration_io.count());
         } else {
             // STEP 4: depth > 1 — defer histogram calculation to the rotation pass below, which
             // already streams the whole cube through in TILE_SIZE x TILE_SIZE x depth chunks.
@@ -353,6 +357,7 @@ void MicroMemoryConverter::copyAndCalculate() {
             // single reused buffers: by the time the rotation pass gets around to this stokes, the
             // buffer will hold a LATER stokes' basic values, so it can't be the source for those at
             // that point. The histogram half is written separately, later, once it's been filled in.
+            auto start_io = std::chrono::high_resolution_clock::now();
             {
                 auto basicN = statsXY.basicDatasetDims.size();
                 statsXY.writeBasic(statsXY.fullBasicBufferDims, trimAxes({1, depth}, basicN), trimAxes({s, 0}, basicN));
@@ -361,6 +366,9 @@ void MicroMemoryConverter::copyAndCalculate() {
                 auto basicN = statsXYZ.basicDatasetDims.size();
                 statsXYZ.writeBasic(statsXYZ.fullBasicBufferDims, trimAxes({1}, basicN), trimAxes({s}, basicN));
             }
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = ms_d(end_io - start_io);
+            total_io_ms += double(duration_io.count());
 
             // Cache this stokes' channel/cube min-max now, before the next stokes overwrites them.
             for (hsize_t c = 0; c < depth; c++) {
@@ -372,7 +380,6 @@ void MicroMemoryConverter::copyAndCalculate() {
         }
 
     } // end of stokes
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
 
     // Free memory
     DEBUG(std::cout << "Freeing memory from row buffer... " << std::endl;);
@@ -445,7 +452,11 @@ void MicroMemoryConverter::copyAndCalculate() {
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
 
+                    auto start_io = std::chrono::high_resolution_clock::now();
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = ms_d(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
 
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
@@ -465,7 +476,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                         }
                     }
                     auto end2 = std::chrono::high_resolution_clock::now();
-                    auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
+                    auto duration2 = ms_d(end2 - start2);
                     std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
 
                     // A separate pass over the same slice depth-last
@@ -503,9 +514,9 @@ void MicroMemoryConverter::copyAndCalculate() {
                         }
                     }
                     auto end3 = std::chrono::high_resolution_clock::now();
-                    auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start3);
+                    auto duration3 = ms_d(end3 - start3);
                     std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
-                    auto duration_processing = std::chrono::duration_cast<std::chrono::milliseconds>(end3 - start2);
+                    auto duration_processing = ms_d(end3 - start2);
                     total_rotation_pass_processing_ms += double(duration_processing.count());
 
                     // write tile slice
@@ -516,10 +527,10 @@ void MicroMemoryConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
 
-                    auto start_io = std::chrono::high_resolution_clock::now();
+                    start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
-                    auto end_io = std::chrono::high_resolution_clock::now();
-                    auto duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = ms_d(end_io - start_io);
                     total_io_ms += double(duration_io.count());
                     DEBUG(std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
 
@@ -528,17 +539,17 @@ void MicroMemoryConverter::copyAndCalculate() {
                     // write Z statistics
                     statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
                     end_io = std::chrono::high_resolution_clock::now();
-                    duration_io = std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io);
+                    duration_io = ms_d(end_io - start_io);
                     total_io_ms += double(duration_io.count());
                     DEBUG(std::cout << "4th I/O (statsZ.write) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
 
                     auto endtile = std::chrono::high_resolution_clock::now();
-                    auto durationtile = std::chrono::duration_cast<std::chrono::milliseconds>(endtile - starttile);
+                    auto durationtile = ms_d(endtile - starttile);
                     std::cout << "Execution of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
                 }
             }
             auto end1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
+            auto duration1 = ms_d(end1 - start1);
             std::cout << "Execution of loop over X/Y Offsets for Stokes = " << s << " took: " << duration1.count() << " milliseconds." << std::endl;
             std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
                       << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
@@ -560,7 +571,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                 statsXYZ.writeHistogram(statsXYZ.fullBasicBufferDims, trimAxes(extend({1}, {statsXYZ.numBins}), histN), trimAxes(extend({s}, {0}), histN));
             }
             auto end_io = std::chrono::high_resolution_clock::now();
-            total_io_ms += double(std::chrono::duration_cast<std::chrono::milliseconds>(end_io - start_io).count());
+            total_io_ms += double(ms_d(end_io - start_io).count());
 
             PROGRESS(std::endl);
         }
@@ -571,12 +582,15 @@ void MicroMemoryConverter::copyAndCalculate() {
         delete[] rotatedSlice;
     }
 
-    std::cout << "Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
-    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
+    std::cout << "BENCHMARKING: Total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
+    std::cout << "BENCHMARKING: Total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;
 
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Execution of entire MicroMemoryConverter::copyAndCalculate took: " << duration.count() << " milliseconds." << std::endl;
+    auto duration = ms_d(end - start);
+    std::cout << "Execution of entire MicroMemoryConverter::copyAndCalculate took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds." << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
+
 }
 
 IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) 
