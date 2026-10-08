@@ -406,12 +406,18 @@ void Converter::convert() {
                        chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
                    }
                }
+               
+               // full-depth tile writers: SLOW, SMART-XY-PARALLEL, SMART-CHAN-PARALLEL-2PASS
+               // Only SMART-CHAN-PARALLEL writes partial-depth slabs.
+               bool partialDepthWriter = (strcmp(getConverterType(), "SMART-CHAN-PARALLEL") == 0);
+               hsize_t chunkDepth = partialDepthWriter ? (hsize_t)n_io_blocks : depth;
+               swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, chunkDepth}, N);
 
-               if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
-                  swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
-               } else {
-                  swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
-               }
+               //if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
+               //   swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
+               //} else {
+               //   swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
+               //}
                // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
                printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
             }
