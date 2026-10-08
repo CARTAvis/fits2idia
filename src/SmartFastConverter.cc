@@ -724,11 +724,6 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
         result.phases.push_back(acc.toPhase("1st pass: FITS block read (readFitsData)"));
     }
     {
-        // NOTE: writeHdf5Data(standardDataSet, ...) is called TWICE per block
-        // in the current code (lines ~169 and ~285), with identical arguments
-        // and nothing modifying standardCube in between -- modeled here as
-        // happening twice to match the code as it stands; worth checking
-        // whether that duplicate is intentional.
         std::vector<hsize_t> standardDims = {stokes, depth, height, width};
         std::vector<hsize_t> chunkDims    = {1, 1, TILE_SIZE, TILE_SIZE};
         PhaseAccumulator acc;
@@ -739,7 +734,7 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
                                                  {1, nChannels, height, width}, sizeof(float));
             acc.add(repeatEstimate(perBlock, stokes), writeModel);
         }
-        result.phases.push_back(acc.toPhase("1st pass: standardDataSet block write (x2, see note)"));
+        result.phases.push_back(acc.toPhase("1st pass: standardDataSet block write"));
     }
 
     // calculateChannelHistogram-equivalent, XY stats accumulation, rotation
@@ -747,20 +742,19 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
     // globalCountersZ: all pure in-memory compute, zero I/O.
 
     if (depth > 1) {
-        // writeHdf5Data(swizzledDataSet, ...): unchunked, and only n_channels
-        // (partial) of the innermost depth axis is selected each call -> no
-        // axis can merge -> width*height separate transactions per block,
-        // each just n_channels*sizeof(float) bytes. This is the phase most
-        // likely to dominate this converter's I/O cost.
+        // writeHdf5Data(swizzledDataSet, ...): {1, W, H, nChannels} per block. Contiguous -> W*H
+        // separate runs of nChannels*4 bytes; chunked ({1, cw, ch, n_io_blocks}) -> one write per chunk.
+        const std::vector<hsize_t> swizzledChunks = getSwizzledChunkDims();
         PhaseAccumulator acc;
         for (int block = 0; block < nBlocks; block++) {
             hsize_t nChannels = sliceIncrement;
             if (block == nBlocks - 1 && leftOverSlices > 0) nChannels = leftOverSlices;
-            auto perBlock = estimateHyperslabIO(swizzledDims, {},
+            auto perBlock = estimateHyperslabIO(swizzledDims, swizzledChunks,
                                                  {1, width, height, nChannels}, sizeof(float));
             acc.add(repeatEstimate(perBlock, stokes), writeModel);
         }
-        result.phases.push_back(acc.toPhase("1st pass: swizzledDataSet block write"));
+        result.phases.push_back(acc.toPhase(std::string("1st pass: swizzledDataSet block write") +
+                                            (swizzledChunks.empty() ? " (contiguous)" : " (chunked)")));
     }
 
     {
@@ -805,14 +799,13 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
     // rebins from statsXY's already-computed channel histograms -- zero I/O.
 
     if (depth > 1) {
-        // statsZ.write(...): ONE full-height/width write per sub-dataset per
-        // stokes -- fully contiguous despite the dataset being unchunked,
-        // since the whole extent is written at once. No tiling bottleneck here.
+        // statsZ.write(...): one full-image write per sub-dataset per Stokes into the chunked statsZ datasets
         {
+            const std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};
             PhaseAccumulator acc;
-            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            const hsize_t elemSizes[] = {4, 4, 4, 4, 8};
             for (auto es : elemSizes) {
-                auto e = estimateHyperslabIO({stokes, height, width}, {}, {1, height, width}, es);
+                auto e = estimateHyperslabIO({stokes, height, width}, statsZChunks, {1, height, width}, es);
                 acc.add(repeatEstimate(e, stokes), writeModel);
             }
             result.phases.push_back(acc.toPhase("statsZ write (whole array, once per stokes)"));
@@ -822,7 +815,7 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
         // split/defer is needed, unlike SmartConverter's version.
         {
             PhaseAccumulator acc;
-            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
             for (auto es : elemSizes) {
                 auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
                 acc.add(repeatEstimate(e, stokes), writeModel);
@@ -839,7 +832,7 @@ IOCostBreakdown SmartFastConverter::estimateIO(hsize_t stokes, hsize_t depth, hs
     // (not gated on depth > 1).
     {
         PhaseAccumulator acc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
             acc.add(repeatEstimate(e, stokes), writeModel);

@@ -831,7 +831,7 @@ IOCostBreakdown SmartConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_
     // statsXY.write(...): ONE combined call, basic + histogram together.
     {
         PhaseAccumulator acc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
             acc.add(repeatEstimate(e, stokes), writeModel);
@@ -846,7 +846,7 @@ IOCostBreakdown SmartConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_
     // statsXYZ.writeBasic(...): basic only -- cube histogram deferred to rotation.
     if (depth > 1) {
         PhaseAccumulator acc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
             acc.add(repeatEstimate(e, stokes), writeModel);
@@ -855,7 +855,7 @@ IOCostBreakdown SmartConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_
     }
 
     // ---------- Rotation pass (only when depth > 1) ----------
-    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel);
+    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims());
 
     // statsXYZ.writeHistogram(...): the cube histogram, once per stokes, after
     // the tile loop fills it in.

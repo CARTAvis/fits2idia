@@ -386,19 +386,8 @@ IOCostBreakdown SmartFastTwoPassConverter::estimateIO(hsize_t stokes, hsize_t de
     const std::vector<hsize_t> standardChunks =
         useChunks({height, width}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE} : std::vector<hsize_t>{};
 
-    // swizzledDataSet: contiguous unless -C (rotatedDatasetChunking). This converter writes full-depth
-    // tiles, so with -C it should get full-depth chunks like SMART-XY-PARALLEL (see Converter.cc).
-    std::vector<hsize_t> swizzledChunks;
-    if (Converter::rotatedDatasetChunking) {
-        hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
-        hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
-        const hsize_t MAX_CHUNK_BYTES = 2048ULL * 1024ULL * 1024ULL;
-        while (chunkWidth * chunkHeight * depth * sizeof(float) > MAX_CHUNK_BYTES && (chunkWidth > 1 || chunkHeight > 1)) {
-            if (chunkWidth >= chunkHeight && chunkWidth > 1) chunkWidth = std::max((hsize_t)1, chunkWidth / 2);
-            else if (chunkHeight > 1)                         chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
-        }
-        swizzledChunks = {1, chunkWidth, chunkHeight, depth};
-    }
+    // swizzledDataSet: same decision as Converter::convert() ({} = contiguous)
+    const std::vector<hsize_t> swizzledChunks = getSwizzledChunkDims();
 
     // statsZ: chunked {1, min(TILE,H), min(TILE,W)}
     const std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};

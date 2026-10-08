@@ -66,10 +66,19 @@ public:
     
     bool getCubeHistogramApproximated(){ return false; }
     
-    // options:
-    static bool rotatedDatasetChunking;
-    
+public:
+    static bool rotatedDatasetChunking;       // -C : allow chunking if it pays off
+    static bool rotatedDatasetChunkingForce;  // optional: skip the write-side test (for retests)
+    static hsize_t maxSwizzledChunkBytes;     // optional: -C cap, default 64 MB
+    static std::vector<hsize_t> rotatedChunkOverride; // -K w,h[,d]: explicit chunk dims, overrides -F/-L sizing
+
+    // 4-D {1, cw, ch, cd}, or {} = contiguous. Decided once, after n_io_blocks is final.
+    const std::vector<hsize_t>& getSwizzledChunkDims();
 protected:
+    std::vector<hsize_t> chooseSwizzledChunkDims();
+    std::vector<hsize_t> swizzledChunkDims4;
+    bool swizzledChunkDimsChosen = false;    
+    
     virtual void copyAndCalculate() = 0;
     
     void DebugDimsAndParameters( const std::vector<hsize_t>& swizzledDims, const std::vector<hsize_t>& swizzledChunkDims, const H5::DataSet& swizzledDataSet );

@@ -650,7 +650,7 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
         result.phases.push_back(acc.toPhase("Histogram pass (depth==1): FITS row reread"));
 
         PhaseAccumulator statsAcc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
             statsAcc.add(repeatEstimate(e, stokes), writeModel);
@@ -668,14 +668,14 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
         // SlowConverter's statsXY+statsXYZ phase, just split into more, smaller calls.
         PhaseAccumulator basicAcc;
         {
-            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
             for (auto es : elemSizes) {
                 auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
                 basicAcc.add(repeatEstimate(e, stokes), writeModel);
             }
         }
         {
-            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+            const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
             for (auto es : elemSizes) {
                 auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
                 basicAcc.add(repeatEstimate(e, stokes), writeModel);
@@ -693,7 +693,7 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
         }
 
         // ---------- Tiled rotation pass: lines ~386-538, byte-for-byte the same as SlowConverter ----------
-        addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel);
+        addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims());
     }
 
     return result;

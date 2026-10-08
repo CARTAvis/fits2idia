@@ -68,12 +68,119 @@ IOOpEstimate repeatEstimate(const IOOpEstimate& e, hsize_t times) {
     return { e.transactions * times, e.bytesPerTransaction, e.totalBytes * times };
 }
 
+bool chunkingPaysOffOnWrite(const std::vector<hsize_t>& swizzledDims4, const std::vector<hsize_t>& chunkDims4,
+                            hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                            const IOCostModel& seqWrite, const IOCostModel& randWrite,
+                            double minSpeedup) {
+    const hsize_t xs = std::min((hsize_t)TILE_SIZE, width), ys = std::min((hsize_t)TILE_SIZE, height);
+    auto contig  = estimateHyperslabIO(swizzledDims4, {},         {1, xs, ys, depth}, sizeof(float));
+    auto chunked = estimateHyperslabIO(swizzledDims4, chunkDims4, {1, xs, ys, depth}, sizeof(float));
+
+    const IOCostModel& contigModel = (contig.transactions > 1) ? randWrite : seqWrite;
+    double tContig  = contigModel.predictSeconds(contig);
+    double tChunked = seqWrite.predictSeconds(chunked);
+
+    const hsize_t nTiles = stokes * ((width + TILE_SIZE - 1) / TILE_SIZE) * ((height + TILE_SIZE - 1) / TILE_SIZE);
+    const double speedup = (tChunked > 0) ? tContig / tChunked : 0.0;
+    const bool payOff = tContig > minSpeedup * tChunked;
+
+    std::cout << "--------------------------------------------------------------------------" << std::endl;
+    std::cout << "ROTATED DATASET CHUNKING (write side), interior tile {" << xs << ", " << ys << ", " << depth << "}, "
+              << nTiles << " tiles in total:" << std::endl;
+    std::cout << "  chunk dims        = " << chunkDims4 << std::endl;
+    std::cout << "  contiguous : transactions=" << contig.transactions
+              << ", bytes/op=" << contig.bytesPerTransaction
+              << ", BW=" << contigModel.bandwidthAt(contig.bytesPerTransaction) / 1e6 << " MB/s ("
+              << (contig.transactions > 1 ? "random" : "sequential") << " curve)"
+              << ", per tile=" << tContig << " s, whole pass ~" << tContig * nTiles << " s" << std::endl;
+    std::cout << "  chunked    : transactions=" << chunked.transactions
+              << ", bytes/op=" << chunked.bytesPerTransaction
+              << ", BW=" << seqWrite.bandwidthAt(chunked.bytesPerTransaction) / 1e6 << " MB/s (sequential curve)"
+              << ", per tile=" << tChunked << " s, whole pass ~" << tChunked * nTiles << " s" << std::endl;
+    std::cout << "  speedup (contiguous / chunked) = " << speedup << " (threshold " << minSpeedup << ") -> "
+              << (payOff ? "chunking pays off on write" : "keep contiguous") << std::endl;
+    std::cout << "--------------------------------------------------------------------------" << std::endl;
+    return payOff;
+}
+
+hsize_t plateauBytes(const IOCostModel& m, double fraction) {
+    const auto& c = m.bandwidthCurve;
+    if (c.empty()) return 0;
+    double peak = 0;
+    for (auto& p : c) peak = std::max(peak, p.second);
+    const double target = fraction * peak;
+    for (size_t i = 0; i < c.size(); i++) {
+        if (c[i].second >= target) {
+            if (i == 0) return c[0].first;
+            double t = (std::log(target) - std::log(c[i-1].second)) / (std::log(c[i].second) - std::log(c[i-1].second));
+            return (hsize_t)std::exp(std::log((double)c[i-1].first) + t * (std::log((double)c[i].first) - std::log((double)c[i-1].first)));
+        }
+    }
+    return c.back().first;
+}
+
 bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write /*=false*/ )
 {
    std::cout << "COST_REPORT for " << system_name << std::endl;
 
-   // see 20260916_IO_BW_measurements_SETONIX.odt
-   if (strcasecmp(system_name,"setonix") == 0 ) {
+   // page 4 in 20260916_IO_BW_measurements_SETONIX.odt
+   if (strncasecmp(system_name, "setonix-ssd", 11) == 0) {
+      printf("BW INFO : using BW measured on SETONIX (SSD/flash partition)\n");
+
+      if (use_random_read_write) {
+         writeBW.bandwidthCurve = { // SSD/randwrite_bw_vs_size.txt
+            { 4*1024 , 7.26e6 },
+            { 64*1024 , 94.3e6 },
+            { 1024*1024 , 567e6 },
+            { 16*1024*1024 , 1616e6 },
+            { 32*1024*1024 , 2047e6 },
+            { 64*1024*1024 , 2250e6 },
+            { 128*1024*1024 , 2472e6 },
+            { 256*1024*1024 , 2568e6 },
+            { 512*1024*1024 , 2545e6 },         
+         };
+      } else {
+         writeBW.bandwidthCurve = { // SSD/write_bw_vs_size.txt
+            { 4*1024 , 11.8e6 },
+            { 64*1024 , 88.0e6 },
+            { 1024*1024 , 558e6 },
+            { 16*1024*1024 , 1590e6 },
+            { 32*1024*1024 , 2003e6 },
+            { 64*1024*1024 , 2204e6 },
+            { 128*1024*1024 , 2429e6 },
+            { 256*1024*1024 , 2415e6 },
+            { 512*1024*1024 , 2512e6 }
+         };
+      }
+      if (use_random_read_write) {
+         readBW.bandwidthCurve = { // SSD/randread_bw_vs_size.cc
+            { 4*1024 , 19.6e6 },
+            { 64*1024 , 149e6 },
+            { 1024*1024 , 755e6 },
+            { 16*1024*1024 , 2091e6 },
+            { 32*1024*1024 , 2123e6 },
+            { 64*1024*1024 , 2391e6 },
+            { 128*1024*1024 , 2374e6 },
+            { 256*1024*1024 , 2587e6 },
+            { 512*1024*1024 , 2785e6 }
+         };
+      } else {
+         readBW.bandwidthCurve = { // SSD/read_bw_vs_size.cc
+            { 4*1024 , 17.8e6 },
+            { 64*1024 , 127e6 },
+            { 1024*1024 , 464e6 },
+            { 16*1024*1024 , 1546e6 },
+            { 32*1024*1024 , 1784e6 },
+            { 64*1024*1024 , 2072e6 },
+            { 128*1024*1024 , 2294e6 },
+            { 256*1024*1024 , 2482e6 },
+            { 512*1024*1024 , 2569e6 }
+         };
+      }
+      
+      return true;
+   } else if (strncasecmp(system_name, "setonix", 7) == 0) {
+      // see 20260916_IO_BW_measurements_SETONIX.odt
       printf("BW INFO : using BW measured on SETONIX (normal Luster partition)\n");
 
       if (use_random_read_write) {
@@ -172,64 +279,13 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
       }
       
       return true;
+
    }
-
-   // page 4 in 20260916_IO_BW_measurements_SETONIX.odt
-   if (strcasecmp(system_name,"setonix-ssd") == 0 ) {
-      printf("BW INFO : using BW measured on SETONIX (SSD/flash partition)\n");
-
-      if (use_random_read_write) {
-         writeBW.bandwidthCurve = { // SSD/randwrite_bw_vs_size.txt
-            { 4*1024 , 7.26e6 },
-            { 64*1024 , 94.3e6 },
-            { 1024*1024 , 567e6 },
-            { 16*1024*1024 , 1616e6 },
-            { 32*1024*1024 , 2047e6 },
-            { 64*1024*1024 , 2250e6 },
-            { 128*1024*1024 , 2472e6 },
-            { 256*1024*1024 , 2568e6 },
-            { 512*1024*1024 , 2545e6 },         
-         };
-      } else {
-         writeBW.bandwidthCurve = { // SSD/write_bw_vs_size.txt
-            { 4*1024 , 11.8e6 },
-            { 64*1024 , 88.0e6 },
-            { 1024*1024 , 558e6 },
-            { 16*1024*1024 , 1590e6 },
-            { 32*1024*1024 , 2003e6 },
-            { 64*1024*1024 , 2204e6 },
-            { 128*1024*1024 , 2429e6 },
-            { 256*1024*1024 , 2415e6 },
-            { 512*1024*1024 , 2512e6 }
-         };
-      }
-      if (use_random_read_write) {
-         readBW.bandwidthCurve = { // SSD/randread_bw_vs_size.cc
-            { 4*1024 , 19.6e6 },
-            { 64*1024 , 149e6 },
-            { 1024*1024 , 755e6 },
-            { 16*1024*1024 , 2091e6 },
-            { 32*1024*1024 , 2123e6 },
-            { 64*1024*1024 , 2391e6 },
-            { 128*1024*1024 , 2374e6 },
-            { 256*1024*1024 , 2587e6 },
-            { 512*1024*1024 , 2785e6 }
-         };
-      } else {
-         readBW.bandwidthCurve = { // SSD/read_bw_vs_size.cc
-            { 4*1024 , 17.8e6 },
-            { 64*1024 , 127e6 },
-            { 1024*1024 , 464e6 },
-            { 16*1024*1024 , 1546e6 },
-            { 32*1024*1024 , 1784e6 },
-            { 64*1024*1024 , 2072e6 },
-            { 128*1024*1024 , 2294e6 },
-            { 256*1024*1024 , 2482e6 },
-            { 512*1024*1024 , 2569e6 }
-         };
-      }
-      
-      return true;
+   
+   static bool warned = false;
+   if (!warned && strcasecmp(system_name, "laptop") != 0) {
+       printf("WARNING: system '%s' not recognised -> using laptop/external-HDD curves (use -H setonix / setonix-ssd)\n", system_name);
+       warned = true;
    }
    
    printf("BW INFO : using BW measured on laptop/external-hdd (DEFAULT)\n");
@@ -294,8 +350,9 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
 
 
 void addTiledRotationPhases(IOCostBreakdown& result,
-                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
-                             const IOCostModel& readModel, const IOCostModel& writeModel) {
+                            hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                            const IOCostModel& readModel, const IOCostModel& writeModel,
+                            const std::vector<hsize_t>& swizzledChunks) {
     if (depth <= 1) return; // no rotation pass at all in this case
 
     std::vector<hsize_t> standardDims = {stokes, depth, height, width};
@@ -304,6 +361,7 @@ void addTiledRotationPhases(IOCostBreakdown& result,
     std::vector<hsize_t> statsZDims   = {stokes, height, width};
 
     PhaseAccumulator readAcc, writeAcc, statsZAcc;
+    std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};
 
     // Mirrors the real tile grid loop exactly, so boundary tiles (smaller
     // than TILE_SIZE) get their own, correctly-sized cost lookup instead
@@ -317,19 +375,19 @@ void addTiledRotationPhases(IOCostBreakdown& result,
                                           {1, depth, ySize, xSize}, sizeof(float));
             readAcc.add(repeatEstimate(r, stokes), readModel);
 
-            auto w = estimateHyperslabIO(swizzledDims, {},
-                                          {1, xSize, ySize, depth}, sizeof(float));
+            auto w = estimateHyperslabIO(swizzledDims, swizzledChunks, {1, xSize, ySize, depth}, sizeof(float)); // was {}                                          
             writeAcc.add(repeatEstimate(w, stokes), writeModel);
 
-            hsize_t elemSizes[] = {4, 4, 8, 8, 8};
-            for (auto es : elemSizes) {
-                auto s = estimateHyperslabIO(statsZDims, {}, {1, ySize, xSize}, es);
+            const hsize_t basicElemSizes[] = {4, 4, 4, 4, 8};
+            for (auto es : basicElemSizes) {
+                auto s = estimateHyperslabIO(statsZDims, statsZChunks, {1, ySize, xSize}, es);
                 statsZAcc.add(repeatEstimate(s, stokes), writeModel);
             }
         }
     }
 
     result.phases.push_back(readAcc.toPhase("3rd pass: standardDataSet tile read"));
-    result.phases.push_back(writeAcc.toPhase("3rd pass: swizzledDataSet tile write"));
+    result.phases.push_back(writeAcc.toPhase(std::string("3rd pass: swizzledDataSet tile write") +
+                                             (swizzledChunks.empty() ? " (contiguous)" : " (chunked)")));
     result.phases.push_back(statsZAcc.toPhase("3rd pass: statsZ tile write"));
 }

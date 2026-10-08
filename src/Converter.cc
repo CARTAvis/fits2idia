@@ -5,7 +5,10 @@
 
 #include "Converter.h"
 
-bool Converter::rotatedDatasetChunking=false;
+bool Converter::rotatedDatasetChunking = false;
+bool Converter::rotatedDatasetChunkingForce = false;
+hsize_t Converter::maxSwizzledChunkBytes = 64000000ULL; // 64 MB default
+std::vector<hsize_t> Converter::rotatedChunkOverride;
 
 Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), n_io_blocks(1) {
     TIMER(timer.start("Setup"););
@@ -354,6 +357,123 @@ void Converter::DebugDimsAndParameters( const std::vector<hsize_t>& swizzledDims
 
 }
 
+const std::vector<hsize_t>& Converter::getSwizzledChunkDims() {
+    if (!swizzledChunkDimsChosen) {
+        swizzledChunkDims4 = chooseSwizzledChunkDims();
+        swizzledChunkDimsChosen = true;
+    }
+    return swizzledChunkDims4;
+}
+
+std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
+    if (!rotatedDatasetChunking || depth <= 1) return {};   // -F and -K set rotatedDatasetChunking too
+
+    // FAST / FAST-LIMITED-MEMORY write whole cubes or full-height strips: already contiguous, never chunk
+    if (strncmp(getConverterType(), "FAST", 4) == 0) {
+        std::cout << "INFO: rotated dataset chunking (-C/-F/-K) is not used by the " << getConverterType()
+                  << " converter (its writes are already contiguous)" << std::endl;
+        return {};
+    }
+
+    // -K: explicit chunk shape -- no read guard, no sizing; write comparison printed for information only
+    if (!rotatedChunkOverride.empty()) {
+        const hsize_t cw = std::min(rotatedChunkOverride[0], width);
+        const hsize_t ch = std::min(rotatedChunkOverride[1], height);
+        const hsize_t cd = (rotatedChunkOverride.size() > 2) ? std::min(rotatedChunkOverride[2], depth) : depth;
+        std::vector<hsize_t> chunkDims4 = {1, cw, ch, cd};
+        const hsize_t chunkBytes = cw * ch * cd * sizeof(float);
+
+        if (chunkBytes >= (4ULL << 30)) {
+            throw "Rotated chunk requested with -K is >= 4 GB (HDF5 chunk size limit)";
+        }
+        if (cw != rotatedChunkOverride[0] || ch != rotatedChunkOverride[1] ||
+            (rotatedChunkOverride.size() > 2 && cd != rotatedChunkOverride[2])) {
+            std::cout << "INFO: -K chunk dims clipped to the dataset dimensions" << std::endl;
+        }
+        
+        // NEW: chunks should be written whole by one rotation tile (TILE_SIZE x TILE_SIZE x depth).
+        // OK if the chunk dim divides TILE_SIZE, or if the image is no larger than one tile in that
+        // direction and the chunk spans it entirely.
+        auto alignedToTiles = [](hsize_t c, hsize_t dim) {
+            return (TILE_SIZE % c == 0) || (dim <= TILE_SIZE && c == dim);
+        };
+        if (!alignedToTiles(cw, width) || !alignedToTiles(ch, height)) {
+            std::cout << "WARNING: -K chunk " << cw << "x" << ch << " is not aligned with the " << TILE_SIZE << "x" << TILE_SIZE
+                      << " rotation tiles -> chunks will be written partially by several tiles (slower writes)" << std::endl;
+        }
+        
+        const hsize_t chunksPerSpectrum = (depth + cd - 1) / cd;
+        std::cout << "INFO: -K: explicit rotated chunk dims " << chunkDims4 << " = " << chunkBytes / 1e6 << " MB, "
+                  << chunksPerSpectrum << " chunk(s) per spectrum" << std::endl;
+        if (chunksPerSpectrum > 4) {
+            std::cout << "WARNING: -K: each spectrum spans " << chunksPerSpectrum << " chunks, expect slow spectral profiles" << std::endl;
+        }
+
+        IOCostModel seqRead, seqWrite, randRead, randWrite;
+        get_io_cost_model(systemName.c_str(), seqRead, seqWrite, false);
+        get_io_cost_model(systemName.c_str(), randRead, randWrite, true);
+        chunkingPaysOffOnWrite({stokes, width, height, depth}, chunkDims4, stokes, depth, height, width,
+                               seqWrite, randWrite); // result ignored -- printed for comparison only
+        return chunkDims4;
+    }
+        
+    const bool force = rotatedDatasetChunkingForce;
+
+    // only SMART-CHAN-PARALLEL writes partial-depth slabs; SLOW, SMART-XY, 2PASS write full-depth tiles
+    const bool partialDepthWriter = (strcmp(getConverterType(), "SMART-CHAN-PARALLEL") == 0);
+    const hsize_t chunkDepth = partialDepthWriter ? std::max((hsize_t)1, (hsize_t)n_io_blocks) : depth;
+
+    // 1. read-side guard: a cursor spectrum must not span more than a few chunks (-F overrides with a warning)
+    const hsize_t MAX_CHUNKS_PER_SPECTRUM = 4;
+    const hsize_t chunksPerSpectrum = (depth + chunkDepth - 1) / chunkDepth;
+    if (chunksPerSpectrum > MAX_CHUNKS_PER_SPECTRUM) {
+        if (!force) {
+            std::cout << "INFO: rotated dataset kept contiguous: chunk depth " << chunkDepth
+                      << " would split each spectrum into " << chunksPerSpectrum << " chunks" << std::endl;
+            return {};
+        }
+        std::cout << "WARNING: -F: forcing chunk depth " << chunkDepth << " -> each spectrum spans "
+                  << chunksPerSpectrum << " chunks, expect slow spectral profiles" << std::endl;
+    }
+
+    IOCostModel seqRead, seqWrite, randRead, randWrite;
+    get_io_cost_model(systemName.c_str(), seqRead, seqWrite, false);
+    get_io_cost_model(systemName.c_str(), randRead, randWrite, true);
+
+    // 2. chunk sizing: cap set by the read side, shrink x first (CARTA reads favour y-generous shapes)
+    hsize_t cw = std::min((hsize_t)TILE_SIZE, width), ch = std::min((hsize_t)TILE_SIZE, height);
+    while (cw * ch * chunkDepth * sizeof(float) > maxSwizzledChunkBytes && (cw > 1 || ch > 1)) {
+        if (cw > 16 || ch == 1) cw = std::max((hsize_t)1, cw / 2);
+        else                     ch = std::max((hsize_t)1, ch / 2);
+    }
+    std::vector<hsize_t> chunkDims4 = {1, cw, ch, chunkDepth};
+
+    if (cw * ch * chunkDepth * sizeof(float) > maxSwizzledChunkBytes) {
+        std::cout << "WARNING: chunk size limit " << maxSwizzledChunkBytes / 1e6 << " MB is smaller than one "
+                  << chunkDepth << "-channel spectrum -> using " << chunkDims4 << std::endl;
+    }
+
+
+    const hsize_t chunkBytes = cw * ch * chunkDepth * sizeof(float);
+    std::cout << "INFO: candidate rotated chunk " << chunkDims4 << " = " << chunkBytes / 1e6 << " MB"
+              << " (cap " << maxSwizzledChunkBytes / 1e6 << " MB, write plateau "
+              << plateauBytes(seqWrite) / 1e6 << " MB)" << std::endl;
+
+    // 3. write-side gate (full-depth tile writers only). Always printed; decides only without -F.
+    if (!partialDepthWriter) {
+        const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
+        bool payOff = chunkingPaysOffOnWrite(swizzledDims4, chunkDims4, stokes, depth, height, width, seqWrite, randWrite);
+        if (!payOff) {
+            if (!force) return {};
+            std::cout << "INFO: -F: chunking although the predicted write speedup is below the threshold" << std::endl;
+        }
+    }
+
+    std::cout << "INFO: chunking rotated dataset with chunk dims " << chunkDims4
+              << (force ? " (forced, -F)" : "") << std::endl;
+    return chunkDims4;
+}
+
 void Converter::convert() {
     // CREATE OUTPUT FILE
     
@@ -385,48 +505,10 @@ void Converter::convert() {
         // We use this name in papers because it sounds more serious. :)
         outputGroup.link(H5L_TYPE_HARD, "SwizzledData", "PermutedData");
         
-        // just being explicit that there is no chunking for the rotated dataset 
-        // and we do not want anything like this there because the main point here
-        // is to have continous channels. However, perhaps it would make sense 
-        // TODO: to consider chunks of "depth = number of channels" length so that we basically read 
-        //       all the channels for a given pixel at once
-        auto swizzledChunkDims = EMPTY_DIMS;
-        
-        if ( Converter::rotatedDatasetChunking ) {
-            if ( strstr(getConverterType(),"SMART") || strcmp(getConverterType(),"SLOW")==0 ) {
-               hsize_t chunkWidth  = std::min((hsize_t)TILE_SIZE, width);
-               hsize_t chunkHeight = std::min((hsize_t)TILE_SIZE, height);
-           
-               // Keep individual chunk size under ~2GB to safely beat HDF5's 4GB limit
-               const hsize_t MAX_CHUNK_BYTES = 2048ULL * 1024ULL * 1024ULL; // 512 MB
-               while (chunkWidth * chunkHeight * depth * sizeof(float) > MAX_CHUNK_BYTES && (chunkWidth > 1 || chunkHeight > 1)) {
-                   if (chunkWidth >= chunkHeight && chunkWidth > 1) {
-                       chunkWidth = std::max((hsize_t)1, chunkWidth / 2);
-                   } else if (chunkHeight > 1) {
-                       chunkHeight = std::max((hsize_t)1, chunkHeight / 2);
-                   }
-               }
-               
-               // full-depth tile writers: SLOW, SMART-XY-PARALLEL, SMART-CHAN-PARALLEL-2PASS
-               // Only SMART-CHAN-PARALLEL writes partial-depth slabs.
-               bool partialDepthWriter = (strcmp(getConverterType(), "SMART-CHAN-PARALLEL") == 0);
-               hsize_t chunkDepth = partialDepthWriter ? (hsize_t)n_io_blocks : depth;
-               swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, chunkDepth}, N);
-
-               //if( strcmp(getConverterType(),"SMART-XY-PARALLEL")==0 ) {
-               //   swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, depth}, N);
-               //} else {
-               //   swizzledChunkDims = trimAxes({1, chunkWidth, chunkHeight, (size_t)n_io_blocks}, N);
-               //}
-               // swizzledChunkDims = trimAxes({1, TILE_SIZE, TILE_SIZE, depth}, N);
-               printf("INFO: converter version %s -> enabling chunking (%llu,%llu) on rotated HDF5 dataset (createHdf5Dataset(swizzledDataSet ...))\n",getConverterType(),chunkWidth,chunkHeight);
-            }
-        }
-        
+        const auto& chunk4 = getSwizzledChunkDims();
+        auto swizzledChunkDims = chunk4.empty() ? EMPTY_DIMS : trimAxes(chunk4, N);
         createHdf5Dataset(swizzledDataSet, swizzledGroup, swizzledName, floatType, swizzledDims, swizzledChunkDims);
-        
-        // debug dimensions and parameters (like cache size):
-        DebugDimsAndParameters( swizzledDims, swizzledChunkDims, swizzledDataSet );
+        DebugDimsAndParameters(swizzledDims, swizzledChunkDims, swizzledDataSet);
     }
     
     mipMaps.createDatasets(outputGroup);

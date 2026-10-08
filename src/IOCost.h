@@ -144,9 +144,23 @@ struct IOCostBreakdown {
     }
 };
 
+
+// Write-side test: is writing a full-depth tile into chunkDims4 substantially cheaper than into a
+// contiguous dataset? Prints both estimates. Contiguous runs are scattered -> random-write curve;
+// chunks are appended -> sequential curve.
+bool chunkingPaysOffOnWrite(const std::vector<hsize_t>& swizzledDims4, const std::vector<hsize_t>& chunkDims4,
+                            hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                            const IOCostModel& seqWrite, const IOCostModel& randWrite,
+                            double minSpeedup = 2.0);
+
+// Optional, diagnostics only: smallest block size reaching `fraction` of peak bandwidth.
+hsize_t plateauBytes(const IOCostModel& m, double fraction = 0.8);
+
+// CHANGED: takes the swizzled dataset's chunk dims ({} = contiguous)
 void addTiledRotationPhases(IOCostBreakdown& result,
-                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
-                             const IOCostModel& readModel, const IOCostModel& writeModel);
+                            hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                            const IOCostModel& readModel, const IOCostModel& writeModel,
+                            const std::vector<hsize_t>& swizzledChunks);
 
 bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write=false );
 

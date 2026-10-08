@@ -39,12 +39,6 @@ void SlowConverter::copyAndCalculate() {
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
     
-    // predict execution time:
-    IOCostModel readModel, writeModel;
-    get_io_cost_model( systemName.c_str(), readModel, writeModel );
-    IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
-    iocost.print();
-    
     // Allocate one channel at a time, and no swizzled data
     hsize_t cubeSize = height * width;
     TIMER(timer.start("Allocate"););
@@ -517,12 +511,12 @@ IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t
         result.phases.push_back(acc.toPhase("2nd pass: FITS channel read (readFitsData)"));
     }
 
-    // statsXY.write(...) once per stokes: MIN/MAX(float,4B), SUM/SUMSQ(double,8B),
+    // statsXY.write(...) once per stokes: MIN/MAX(float,4B), SUM/SUMSQ(float,4B),
     // NAN_COUNT(int64,8B), plus HISTOGRAM(int64,8B) if numBins > 0. Different
     // element sizes -> cost each sub-dataset separately.
     {
         PhaseAccumulator acc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8}; // MIN, MAX, SUM, SUMSQ, NAN_COUNT
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
             acc.add(repeatEstimate(e, stokes), writeModel);
@@ -536,7 +530,7 @@ IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t
 
     if (depth > 1) {
         PhaseAccumulator acc;
-        hsize_t elemSizes[] = {4, 4, 8, 8, 8};
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
         for (auto es : elemSizes) {
             auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
             acc.add(repeatEstimate(e, stokes), writeModel);
@@ -549,7 +543,7 @@ IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t
     }
 
     // ---------- 3rd pass: tiled rotation, SlowConverter.cc lines ~300-436 ----------
-    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel);
+    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims());
 
     return result;
 

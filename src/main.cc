@@ -61,6 +61,9 @@ struct commandLineOptions
    bool onlyReportMemoryAndExectime{false};
    bool zMips{false};
    bool rotatedDatasetChunking{false};
+   bool rotatedDatasetChunkingForced{false};   
+   double maxSwizzledChunkMb{0}; // 0 = default
+   std::string rotatedChunkDims; // -K w,h[,d], empty = automatic
    int memoryLimitInMb{0};
    bool auto_mode{false};
    int n_io_blocks{1};
@@ -84,7 +87,10 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "Options:" << std::endl 
     << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
     << "-B\tNumber of freq-images (i.e. blocks) read in one read transation [default " << cmdLineOptions.n_io_blocks << "]" << std::endl
-    << "-C\tEnable chunking of the rotated dataset [default: " << cmdLineOptions.rotatedDatasetChunking << "]" << std::endl
+    << "-C\tChunk the rotated dataset if it is worth doing so [default: " << cmdLineOptions.rotatedDatasetChunking << "]" << std::endl
+    << "-F\tForce chunking the rotated dataset regardless if worth doing but only in SLOW/SMART converters [default: " << cmdLineOptions.rotatedDatasetChunkingForced << "]" << std::endl
+    << "-L\tMaximum chunk size of the rotated dataset in MB, used with -C/-F (SLOW / SMART converters only) [default: " << Converter::maxSwizzledChunkBytes / 1e6 << " MB]" << std::endl
+    << "-K\tExplicit chunk dims of the rotated dataset as w,h[,d] (d defaults to full depth), implies -C, overrides -F/-L. For experiments (SLOW / SMART converters only)" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
@@ -103,7 +109,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
     << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmRCzM:B:AT:H:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:AT:H:E:I:K:L:")) != -1) {
         switch (opt) {
             case 'a':
             case 'r':
@@ -123,6 +129,13 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 Converter::rotatedDatasetChunking = true;
                 break;
 
+            case 'F':
+                cmdLineOptions.rotatedDatasetChunking = true;
+                cmdLineOptions.rotatedDatasetChunkingForced = true;
+                Converter::rotatedDatasetChunking = true;      // -F implies -C
+                Converter::rotatedDatasetChunkingForce = true;
+                break;
+
             case 'E':
                 if (optarg) {
                    cmdLineOptions.exclude_list = optarg;
@@ -138,6 +151,41 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                    cmdLineOptions.include_list = optarg;
                 }
                 break;
+
+            case 'K':
+                if (optarg) {
+                    std::vector<hsize_t> dims;
+                    bool bad = false;
+                    for (auto& tok : split(optarg, ',')) {
+                        char* end = nullptr;
+                        unsigned long long v = strtoull(tok.c_str(), &end, 10);
+                        if (tok.empty() || *end != '\0' || v == 0) { bad = true; break; }
+                        dims.push_back((hsize_t)v);
+                    }
+                    if (bad || dims.size() < 2 || dims.size() > 3) {
+                        std::cerr << "-K expects w,h or w,h,d (all > 0), e.g. -K 64,64 or -K 64,64,3842" << std::endl;
+                        err = true;
+                    } else {
+                        cmdLineOptions.rotatedChunkDims = optarg;
+                        cmdLineOptions.rotatedDatasetChunking = true;
+                        Converter::rotatedChunkOverride = dims;
+                        Converter::rotatedDatasetChunking = true;   // -K implies -C
+                    }
+                }
+                break;                
+            case 'L':
+                if (optarg) {
+                    double mb = atof(optarg);
+                    if (mb <= 0 || mb >= 4096) {   // HDF5 chunks must be < 4 GB
+                        std::cerr << "-L expects a chunk size limit in MB, 0 < L < 4096" << std::endl;
+                        err = true;
+                    } else {
+                        Converter::maxSwizzledChunkBytes = (hsize_t)(mb * 1e6);
+                        cmdLineOptions.maxSwizzledChunkMb = mb;
+                    }
+                }
+                break;
+                                
 /*            case 'r':
                 cmdLineOptions.auto_mode = true;
                 break;*/
@@ -215,7 +263,15 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
             std::cerr << "Approximate 3D histogram is not supported in " << converter_type.c_str() << " converter." << std::endl;
         }
     }
-        
+
+    if (cmdLineOptions.maxSwizzledChunkMb > 0) {
+        if (!Converter::rotatedDatasetChunking) {
+            std::cerr << "WARNING: -L has no effect without -C or -F" << std::endl;
+        } else if (!Converter::rotatedChunkOverride.empty()) {
+            std::cerr << "WARNING: -L is ignored when explicit chunk dims are given with -K" << std::endl;
+        }
+    }
+            
     if (err) {
         std::cerr << std::endl << usage.str() << std::endl;
         return false;
@@ -240,7 +296,12 @@ void printOptions()
    std::cout << "PARAMETERS:" << std::endl;
    std::cout << "Approximations:" << std::endl;
    std::cout << "\tApproximate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
-   std::cout << "\tChunking of rotated dataset: " << Converter::rotatedDatasetChunking << std::endl;
+   std::cout << "\tChunk rotated dataset if it is worth : " << Converter::rotatedDatasetChunking << std::endl;
+   std::cout << "\tForce chunking rotated dataset       : " << Converter::rotatedDatasetChunkingForce << std::endl;
+   std::cout << "\tMax rotated chunk size               : " << Converter::maxSwizzledChunkBytes / 1e6 << " MB" << std::endl;
+   std::cout << "\tExplicit rotated chunk dims (-K)     : ";
+   if (Converter::rotatedChunkOverride.empty()) std::cout << "automatic"; else std::cout << Converter::rotatedChunkOverride;
+   std::cout << std::endl;
    std::cout << "##########################################" << std::endl;
 }
 
