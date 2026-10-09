@@ -132,7 +132,9 @@ protected:
                         // this is required when too much memory is required without any division
     int n_io_blocks; // number of channel images read at once to optimise I/O to read larger portions of file
 //    int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)
-    
+
+    int rotation_tile_size; // size of tile used in rotation pass reading from HDF5 file
+        
     // Dataset dimensions    
     std::vector<hsize_t> standardDims;
     std::vector<hsize_t> swizzledDims;

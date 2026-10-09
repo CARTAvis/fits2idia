@@ -71,8 +71,8 @@ IOOpEstimate repeatEstimate(const IOOpEstimate& e, hsize_t times) {
 bool chunkingPaysOffOnWrite(const std::vector<hsize_t>& swizzledDims4, const std::vector<hsize_t>& chunkDims4,
                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                             const IOCostModel& seqWrite, const IOCostModel& randWrite,
-                            double minSpeedup) {
-    const hsize_t xs = std::min((hsize_t)TILE_SIZE, width), ys = std::min((hsize_t)TILE_SIZE, height);
+                            double minSpeedup,  hsize_t tileSize /*= TILE_SIZE*/ ) {
+    const hsize_t xs = std::min(tileSize, width), ys = std::min(tileSize, height);
     auto contig  = estimateHyperslabIO(swizzledDims4, {},         {1, xs, ys, depth}, sizeof(float));
     auto chunked = estimateHyperslabIO(swizzledDims4, chunkDims4, {1, xs, ys, depth}, sizeof(float));
 
@@ -80,7 +80,7 @@ bool chunkingPaysOffOnWrite(const std::vector<hsize_t>& swizzledDims4, const std
     double tContig  = contigModel.predictSeconds(contig);
     double tChunked = seqWrite.predictSeconds(chunked);
 
-    const hsize_t nTiles = stokes * ((width + TILE_SIZE - 1) / TILE_SIZE) * ((height + TILE_SIZE - 1) / TILE_SIZE);
+    const hsize_t nTiles = stokes * ((width + tileSize - 1) / tileSize) * ((height + tileSize - 1) / tileSize);
     const double speedup = (tChunked > 0) ? tContig / tChunked : 0.0;
     const bool payOff = tContig > minSpeedup * tChunked;
 
@@ -352,7 +352,7 @@ bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel
 void addTiledRotationPhases(IOCostBreakdown& result,
                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                             const IOCostModel& readModel, const IOCostModel& writeModel,
-                            const std::vector<hsize_t>& swizzledChunks) {
+                            const std::vector<hsize_t>& swizzledChunks, hsize_t tileSize /* = TILE_SIZE*/) {
     if (depth <= 1) return; // no rotation pass at all in this case
 
     std::vector<hsize_t> standardDims = {stokes, depth, height, width};
@@ -361,15 +361,15 @@ void addTiledRotationPhases(IOCostBreakdown& result,
     std::vector<hsize_t> statsZDims   = {stokes, height, width};
 
     PhaseAccumulator readAcc, writeAcc, statsZAcc;
-    std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};
+    std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)tileSize, height), std::min((hsize_t)tileSize, width)};
 
     // Mirrors the real tile grid loop exactly, so boundary tiles (smaller
     // than TILE_SIZE) get their own, correctly-sized cost lookup instead
     // of being averaged in with interior tiles.
-    for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
-        hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
-        for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
-            hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
+    for (hsize_t xOffset = 0; xOffset < width; xOffset += tileSize) {
+        hsize_t xSize = std::min(tileSize, width - xOffset);
+        for (hsize_t yOffset = 0; yOffset < height; yOffset += tileSize) {
+            hsize_t ySize = std::min(tileSize, height - yOffset);
 
             auto r = estimateHyperslabIO(standardDims, chunkDims,
                                           {1, depth, ySize, xSize}, sizeof(float));

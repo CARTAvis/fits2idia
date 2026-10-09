@@ -66,6 +66,7 @@ MicroMemoryConverter::MicroMemoryConverter(std::string inputFileName, std::strin
 
 MemoryUsage MicroMemoryConverter::calculateMemoryUsage() {
     MemoryUsage m;
+    const hsize_t T = rotation_tile_size;
 
     // STEP 2: "Main dataset" is now a single row, not a full channel.
     m.sizes["Main dataset"] = width * sizeof(float);
@@ -73,9 +74,9 @@ MemoryUsage MicroMemoryConverter::calculateMemoryUsage() {
     m.sizes["XY stats"] = Stats::size({depth}, numBins);
 
     if (depth > 1) {
-        m.sizes["Rotation"] = 2 * product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N)) * sizeof(float);
+        m.sizes["Rotation"] = 2 * product(trimAxes({1, depth, T, T}, N)) * sizeof(float);
         m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE});
+        m.sizes["Z stats"] = Stats::size({T, T});
     }
 
     for (auto& kv : m.sizes) {
@@ -96,18 +97,41 @@ MemoryUsage MicroMemoryConverter::calculateMemoryUsage() {
 }
 
 bool MicroMemoryConverter::ReduceMemoryUsage(hsize_t memoryLimit, int max_iter) {
-    // Nothing to tune here — usage is already fixed and minimal (one row plus a bounded
-    // rotation-tile buffer), independent of any divider. Just report whether it already fits.
+    const int MIN_ROTATION_TILE = 32;
     MemoryUsage mem = calculateMemoryUsage();
-    std::cout << "MicroMemoryConverter::ReduceMemoryUsage total memory usage = " << mem.total/1e9 << " GB" << std::endl;
+    if (mem.total <= memoryLimit) return true;
+    if (depth <= 1) {
+        std::cout << "MicroMemoryConverter: depth == 1, nothing to tune" << std::endl;
+        return false;
+    }
+
+    // Best case: total memory at the smallest tile we are willing to use.
+    const int originalTile = rotation_tile_size;
+    rotation_tile_size = std::min(MIN_ROTATION_TILE, originalTile);
+    const hsize_t floorBytes = calculateMemoryUsage().total;
+    rotation_tile_size = originalTile;
+
+    if (floorBytes > memoryLimit) {
+        std::cout << "MicroMemoryConverter: cannot fit, even with " << MIN_ROTATION_TILE << "x" << MIN_ROTATION_TILE
+                  << " rotation tiles total is " << floorBytes/1e9 << " GB (limit " << memoryLimit/1e9 << " GB)" << std::endl;
+        return false;   // rotation_tile_size left untouched
+    }
+
+    int iter = 0;
+    while (mem.total > memoryLimit && rotation_tile_size / 2 >= MIN_ROTATION_TILE && iter++ < max_iter) {
+        rotation_tile_size /= 2;
+        mem = calculateMemoryUsage();
+        std::cout << "MicroMemoryConverter: rotation_tile_size -> " << rotation_tile_size
+                  << ", total = " << mem.total/1e9 << " GB" << std::endl;
+    }
     return mem.total <= memoryLimit;
 }
 
 void MicroMemoryConverter::copyAndCalculate() {
     auto start = std::chrono::high_resolution_clock::now();
-
+    const hsize_t T = rotation_tile_size;
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
-    hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
+    hsize_t numTiles = ((width + T - 1) / T) * ((height + T - 1) / T);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
 
     // STEP 2: allocate a single row at a time (all X, fixed Y, channel, stokes) instead of a full channel.
@@ -396,12 +420,12 @@ void MicroMemoryConverter::copyAndCalculate() {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
         PROGRESS("Tiled rotation & Z stats" << std::endl);
         TIMER(timer.start("Allocate"););
-
-        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        
+        hsize_t sliceSize = product(trimAxes({1, depth, T, T}, N));
         float* standardSlice = new float[sliceSize];
         float* rotatedSlice = new float[sliceSize];
 
-        statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+        statsZ.createBuffers({T, T});
 
         for (unsigned int s = 0; s < stokes; s++) {
             DEBUG(std::cout << "Processing Stokes " << s << "..." << std::endl;);
@@ -436,12 +460,12 @@ void MicroMemoryConverter::copyAndCalculate() {
 
             double total_rotation_pass_processing_ms = 0.00;
             auto start1 = std::chrono::high_resolution_clock::now();
-            for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
-                for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
+            for (hsize_t xOffset = 0; xOffset < width; xOffset += T) {
+                for (hsize_t yOffset = 0; yOffset < height; yOffset += T) {
                     auto starttile = std::chrono::high_resolution_clock::now();
                     tileCount++;
-                    hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
-                    hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
+                    hsize_t xSize = std::min(T, width - xOffset);
+                    hsize_t ySize = std::min(T, height - yOffset);
 
                     DEBUG(std::cout << "+ Processing tile slice at " << xOffset << ", " << yOffset << "..." << std::flush;);
                     PROGRESS_DECIMATED(tileCount, tileProgressStride, "#");
@@ -695,7 +719,7 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
         }
 
         // ---------- Tiled rotation pass: lines ~386-538, byte-for-byte the same as SlowConverter ----------
-        addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims());
+        addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims(), rotation_tile_size);
     }
 
     return result;

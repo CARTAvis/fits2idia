@@ -360,7 +360,7 @@ int main(int argc, char** argv) {
         // needs to be before memory and I/O and compute cost report 
         // as this function also selects the most optimal algorithm
         // so the report is based on what is decided here:
-        if( converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
+        if( !converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
             if (!cmdLineOptions.onlyReportMemoryAndExectime && !cmdLineOptions.onlyReportMemory) {
                // only exit in the full execution mode, not in report-only mode
                return 1;

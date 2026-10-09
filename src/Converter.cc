@@ -10,7 +10,8 @@ bool Converter::rotatedDatasetChunkingForce = false;
 hsize_t Converter::maxSwizzledChunkBytes = 64000000ULL; // 64 MB default
 std::vector<hsize_t> Converter::rotatedChunkOverride;
 
-Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), n_io_blocks(1) {
+Converter::Converter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : timer(), progress(progress), zMips(zMips), swapStokesFreqAxis(false), n_io_blocks(1), 
+  rotation_tile_size(TILE_SIZE) {
     TIMER(timer.start("Setup"););
     
     openFitsFile(&inputFilePtr, inputFileName);
@@ -368,8 +369,9 @@ const std::vector<hsize_t>& Converter::getSwizzledChunkDims() {
     return swizzledChunkDims4;
 }
 
-std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
+std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {    
     if (!rotatedDatasetChunking || depth <= 1) return {};   // -F and -K set rotatedDatasetChunking too
+    const hsize_t T = rotation_tile_size;
 
     // FAST / FAST-LIMITED-MEMORY write whole cubes or full-height strips: already contiguous, never chunk
     if (strncmp(getConverterType(), "FAST", 4) == 0) {
@@ -394,14 +396,14 @@ std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
             std::cout << "INFO: -K chunk dims clipped to the dataset dimensions" << std::endl;
         }
         
-        // NEW: chunks should be written whole by one rotation tile (TILE_SIZE x TILE_SIZE x depth).
-        // OK if the chunk dim divides TILE_SIZE, or if the image is no larger than one tile in that
+        // NEW: chunks should be written whole by one rotation tile (T x T x depth).
+        // OK if the chunk dim divides T, or if the image is no larger than one tile in that
         // direction and the chunk spans it entirely.
-        auto alignedToTiles = [](hsize_t c, hsize_t dim) {
-            return (TILE_SIZE % c == 0) || (dim <= TILE_SIZE && c == dim);
+        auto alignedToTiles = [T](hsize_t c, hsize_t dim) {
+            return (T % c == 0) || (dim <= T && c == dim);
         };
         if (!alignedToTiles(cw, width) || !alignedToTiles(ch, height)) {
-            std::cout << "WARNING: -K chunk " << cw << "x" << ch << " is not aligned with the " << TILE_SIZE << "x" << TILE_SIZE
+            std::cout << "WARNING: -K chunk " << cw << "x" << ch << " is not aligned with the " << T << "x" << T
                       << " rotation tiles -> chunks will be written partially by several tiles (slower writes)" << std::endl;
         }
         
@@ -416,7 +418,7 @@ std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
         get_io_cost_model(systemName.c_str(), seqRead, seqWrite, false);
         get_io_cost_model(systemName.c_str(), randRead, randWrite, true);
         chunkingPaysOffOnWrite({stokes, width, height, depth}, chunkDims4, stokes, depth, height, width,
-                               seqWrite, randWrite); // result ignored -- printed for comparison only
+                               seqWrite, randWrite, 2.00, T ); // result ignored -- printed for comparison only
         return chunkDims4;
     }
         
@@ -444,7 +446,7 @@ std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
     get_io_cost_model(systemName.c_str(), randRead, randWrite, true);
 
     // 2. chunk sizing: cap set by the read side, shrink x first (CARTA reads favour y-generous shapes)
-    hsize_t cw = std::min((hsize_t)TILE_SIZE, width), ch = std::min((hsize_t)TILE_SIZE, height);
+    hsize_t cw = std::min((hsize_t)T, width), ch = std::min((hsize_t)T, height);
     while (cw * ch * chunkDepth * sizeof(float) > maxSwizzledChunkBytes && (cw > 1 || ch > 1)) {
         if (cw > 16 || ch == 1) cw = std::max((hsize_t)1, cw / 2);
         else                     ch = std::max((hsize_t)1, ch / 2);
@@ -465,7 +467,7 @@ std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
     // 3. write-side gate (full-depth tile writers only). Always printed; decides only without -F.
     if (!partialDepthWriter) {
         const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
-        bool payOff = chunkingPaysOffOnWrite(swizzledDims4, chunkDims4, stokes, depth, height, width, seqWrite, randWrite);
+        bool payOff = chunkingPaysOffOnWrite(swizzledDims4, chunkDims4, stokes, depth, height, width, seqWrite, randWrite, 2.0, T);
         if (!payOff) {
             if (!force) return {};
             std::cout << "INFO: -F: chunking although the predicted write speedup is below the threshold" << std::endl;
@@ -500,8 +502,9 @@ void Converter::convert() {
     if (depth > 1) {
         statsXYZ.createDatasets(outputGroup, "XYZ");
         // statsZ.createDatasets(outputGroup, "Z");
-        hsize_t zChunkHeight = std::min((hsize_t)TILE_SIZE, height);
-        hsize_t zChunkWidth  = std::min((hsize_t)TILE_SIZE, width);
+        hsize_t zT = rotation_tile_size;   // == TILE_SIZE for all converters except MICRO-MEMORY
+        hsize_t zChunkHeight = std::min(zT, height);
+        hsize_t zChunkWidth  = std::min(zT, width);
         statsZ.createDatasets(outputGroup, "Z", trimAxes({1, zChunkHeight, zChunkWidth}, N - 1));
         
         auto swizzledGroup = outputGroup.createGroup("SwizzledData");

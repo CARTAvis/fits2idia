@@ -151,7 +151,7 @@ struct IOCostBreakdown {
 bool chunkingPaysOffOnWrite(const std::vector<hsize_t>& swizzledDims4, const std::vector<hsize_t>& chunkDims4,
                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                             const IOCostModel& seqWrite, const IOCostModel& randWrite,
-                            double minSpeedup = 2.0);
+                            double minSpeedup = 2.0, hsize_t tileSize = TILE_SIZE);
 
 // Optional, diagnostics only: smallest block size reaching `fraction` of peak bandwidth.
 hsize_t plateauBytes(const IOCostModel& m, double fraction = 0.8);
@@ -160,7 +160,7 @@ hsize_t plateauBytes(const IOCostModel& m, double fraction = 0.8);
 void addTiledRotationPhases(IOCostBreakdown& result,
                             hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                             const IOCostModel& readModel, const IOCostModel& writeModel,
-                            const std::vector<hsize_t>& swizzledChunks);
+                            const std::vector<hsize_t>& swizzledChunks, hsize_t tileSize = TILE_SIZE);
 
 bool get_io_cost_model(const char* system_name, IOCostModel& readBW, IOCostModel& writeBW, bool use_random_read_write=false );
 
