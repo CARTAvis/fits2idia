@@ -375,19 +375,50 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                 // depth is small (e.g. 10 channels), unlike the channel-parallel loop of FastConverter.
                 TIMER(timer.start("Rotation"););
                 auto sp = std::chrono::high_resolution_clock::now();
-                const hsize_t BLK = 32;
-                const hsize_t strideK = height * depth;
-#pragma omp parallel for collapse(2) schedule(static)
-                for (hsize_t jb = 0; jb < height; jb += BLK) {
-                    for (hsize_t kb = 0; kb < nx; kb += BLK) {
-                        const hsize_t jEnd = std::min(jb + BLK, height);
-                        const hsize_t kEnd = std::min(kb + BLK, nx);
+
+                // Memory layouts (floats):
+                //   source, whole cube : standardCube[i][j][x]  -> index = x + W*j + P*i      (P = W*H, x fastest)
+                //   destination, strip : rotatedCube[kl][j][i]  -> index = kl*H*D + j*D + i  (i fastest)
+                //
+                // A cache line is 64 B = 16 floats. Reading one float from memory brings in 16 neighbouring x values.
+                // Goal: load every source line ONCE and use all 16 floats while it is still in cache.
+                //       even though the first of 16 numbers is a miss the next 15 are hits
+                const hsize_t BLK = 32;                 // tile edge: 32 rows x 32 columns x up to 32 channels
+                const hsize_t strideK = height * depth; // distance (floats) between consecutive columns kl in dst
+
+                // ---- Loop 1+2: split the strip (H rows x nx columns) into 32x32 tiles in (y, x).
+                //      Each (jb, kb) tile is an independent unit of work given to one thread.
+                //      Tiles write disjoint parts of rotatedCube -> no races, no shared cache lines.
+                #pragma omp parallel for collapse(2) schedule(static)
+                for (hsize_t jb = 0; jb < height; jb += BLK) {          // first row of the tile
+                    for (hsize_t kb = 0; kb < nx; kb += BLK) {           // first column of the tile (local x)
+                        const hsize_t jEnd = std::min(jb + BLK, height); // tile may be cut at the image edge
+                        const hsize_t kEnd = std::min(kb + BLK, nx);     // tile may be cut at the strip edge
+
+                        // ---- Loop 3: split channels into groups of 32 so the tile's cached working set stays
+                        //      small even for cubes with thousands of channels. For depth = 8 this runs once.
                         for (hsize_t ib = 0; ib < depth; ib += BLK) {
                             const hsize_t iEnd = std::min(ib + BLK, depth);
+
+                            // ---- Loop 4: columns of the tile, ONE AT A TIME. This is the reuse loop:
+                            //      column kl+1 needs x+1, which sits in the SAME source cache lines that
+                            //      column kl just loaded (16 consecutive x per line).
                             for (hsize_t kl = kb; kl < kEnd; kl++) {
+
+                                // ---- Loop 5: rows of the tile.
                                 for (hsize_t j = jb; j < jEnd; j++) {
+                                    // dst: start of the spectrum of pixel (x0+kl, j) -- D contiguous floats.
+                                    //      For fixed kl, consecutive j are also contiguous (j*D), so the
+                                    //      whole j-loop writes one contiguous run of (jEnd-jb)*D floats.
                                     float* dst = rotatedCube + kl * strideK + j * depth;
+                                    // src: pixel (x0+kl, j) in channel 0 of the source cube.
                                     const float* src = standardCube + (x0 + kl) + width * j;
+
+                                    // ---- Loop 6: channels. Writes are contiguous (dst[i], dst[i+1], ...).
+                                    //      Reads jump by a whole plane P per step: each read lands in a
+                                    //      DIFFERENT cache line (different channel plane). The first time
+                                    //      (kl = multiple of 16) these are misses; for the next 15 values
+                                    //      of kl the same lines are hits.
                                     for (hsize_t i = ib; i < iEnd; i++) {
                                         dst[i] = src[planeSize * i];
                                     }
@@ -396,6 +427,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                         }
                     }
                 }
+                
 
                 // --- Z stats for the strip, read from the rotated buffer (spectra are contiguous there).
                 // Buffer index is dense for THIS strip (kl + j * nx), so the last, narrower strip uses
