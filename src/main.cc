@@ -305,8 +305,6 @@ void printOptions()
    std::cout << "##########################################" << std::endl;
 }
 
-int checkMemoryUsage( Converter* converter, int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
-
 int main(int argc, char** argv) {
     bool progress(false);    
     commandLineOptions cmdLineOptions;    
@@ -362,7 +360,7 @@ int main(int argc, char** argv) {
         // needs to be before memory and I/O and compute cost report 
         // as this function also selects the most optimal algorithm
         // so the report is based on what is decided here:
-        if( checkMemoryUsage(converter.get(), cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
+        if( converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
             if (!cmdLineOptions.onlyReportMemoryAndExectime && !cmdLineOptions.onlyReportMemory) {
                // only exit in the full execution mode, not in report-only mode
                return 1;
@@ -393,74 +391,3 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-int checkMemory(Converter* converter, hsize_t memoryLimit, bool auto_mode ) {
-    hsize_t predictedTotal = converter->calculateMemoryUsage().total;
-    std::cout << "Required predicted memory " << predictedTotal * 1e-9 << "GB vs. memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-
-    if (predictedTotal > memoryLimit) {
-        bool ok = false;
-        if (auto_mode) {
-            std::cout << "WARNING: Required predicted memory exceeds memory limit" << std::endl;
-            std::cout << "This is automatic mode -> trying to reduce the required memory limit to continue processing" << std::endl;
-            // std::cout << "WARNING : this is not fully implemented yet -> exiting now!" << std::endl;
-                    
-            if( converter->ReduceMemoryUsage( memoryLimit, 10 ) ) {
-                predictedTotal = converter->calculateMemoryUsage().total;
-                std::cout << "SUCCESS : reduced memory usage to " << predictedTotal * 1e-9 << "GB whcich is below the limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-                ok = true;
-             }
-/*        } else {
-            std::cerr << "Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-            std::cerr << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;*/
-        } 
-              
-        if( !ok ) {
-           std::cout << "WARNING : Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-           std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
-           return 1;
-        }
-    }
-    
-    return 0;   
-}
-
-int checkMemoryUsage( Converter* converter, int n_io_blocks, hsize_t memoryLimit, bool auto_mode )
-{
-   // if number of blocks is unspecified, first establish what it should be based on available memory:
-   if (n_io_blocks <= 0) {
-      hsize_t _stokes, _depth, _height, _width;
-      converter->getDimensions( _stokes, _depth,  _height, _width );
-      std::cout << "INFO checkMemoryUsage : N blocks <= 0 -> finding number of blocks automatically" << std::endl;
-      std::cout << "INFO checkMemoryUsage, image dimensions are : stokes x depth x height x width = " << _stokes << " x " << _depth << " x " << _height << " x " << _width << std::endl;
-
-      if (memoryLimit <= 0) {
-         // when there is no memory limit just set N blocks to number of channels (entire image like in FastConveretr):
-         converter->setIOBlocks(_depth);
-         std::cout << "INFO checkMemoryUsage : no memory limit -> setting n_io_blocks = " << _depth << " = number of channels" << std::endl;        
-      } else {
-         // there is memory limit -> check what number of blocks we can do at once and try to use the maximum one 
-         // hence going from largest (depth) down 
-         int n_io_blocks = _depth;         
-         while( n_io_blocks > 0 ) {
-            std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;
-            converter->setIOBlocks(n_io_blocks);
-            int ret = checkMemory(converter, memoryLimit, auto_mode);
-            if( !ret ) {
-               std::cout << "INFO : checkMemoryUsage: using n_io_blocks = " << n_io_blocks << std::endl;
-               return ret;
-            }
-            
-            n_io_blocks = n_io_blocks / 2;
-         }
-         
-      }
-   }   
-   
-
-   int ret = 0;
-   if (memoryLimit > 0) {
-       ret = checkMemory(converter, memoryLimit, auto_mode);
-   }
-   
-   return ret;
-}

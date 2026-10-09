@@ -17,12 +17,16 @@ using ms_d = std::chrono::duration<double, std::milli>;
 
 enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4 };
 
+// It is now memory and execution time:
 struct MemoryUsage {
-    MemoryUsage() : total(0) {}
+    MemoryUsage() : total(0), exec_time_sec(0) {}
     
     std::unordered_map<std::string, hsize_t> sizes;
     hsize_t total;
     std::string note;
+    
+    // execution time:
+    double exec_time_sec;
 };
 
 class Converter {
@@ -37,9 +41,9 @@ public:
     static std::unique_ptr<Converter> getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode);    
     
     void convert();
-    void reportMemoryUsage();
-    void reportExecTime();
-    void reportMemoryAndExecTime();
+    MemoryUsage reportMemoryUsage();
+    double reportExecTime();
+    MemoryUsage reportMemoryAndExecTime();
     virtual MemoryUsage calculateMemoryUsage() = 0;
     
     // parse list of included and excluded datasets to be saved in the output file(s):
@@ -50,6 +54,8 @@ public:
     
     // reduce memory usage:
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
+    bool checkMemory(hsize_t memoryLimit, bool auto_mode );    
+    bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
     // calculate IO cost :
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);

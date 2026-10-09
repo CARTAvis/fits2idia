@@ -90,6 +90,8 @@ MemoryUsage MicroMemoryConverter::calculateMemoryUsage() {
         m.note = " (Main dataset row buffer and slices for rotation and Z statistics are not allocated at the same time.)";
     }
 
+    printf("MicroMemoryConverter::calculateMemoryUsage = %.3f [MB]\n",m.total/1e6);
+
     return m;
 }
 

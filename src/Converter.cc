@@ -117,9 +117,9 @@ void Converter::ParseExcludeIncludeOptions( std::string exclude_list, std::strin
 std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
     hsize_t memoryLimit  = memoryLimitInMb*1e6; // memory limit in bytes
     std::unique_ptr<SlowConverter> slow_ptr = std::unique_ptr<SlowConverter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
-               
+    bool can_use_slow = slow_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically               
     // first check what is the minimum requirement of the slow converter (one channel at a time no parallelisation) :
-    MemoryUsage slow_converter_memory = slow_ptr->calculateMemoryUsage();
+    MemoryUsage slow_converter_memory = slow_ptr->reportMemoryAndExecTime();
     double slow_converter_memory_mb = slow_converter_memory.total/1e6;
                 
     // safety buffer factor - how much more memory is required than calculated, currently 10%
@@ -131,53 +131,49 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
     double single_channel_image_mb = slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
     double cube_size_mb = slow_ptr->depth*slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
                
-    if ( memoryLimitInMb > (slow_converter_memory_mb*1.1) ) { 
-       // use this path if we have at least enough memory for SlowConverter
-       std::unique_ptr<SmartFastConverter> smartfast_ptr = std::unique_ptr<SmartFastConverter>(new SmartFastConverter(inputFileName, outputFileName, progress, zMips)); 
-       bool can_use_smartfast = smartfast_ptr->ReduceMemoryUsage( memoryLimit, max_iter );
-       MemoryUsage smartfast_converter_memory = smartfast_ptr->calculateMemoryUsage();
-       double smartfast_converter_memory_mb = smartfast_converter_memory.total/1e6;
-                  
-       SmartConverter* smart_ptr = dynamic_cast<SmartConverter*>(smartfast_ptr.get());
-       bool can_use_smart = smart_ptr->ReduceMemoryUsage( memoryLimit, max_iter ); 
-       MemoryUsage smart_converter_memory = smartfast_ptr->calculateMemoryUsage();
-       double smart_converter_memory_mb = smartfast_converter_memory.total/1e6;
-       
-       if (!can_use_smartfast && !can_use_smart ) { // was empirical : if ( cube_size_mb >= 5000 && memoryLimitInMb < 10000 ) { BASED ON TESTS : if image is at least 5GB and available memory <= 12 GB:
-          // if cannot use any of the smart converters -> use slow converter:
-          std::cout << "AUTOMATIC ALGORITHM SELECTION : using SlowConverter as there is not enough memory to use Smart or SmartFast converter" << std::endl;
-          return slow_ptr;
-       } else {
-         // we can use at least one of the smart converters :
-         
-         std::cout << "AUTOMATIC ALGORITHM SELECTION : returning Smart or " << std::endl;
-         if (can_use_smartfast && can_use_smart ) {
-            // if both can be used, calculate expected cost/execution time and decide based on this :
-            // TODO :
-            // CompCost smartfast_comp_cost = smartfast_ptr->calculateCompCost();
-            // CompCost smart_comp_cost = smart_ptr->calculateCompCost();
-            // std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartFastConverter" << std::endl;
-            // if ( smartfast_comp_cost < smart_comp_cost ) { return smartfast_ptr } else { return smart_ptr }
-            std::cout << "ERROR : AUTOMATIC ALGORITHM SELECTION : decision based on computational cost not yet implemented -> using SmartFastConverter" << std::endl;
-            return smartfast_ptr;
-         } else {
-            if (can_use_smartfast) {
-               std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartFastConverter" << std::endl;
-               return smartfast_ptr;
-            } else {
-               std::cout << "AUTOMATIC ALGORITHM SELECTION : using SmartConverter" << std::endl;
-               return std::unique_ptr<Converter>(smart_ptr);
-               // return std::unique_ptr<Converter>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
-            }
-         }
-       }
-    } else {
-       // if we do not even have enough memory for a the SlowConverter (total minimum - one image at a time), use 
-       // partial converter reading 1 row at a time:
-       std::cout << "AUTOMATIC ALGORITHM SELECTION : using MicroMemoryConverter" << std::endl;
-       return std::unique_ptr<Converter>(new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips));
-    }
+    // use this path if we have at least enough memory for SlowConverter
+    std::unique_ptr<SmartFastConverter> smartfast_ptr = std::unique_ptr<SmartFastConverter>(new SmartFastConverter(inputFileName, outputFileName, progress, zMips)); 
+    bool can_use_smartfast = smartfast_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
+    MemoryUsage smartfast_converter_memory = smartfast_ptr->reportMemoryAndExecTime();
+    double smartfast_converter_memory_mb = smartfast_converter_memory.total/1e6;
 
+    std::unique_ptr<SmartFastTwoPassConverter> smartfasttwopass_ptr = std::unique_ptr<SmartFastTwoPassConverter>(new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips)); 
+    bool can_use_smartfasttwopass = smartfasttwopass_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
+    MemoryUsage smartfasttwopass_converter_memory = smartfasttwopass_ptr->reportMemoryAndExecTime();
+    double smartfasttwopass_converter_memory_mb = smartfasttwopass_converter_memory.total/1e6;
+                  
+    SmartConverter* smart_ptr = dynamic_cast<SmartConverter*>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
+    bool can_use_smart = smart_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically
+    MemoryUsage smart_converter_memory = smart_ptr->reportMemoryAndExecTime();
+    double smart_converter_memory_mb = smart_converter_memory.total/1e6;
+
+    std::unique_ptr<FastConverter> fast_ptr = std::unique_ptr<FastConverter>(new FastConverter(inputFileName, outputFileName, progress, zMips)); 
+    bool can_use_fast = fast_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
+    MemoryUsage fast_converter_memory = fast_ptr->reportMemoryAndExecTime();
+    double fast_converter_memory_mb = fast_converter_memory.total/1e6;
+
+    std::unique_ptr<FastConverterLimitedMemory> fastlimited_ptr = std::unique_ptr<FastConverterLimitedMemory>(new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips)); 
+    bool can_use_fastlimited = fastlimited_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
+    MemoryUsage fastlimited_converter_memory = fastlimited_ptr->reportMemoryAndExecTime();
+    double fastlimited_converter_memory_mb = fastlimited_converter_memory.total/1e6;
+
+    std::unique_ptr<MicroMemoryConverter> micro_ptr = std::unique_ptr<MicroMemoryConverter>(new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips)); 
+    bool can_use_micro = micro_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
+    MemoryUsage micro_converter_memory = micro_ptr->reportMemoryAndExecTime();
+    double micro_converter_memory_mb = micro_converter_memory.total/1e6;
+
+    printf("-----------------------------------------------------------------------\n");       
+    printf("COMPARISON OF CONVERTERS:\n");
+    printf("-----------------------------------------------------------------------\n");
+    printf("MIRCO               : %d %.3f [MB] %.3f [sec]\n",can_use_micro,micro_converter_memory_mb,micro_converter_memory.exec_time_sec);
+    printf("SLOW                : %d %.3f [MB] %.3f [sec]\n",can_use_slow,slow_converter_memory_mb,slow_converter_memory.exec_time_sec);
+    printf("FAST                : %d %.3f [MB] %.3f [sec]\n",can_use_fast,fast_converter_memory_mb,fast_converter_memory.exec_time_sec);
+    printf("FAST-LIMITED        : %d %.3f [MB] %.3f [sec]\n",can_use_fastlimited,fastlimited_converter_memory_mb,fastlimited_converter_memory.exec_time_sec);
+    printf("SMART-FAST          : %d %.3f [MB] %.3f [sec]\n",can_use_smartfast,smartfast_converter_memory_mb,smartfast_converter_memory.exec_time_sec);
+    printf("SMART-FAST-TWO-PASS : %d %.3f [MB] %.3f [sec]\n",can_use_smartfasttwopass,smartfasttwopass_converter_memory_mb,smartfasttwopass_converter_memory.exec_time_sec);
+    printf("SMART               : %d %.3f [MB] %.3f [sec]\n",can_use_smart,smart_converter_memory_mb,smart_converter_memory.exec_time_sec);
+    printf("-----------------------------------------------------------------------\n");
+    
     // nothing optimal identified use SlowConverter as a fallback:
     return slow_ptr;
 }
@@ -237,27 +233,32 @@ void Converter::setSystemName(const char* system_name )
    }
 }
 
-void Converter::reportMemoryAndExecTime()
+MemoryUsage Converter::reportMemoryAndExecTime()
 {
-   reportMemoryUsage();
+   MemoryUsage m = reportMemoryUsage();   
+
+   m.exec_time_sec = reportExecTime();
    
-   reportExecTime();
+   return m;
 }
 
-void Converter::reportExecTime()
+double Converter::reportExecTime()
 {
    // predict execution time:
    IOCostModel readModel, writeModel;
    get_io_cost_model(systemName.c_str(), readModel, writeModel ); // NULL -> SystemName, for example "SETONIX" to get specific BW
    IOCostBreakdown iocost = estimateIO(stokes, depth, height, width, numBins, readModel, writeModel );
    iocost.print();
+   
+   return iocost.totalSeconds();
 }
 
-void Converter::reportMemoryUsage() {
+MemoryUsage Converter::reportMemoryUsage() {
     MemoryUsage m = calculateMemoryUsage();
     
     std::cout << std::endl;
     std::cout << "--------------------------------------------------------------------------" << std::endl;
+    std::cout << "Converter type: " << getConverterType() << " n_io_blocks = " << n_io_blocks << std::endl;
     std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;    
     hsize_t maxAllocationBytes = 0;
     std::string maxAllocationDataset = "";
@@ -273,6 +274,8 @@ void Converter::reportMemoryUsage() {
     std::cout << "TOTAL ALLOCATION  :\t" << m.total * 1e-9 << "GB" << m.note << std::endl;
     double total_ram_gb = m.total * 1e-9 * 1.1;
     std::cout << "TOTAL RAM REQUIRED:\t" << "Add additional 10% of RAM or SLURM job limit: --mem " << total_ram_gb << "GB" << std::endl;    
+    
+    return m;
 }
 
 void Converter::getDimensions( hsize_t& _stokes, hsize_t& _depth, hsize_t& _height, hsize_t& _width ) {
@@ -639,6 +642,78 @@ void Converter::convert() {
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = ms_d(end - start);
     std::cout << "Execution of entire Converter::convert took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds" << std::endl;
+}
+
+bool Converter::checkMemory(hsize_t memoryLimit, bool auto_mode ) {
+    hsize_t predictedTotal = this->calculateMemoryUsage().total;
+    std::cout << "Required predicted memory " << predictedTotal * 1e-9 << "GB vs. memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+
+    if (predictedTotal > memoryLimit) {
+        bool ok = false;
+        if (auto_mode) {
+            std::cout << "WARNING: Required predicted memory exceeds memory limit" << std::endl;
+            std::cout << "This is automatic mode -> trying to reduce the required memory limit to continue processing" << std::endl;
+            // std::cout << "WARNING : this is not fully implemented yet -> exiting now!" << std::endl;
+                    
+            if( this->ReduceMemoryUsage( memoryLimit, 10 ) ) {
+                predictedTotal = this->calculateMemoryUsage().total;
+                std::cout << "SUCCESS : reduced memory usage to " << predictedTotal * 1e-9 << "GB whcich is below the limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+                ok = true;
+             }
+/*        } else {
+            std::cerr << "Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+            std::cerr << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;*/
+        } 
+              
+        if( !ok ) {
+           std::cout << "WARNING : Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
+           std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
+           return false;
+        }
+    }
+    
+    return true;
+}
+
+bool Converter::checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode )
+{
+   // if number of blocks is unspecified, first establish what it should be based on available memory:
+   if (n_io_blocks <= 0) {
+      hsize_t _stokes, _depth, _height, _width;
+      this->getDimensions( _stokes, _depth,  _height, _width );
+      std::cout << "INFO checkMemoryUsage : N blocks <= 0 -> finding number of blocks automatically" << std::endl;
+      std::cout << "INFO checkMemoryUsage, image dimensions are : stokes x depth x height x width = " << _stokes << " x " << _depth << " x " << _height << " x " << _width << std::endl;
+
+      if (memoryLimit <= 0) {
+         // when there is no memory limit just set N blocks to number of channels (entire image like in FastConveretr):
+         this->setIOBlocks(_depth);
+         std::cout << "INFO checkMemoryUsage : no memory limit -> setting n_io_blocks = " << _depth << " = number of channels" << std::endl;        
+      } else {
+         // there is memory limit -> check what number of blocks we can do at once and try to use the maximum one 
+         // hence going from largest (depth) down 
+         int n_io_blocks = _depth;         
+         while( n_io_blocks > 0 ) {
+            std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;
+            this->setIOBlocks(n_io_blocks);
+            bool ret = checkMemory(memoryLimit, auto_mode);
+            if( ret ) {
+               std::cout << "INFO : checkMemoryUsage: using n_io_blocks = " << n_io_blocks << std::endl;
+               return ret;
+            }
+            
+            n_io_blocks = n_io_blocks / 2;
+         }
+         
+      }
+   }   
+   
+
+   bool ret = true;
+   if (memoryLimit > 0) {
+       ret = checkMemory(memoryLimit, auto_mode);
+   }
+   
+   return ret;
 }
 
 

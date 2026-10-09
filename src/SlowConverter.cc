@@ -28,6 +28,8 @@ MemoryUsage SlowConverter::calculateMemoryUsage() {
         m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
         m.note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
     }
+    
+    printf("SlowConverter::calculateMemoryUsage = %.3f [MB]\n",m.total/1e6);
 
     return m;
 }
