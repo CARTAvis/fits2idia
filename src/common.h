@@ -48,4 +48,12 @@
 
 #define UNUSED(x) (void)(x)
 
+// defines for flags specifying which datasets to save:
+#define STANDARD "s"
+#define ROTATED  "r"
+#define MIPMAPS  "m"
+#define HISTOGRAMS "h"
+#define CUBE_HISTOGRAM "c"
+
+
 #endif

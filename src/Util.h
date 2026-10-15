@@ -32,7 +32,9 @@ void getFitsDims(fitsfile* filePtr, int& N, long* dims);
 void readFitsHeader(fitsfile* filePtr, int& numAttributes);
 void readFitsAttribute(fitsfile* filePtr, int i, std::string& name, std::string& value);
 void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::string& value);
-void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination);
+void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis);
+// Reads a single row (fixed Y, all X) of one channel/stokes — for converters that cannot hold a full channel in memory
+void readFitsDataRow(fitsfile* filePtr, hsize_t channel, hsize_t row, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis);
 
 // Only available in C++ API from 1.10.1
 bool hdf5Exists(H5::H5Location& location, const std::string& name);
@@ -47,5 +49,11 @@ void writeHdf5Data(H5::DataSet& dataset, double* data, const std::vector<hsize_t
 void writeHdf5Data(H5::DataSet& dataset, int64_t* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
 
 void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>& dims, const std::vector<hsize_t>& count = EMPTY_DIMS, const std::vector<hsize_t>& start = EMPTY_DIMS);
+
+void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t factorX, hsize_t factorY, hsize_t factorZ);
+
+// optimisation requirements:
+void getDividers(long int value, std::vector<int>& dividers);
+
 
 #endif

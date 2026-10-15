@@ -25,24 +25,25 @@ Stats::~Stats() {
 
 hsize_t Stats::size(std::vector<hsize_t> dims, hsize_t numBins, hsize_t partialHistMultiplier) {
     auto statsSize = product(dims);
+    DEBUG(std::cout << "DEBUG: Stats::size statsSize = " << statsSize << " , numBins = " << numBins << " , partialHistMultiplier = " << partialHistMultiplier << std::endl;);
     return (2 * sizeof(float) + 2 * sizeof(double) + sizeof(int64_t)) * statsSize + sizeof(int64_t) * (statsSize * numBins + statsSize * numBins * partialHistMultiplier);
 }
 
-void Stats::createDatasets(H5::Group group, std::string name) {
+void Stats::createDatasets(H5::Group group, std::string name, const std::vector<hsize_t>& chunkDims /* = {}*/) {
     H5::FloatType floatType(H5::PredType::NATIVE_FLOAT);
     floatType.setOrder(H5T_ORDER_LE);
     
     H5::IntType intType(H5::PredType::NATIVE_INT64);
     intType.setOrder(H5T_ORDER_LE);
     
-    createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, basicDatasetDims);
-    createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, basicDatasetDims);
-    createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, basicDatasetDims);
-    createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, basicDatasetDims);
-    createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, basicDatasetDims);
+    createHdf5Dataset(minDset, group, "Statistics/" + name + "/MIN", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(maxDset, group, "Statistics/" + name + "/MAX", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(sumDset, group, "Statistics/" + name + "/SUM", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(ssqDset, group, "Statistics/" + name + "/SUM_SQ", floatType, basicDatasetDims, chunkDims);
+    createHdf5Dataset(nanDset, group, "Statistics/" + name + "/NAN_COUNT", intType, basicDatasetDims, chunkDims);
     
     if (numBins) {
-        createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}));
+        createHdf5Dataset(histDset, group, "Statistics/" + name + "/HISTOGRAM", intType, extend(basicDatasetDims, {numBins}), chunkDims.empty() ? chunkDims : extend(chunkDims, {numBins}));
     }
 }
 
@@ -50,18 +51,37 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     fullBasicBufferDims = dims;
     auto statsSize = product(dims);
         
+    long int total_bytes = 2*statsSize*sizeof(float) + 2*statsSize*sizeof(double) + statsSize*sizeof(int64_t);
+
     minVals = new float[statsSize];
     maxVals = new float[statsSize];
     sums = new double[statsSize];
     sumsSq = new double[statsSize];
     nanCounts = new int64_t[statsSize];
     buffersAllocated = true;
+
+    std::cout << "MEMORY (Stats::createBuffers): starting with total_bytes = " << total_bytes << " bytes." << std::endl;
     
     if (numBins) {
         histograms = new int64_t[statsSize * numBins];
         partialHistograms = new int64_t[statsSize * numBins * partialHistMultiplier];
         this->partialHistMultiplier = partialHistMultiplier;
         histogramBuffersAllocated = true;
+        size_t histogram_bytes = (statsSize * numBins * partialHistMultiplier + statsSize*numBins)*sizeof(int64_t);
+        total_bytes += histogram_bytes;
+        std::cout << "MEMORY (Stats::createBuffers): adding " << histogram_bytes << " bytes for histograms" << std::endl;
+    }    
+    
+    std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;
+    std::cout << "MEMORY (Stats::createBuffers): allocating " << double(total_bytes)/1e9 << " GB " << std::endl << std::flush;
+
+}
+
+void Stats::copyHistogramBuffers(const Stats& right) {
+   if (histogramBuffersAllocated) {
+        auto statsSize = product(fullBasicBufferDims);
+        memcpy(histograms, right.histograms, sizeof(int64_t) * statsSize * numBins);
+        memcpy(partialHistograms, right.partialHistograms, sizeof(int64_t) * statsSize * numBins * partialHistMultiplier);
     }
 }
 

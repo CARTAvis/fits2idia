@@ -28,11 +28,15 @@ MemoryUsage SlowConverter::calculateMemoryUsage() {
         m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
         m.note = " (Main dataset and slices for rotation and Z statistics are not allocated at the same time.)";
     }
+    
+    printf("SlowConverter::calculateMemoryUsage = %.3f [MB]\n",m.total/1e6);
 
     return m;
 }
 
 void SlowConverter::copyAndCalculate() {
+    auto start = std::chrono::high_resolution_clock::now();
+    
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     hsize_t numTiles = std::ceil(width / TILE_SIZE) * std::ceil(height / TILE_SIZE);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
@@ -56,7 +60,7 @@ void SlowConverter::copyAndCalculate() {
     
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
-    
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int s = 0; s < stokes; s++) {
         DEBUG(std::cout << "Processing Stokes " << s << "... " << std::endl;);
         PROGRESS("Stokes " << s << ":" << std::endl);
@@ -64,22 +68,29 @@ void SlowConverter::copyAndCalculate() {
         PROGRESS("\tMain loop\t");
         
         StatsCounter counterXYZ;
-        
+
+        double total_first_pass_processing_ms = 0.00;
         for (hsize_t c = 0; c < depth; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
             // read one channel
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
+            
+            // measuring I/O :
+            auto start_io = std::chrono::high_resolution_clock::now();
             TIMER(timer.start("Read"););
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
             
             // Write the standard dataset
             
             DEBUG(std::cout << " Writing main dataset..." << std::flush;);
-            TIMER(timer.start("Write"););
+            TIMER(timer.start("Write"););            
             
             std::vector<hsize_t> start = trimAxes({s, c, 0, 0}, N);
             writeHdf5Data(standardDataSet, standardCube, memDims, count, start);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            total_io_ms += ms_d(end_io - start_io).count();
+            std::cout << "I/O (readFitsData+writeHdf5Data) for channel : " << c << " took " << ms_d(end_io - start_io).count() << " milliseconds." << std::endl;
             
             DEBUG(std::cout << " Accumulating XY stats and mipmaps..." << std::flush;);
             TIMER(timer.start(timerLabelStatsMipmaps););
@@ -98,7 +109,8 @@ void SlowConverter::copyAndCalculate() {
             };
             
             accumulate = first_accumulate;
-            
+
+            auto start1 = std::chrono::high_resolution_clock::now();            
             for (hsize_t y = 0; y < height; y++) {
                 for (hsize_t x = 0; x < width; x++) {
                     auto pos = y * width + x; // relative to channel slice
@@ -131,11 +143,18 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Final mipmaps..." << std::flush;);
             mipMaps.calculate();
             
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = ms_d(end1 - start1);
+            std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
+            total_first_pass_processing_ms += double(duration1.count());
             
             // Write the mipmaps
             DEBUG(std::cout << " Writing mipmaps..." << std::flush;);
             TIMER(timer.start("Write"););
+            start_io = std::chrono::high_resolution_clock::now();
             mipMaps.write(s, c);
+            end_io = std::chrono::high_resolution_clock::now();
+            total_io_ms += ms_d(end_io - start_io).count();
             
             // Reset mipmaps before next channel
             DEBUG(std::cout << " Resetting mipmap objects..." << std::endl;);
@@ -143,6 +162,8 @@ void SlowConverter::copyAndCalculate() {
             mipMaps.resetBuffers();
             
         } // end of first channel loop
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass: " << total_first_pass_processing_ms << " milliseconds " << float(total_first_pass_processing_ms)/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += total_first_pass_processing_ms;
         
         PROGRESS(std::endl);
         
@@ -178,6 +199,9 @@ void SlowConverter::copyAndCalculate() {
         
         DEBUG(std::cout << "+ Will " << (cubeHist ? "" : "not ") << "calculate cube histogram." << std::endl;);
         
+        // second pass:
+        double total_second_pass_processing_ms = 0.00;
+        auto start2 = std::chrono::high_resolution_clock::now();
         for (hsize_t c = depth; c-- > 0; ) {
             DEBUG(std::cout << "+ Processing channel " << c << "... " << std::flush;);
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -223,11 +247,17 @@ void SlowConverter::copyAndCalculate() {
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             
-            readFitsData(inputFilePtr, c, s, cubeSize, standardCube);
+            auto start_io = std::chrono::high_resolution_clock::now();
+            readFitsData(inputFilePtr, c, s, cubeSize, standardCube, swapStokesFreqAxis);
+            auto end_io = std::chrono::high_resolution_clock::now();
+            auto duration_io = ms_d(end_io - start_io);
+            total_io_ms += double(duration_io.count());
+            std::cout << "2nd I/O (readFitsData) for channel : " << c << " took " << duration_io.count() << " milliseconds." << std::endl;
 
             DEBUG(std::cout << " Calculating histogram(s)..." << std::endl;);
             TIMER(timer.start("Histograms"););
             
+            auto start1 = std::chrono::high_resolution_clock::now();
             for (hsize_t p = 0; p < width * height; p++) {
                 auto& val = standardCube[p];
                     if (std::isfinite(val)) {
@@ -235,7 +265,16 @@ void SlowConverter::copyAndCalculate() {
                         cubeHistogramFunc(val);
                     }
             } // end of XY loop
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = ms_d(end1 - start1);
+            total_second_pass_processing_ms += double(duration1.count());
+            std::cout << "Execution of XY-loop for channel" << c << " took: " << duration1.count() << " milliseconds." << std::endl;
         } // end of second channel loop (XY and XYZ histograms)
+        total_pureprocessing_ms += total_second_pass_processing_ms;
+        auto end2 = std::chrono::high_resolution_clock::now();
+        auto duration2 = ms_d(end2 - start2);
+        std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
+        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
         
         PROGRESS(std::endl);
         
@@ -243,12 +282,15 @@ void SlowConverter::copyAndCalculate() {
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
                 
+        auto start_io = std::chrono::high_resolution_clock::now();                
         statsXY.write({1, depth}, {s, 0});
         
         if (depth > 1) {
             statsXYZ.write({1}, {s});
         }
-    
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = ms_d(end_io - start_io);
+        total_io_ms += double(duration_io.count());    
     } // end of stokes
     
     // Free memory
@@ -274,9 +316,12 @@ void SlowConverter::copyAndCalculate() {
             PROGRESS("\tStokes " << s << "\t");
             
             hsize_t tileCount(0);
-            
+
+            double total_rotation_pass_processing_ms = 0.00;
+            auto start1 = std::chrono::high_resolution_clock::now();            
             for (hsize_t xOffset = 0; xOffset < width; xOffset += TILE_SIZE) {
                 for (hsize_t yOffset = 0; yOffset < height; yOffset += TILE_SIZE) {
+                    auto starttile = std::chrono::high_resolution_clock::now();
                     tileCount++;
                     hsize_t xSize = std::min(TILE_SIZE, width - xOffset);
                     hsize_t ySize = std::min(TILE_SIZE, height - yOffset);
@@ -291,13 +336,18 @@ void SlowConverter::copyAndCalculate() {
                     auto standardMemDims = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardCount = trimAxes({1, depth, ySize, xSize}, N);
                     auto standardStart = trimAxes({s, 0, yOffset, xOffset}, N);
-                    
+
+                    auto start_io = std::chrono::high_resolution_clock::now();                    
                     readHdf5Data(standardDataSet, standardSlice, standardMemDims, standardCount, standardStart);
+                    auto end_io = std::chrono::high_resolution_clock::now();
+                    auto duration_io = ms_d(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
                     
                     // rotate tile slice
                     DEBUG(std::cout << " Calculating rotation..." << std::flush;);
                     TIMER(timer.start("Rotation"););
-                    
+                                        
+                    auto start2 = std::chrono::high_resolution_clock::now();
                     for (hsize_t i = 0; i < depth; i++) {
                         for (hsize_t j = 0; j < ySize; j++) {
                             for (hsize_t k = 0; k < xSize; k++) {
@@ -310,11 +360,15 @@ void SlowConverter::copyAndCalculate() {
                             }
                         }
                     }
+                    auto end2 = std::chrono::high_resolution_clock::now();
+                    auto duration2 = ms_d(end2 - start2);
+                    // std::cout << "Execution of small rotation-loop took: " << duration2.count() << " milliseconds." << std::endl;
                     
                     // A separate pass over the same slice depth-last 
                     DEBUG(std::cout << " Calculating Z statistics..." << std::flush;);
                     TIMER(timer.start("Z statistics"););
                     
+                    auto start3 = std::chrono::high_resolution_clock::now();
                     for (hsize_t j = 0; j < ySize; j++) {
                         for (hsize_t k = 0; k < xSize; k++) {
                             StatsCounter counterZ;
@@ -335,6 +389,11 @@ void SlowConverter::copyAndCalculate() {
                             statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                         }
                     }
+                    auto end3 = std::chrono::high_resolution_clock::now();
+                    auto duration3 = ms_d(end3 - start3);
+                    std::cout << "Execution of counter/stats-Z loop took: " << duration3.count() << " milliseconds." << std::endl;
+                    auto duration_processing = ms_d(end3 - start2);
+                    total_rotation_pass_processing_ms += double(duration_processing.count());
                     
                     // write tile slice
                     DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
@@ -344,13 +403,34 @@ void SlowConverter::copyAndCalculate() {
                     auto swizzledCount = trimAxes({1, xSize, ySize, depth}, N);
                     auto swizzledStart = trimAxes({s, xOffset, yOffset, 0}, N);
                     
+                    start_io = std::chrono::high_resolution_clock::now();
                     writeHdf5Data(swizzledDataSet, rotatedSlice, swizzledMemDims, swizzledCount, swizzledStart);
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = ms_d(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    DEBUG(std::cout << "3rd I/O (writeHdf5Data) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
                     
+                    start_io = std::chrono::high_resolution_clock::now();
                     DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                     // write Z statistics
                     statsZ.write({ySize, xSize}, {1, ySize, xSize}, {s, yOffset, xOffset});
+                    end_io = std::chrono::high_resolution_clock::now();
+                    duration_io = ms_d(end_io - start_io);
+                    total_io_ms += double(duration_io.count());
+                    DEBUG(std::cout << "4th I/O (statsZ.write) for xOffset = " << xOffset << " yOffset = " << yOffset  << " took " << duration_io.count() << " milliseconds." << std::endl;);
+                    
+                    auto endtile = std::chrono::high_resolution_clock::now();
+                    auto durationtile = ms_d(endtile - starttile);
+                    std::cout << "Execution of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
                 }
             }
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = ms_d(end1 - start1);
+            std::cout << "Execution of loop over X/Y Offsets for Stokes = " << s << " took: " << duration1.count() << " milliseconds." << std::endl;
+            std::cout << "BENCHMARKING : total pure-processing time of rotation pass: " << total_rotation_pass_processing_ms << " milliseconds "
+                      << (float(total_rotation_pass_processing_ms)/1000.0) << " seconds" << std::endl;
+            total_pureprocessing_ms += total_rotation_pass_processing_ms;
+
             PROGRESS(std::endl);
         }
         
@@ -359,4 +439,114 @@ void SlowConverter::copyAndCalculate() {
         delete[] standardSlice;
         delete[] rotatedSlice;
     }
+
+    std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds." << std::endl;
+    std::cout << "BENCHMARKING: total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms << " milliseconds " <<  (float(total_pureprocessing_ms)/1000.00) << " seconds" << std::endl;    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = ms_d(end - start);
+    std::cout << "Execution of entire SlowConverter::copyAndCalculate took: " << duration.count() << " milliseconds = " << duration.count()/1000.00 << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
+}
+
+// Walks the same three passes as SlowConverter::copyAndCalculate(), in the
+// same order, and estimates the I/O cost of each HDF5/FITS call using
+// estimateHyperslabIO. Mirrors the real loop structure (including the tile
+// grid loop) so it can be checked line-by-line against SlowConverter.cc.
+//
+// numBins: pass Converter::numBins (0 disables histogram-write terms).
+IOCostBreakdown SlowConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel)
+{
+    IOCostBreakdown result;
+
+    std::vector<hsize_t> standardDims = {stokes, depth, height, width};
+    std::vector<hsize_t> chunkDims    = {1, 1, TILE_SIZE, TILE_SIZE};
+
+    // ---------- 1st pass: SlowConverter.cc lines ~71-164 ----------
+
+    // readFitsData(...) once per channel: not a hyperslab call (cfitsio),
+    // one contiguous image plane per call -- uniform size, single add() is fine.
+    {
+        PhaseAccumulator acc;
+        hsize_t bytesPerOp = height * width * sizeof(float);
+        acc.add({ stokes * depth, bytesPerOp, stokes * depth * bytesPerOp }, readModel);
+        result.phases.push_back(acc.toPhase("1st pass: FITS channel read (readFitsData)"));
+    }
+
+    // writeHdf5Data(standardDataSet, ...) once per channel — chunked, so this
+    // decomposes into one write per {TILE_SIZE x TILE_SIZE} chunk. Boundary
+    // chunks (where height/width isn't an exact multiple of TILE_SIZE) are
+    // smaller than interior chunks; estimateHyperslabIO averages this single
+    // call's chunks together, so predictSeconds sees one averaged size here.
+    // If height/width are far from a TILE_SIZE multiple and you need this
+    // exact, loop per-tile the way the 3rd pass already does below.
+    {
+        PhaseAccumulator acc;
+        auto perChannel = estimateHyperslabIO(standardDims, chunkDims,
+                                               {1, 1, height, width}, sizeof(float));
+        acc.add(repeatEstimate(perChannel, stokes * depth), writeModel);
+        result.phases.push_back(acc.toPhase("1st pass: standardDataSet write"));
+    }
+
+    // mipMaps.write(s, c) once per channel, per level. Each level is a
+    // different size (double-precision buffer, shrinking dims) -- cost each
+    // level separately, then sum.
+    {
+        PhaseAccumulator acc;
+        hsize_t mipXY = 1, hLevel = height, wLevel = width;
+        do {
+            mipXY *= 2;
+            hLevel = (hsize_t)std::ceil((double)height / mipXY);
+            wLevel = (hsize_t)std::ceil((double)width  / mipXY);
+            IOOpEstimate perLevel{ 1, hLevel * wLevel * sizeof(double), hLevel * wLevel * sizeof(double) };
+            acc.add(repeatEstimate(perLevel, stokes * depth), writeModel);
+        } while (2 * wLevel > MIN_MIPMAP_SIZE || 2 * hLevel > MIN_MIPMAP_SIZE);
+        result.phases.push_back(acc.toPhase("1st pass: mipmap writes (all levels)"));
+    }
+
+    // ---------- 2nd pass: SlowConverter.cc lines ~205-289 ----------
+
+    {
+        PhaseAccumulator acc;
+        hsize_t bytesPerOp = height * width * sizeof(float);
+        acc.add({ stokes * depth, bytesPerOp, stokes * depth * bytesPerOp }, readModel);
+        result.phases.push_back(acc.toPhase("2nd pass: FITS channel read (readFitsData)"));
+    }
+
+    // statsXY.write(...) once per stokes: MIN/MAX(float,4B), SUM/SUMSQ(float,4B),
+    // NAN_COUNT(int64,8B), plus HISTOGRAM(int64,8B) if numBins > 0. Different
+    // element sizes -> cost each sub-dataset separately.
+    {
+        PhaseAccumulator acc;
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
+        for (auto es : elemSizes) {
+            auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+            acc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, 8);
+            acc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("2nd pass: statsXY write"));
+    }
+
+    if (depth > 1) {
+        PhaseAccumulator acc;
+        const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
+        for (auto es : elemSizes) {
+            auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
+            acc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, numBins}, {}, {1, numBins}, 8);
+            acc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("2nd pass: statsXYZ write"));
+    }
+
+    // ---------- 3rd pass: tiled rotation, SlowConverter.cc lines ~300-436 ----------
+    addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims());
+
+    return result;
+
 }

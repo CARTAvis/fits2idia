@@ -34,6 +34,7 @@ MemoryUsage FastConverter::calculateMemoryUsage() {
 }
 
 void FastConverter::copyAndCalculate() {
+    auto start = std::chrono::high_resolution_clock::now();
     const hsize_t pixelProgressStride = std::max((hsize_t)1, (hsize_t)(width * height / 100));
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     
@@ -54,6 +55,7 @@ void FastConverter::copyAndCalculate() {
     
     std::string timerLabelXYRotation = depth > 1 ? "XY statistics and rotation" : "XY statistics";
 
+    double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
         PROGRESS("Stokes " << currentStokes << ":" << std::endl);
@@ -61,7 +63,14 @@ void FastConverter::copyAndCalculate() {
         // Read data into memory space
         TIMER(timer.start("Read"););
         DEBUG(std::cout << "+ Reading main dataset..." << std::flush;);
-        readFitsData(inputFilePtr, 0, currentStokes, cubeSize, standardCube);
+        // measuring I/O :
+        auto start_io = std::chrono::high_resolution_clock::now();
+        readFitsData(inputFilePtr, 0, currentStokes, cubeSize, standardCube, swapStokesFreqAxis);
+        auto end_io = std::chrono::high_resolution_clock::now();
+        auto duration_io = ms_d(end_io - start_io);
+        total_io_ms += double(duration_io.count());
+        std::cout << "I/O (readFitsData) for Stokes : " << currentStokes << " took " << duration_io.count() << " milliseconds." << std::endl;
+
         
         // We have to allocate the swizzled cube for each stokes because we free it to make room for mipmaps
         if (depth > 1) {
@@ -73,8 +82,8 @@ void FastConverter::copyAndCalculate() {
         PROGRESS("\tMain loop\t");
         TIMER(timer.start(timerLabelXYRotation););
 
-        // First loop calculates stats for each XY slice and rotates the dataset
-        
+        // First loop calculates stats for each XY slice and rotates the dataset        
+        auto start1 = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for
         for (hsize_t i = 0; i < depth; i++) {
             PROGRESS_DECIMATED(i, channelProgressStride, "|");
@@ -116,6 +125,12 @@ void FastConverter::copyAndCalculate() {
             // Final correction of XY min and max
             statsXY.copyStatsFromCounter(indexXY, height * width, counterXY);
         }
+        auto end1 = std::chrono::high_resolution_clock::now();
+        auto duration1 = ms_d(end1 - start1);
+        double duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 1st pass (rotation and statsXY): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
+
         
         PROGRESS(std::endl);
 
@@ -125,6 +140,7 @@ void FastConverter::copyAndCalculate() {
             PROGRESS("\tXYZ stats" << std::endl);
             TIMER(timer.start("XYZ statistics"););
             
+            auto start1 = std::chrono::high_resolution_clock::now();
             StatsCounter counterXYZ;
 
             for (hsize_t i = 0; i < depth; i++) {
@@ -163,6 +179,12 @@ void FastConverter::copyAndCalculate() {
                     statsZ.copyStatsFromCounter(indexZ, depth, counterZ);
                 }
             }
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto duration1 = ms_d(end1 - start1);
+            double duration1_ms = double(duration1.count());
+            std::cout << "BENCHMARKING : total pure-processing time of 2nd pass (statsZ for all (X,Y) pixels): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+            total_pureprocessing_ms += duration1_ms;
+
 
             PROGRESS(std::endl);
         }
@@ -184,6 +206,8 @@ void FastConverter::copyAndCalculate() {
             cubeRange = cubeMax - cubeMin;
             cubeHist = std::isfinite(cubeMin) && std::isfinite(cubeMax) && cubeRange > 0;
         }
+
+        start1 = std::chrono::high_resolution_clock::now();
         
         statsXY.clearHistogramBuffers();
         statsXYZ.clearHistogramBuffers();
@@ -236,19 +260,26 @@ void FastConverter::copyAndCalculate() {
                     cubeHistogramFunc(val);
                 }
             } // end of XY loop
-        } // end of parallel Z loop
+        } // end of parallel Z loop                
         
         if (depth > 1) {
             // Consolidate partial XYZ histograms into final histogram
             statsXYZ.consolidatePartialHistogram();
         }
         
+        end1 = std::chrono::high_resolution_clock::now();
+        duration1 = ms_d(end1 - start1);
+        duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 3rd pass (channel and cube Histograms): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
+        
         PROGRESS(std::endl);
 
         DEBUG(std::cout << " Writing main and rotated datasets... " << std::flush;);
         PROGRESS("\tWrite data" << std::endl);
         TIMER(timer.start("Write"););
-                    
+             
+        start_io = std::chrono::high_resolution_clock::now();                      
         std::vector<hsize_t> memDims = {depth, height, width};
         std::vector<hsize_t> count = trimAxes({1, depth, height, width}, N);
         std::vector<hsize_t> start = trimAxes({currentStokes, 0, 0, 0}, N);
@@ -261,6 +292,10 @@ void FastConverter::copyAndCalculate() {
             std::vector<hsize_t> swizzledMemDims = {width, height, depth};
             writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, start);
         }
+        end_io = std::chrono::high_resolution_clock::now();
+        duration_io = ms_d(end_io - start_io);
+        total_io_ms += double(duration_io.count());
+
 
         // After writing and before mipmaps, we free the swizzled memory. We allocate it again next Stokes.
         if (depth > 1) {
@@ -276,7 +311,9 @@ void FastConverter::copyAndCalculate() {
         DEBUG(std::cout << " Mipmaps..." << std::endl;);
         PROGRESS("\tMipmaps\t\t");
         TIMER(timer.start("Mipmaps"););
-        
+
+
+        start1 = std::chrono::high_resolution_clock::now();                 
 #pragma omp parallel for
         for (hsize_t c = 0; c < depth; c++) {
             PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -295,9 +332,16 @@ void FastConverter::copyAndCalculate() {
         // Final mipmap calculation
         mipMaps.calculate();
         
+        end1 = std::chrono::high_resolution_clock::now();
+        duration1 = ms_d(end1 - start1);
+        duration1_ms = double(duration1.count());
+        std::cout << "BENCHMARKING : total pure-processing time of 4th pass (MipMaps accum and calc): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        total_pureprocessing_ms += duration1_ms;
+        
         TIMER(timer.start("Write"););
         PROGRESS("\tWrite stats & mipmaps" << std::endl);
         
+        start_io = std::chrono::high_resolution_clock::now();
         // Write the mipmaps
         mipMaps.write(currentStokes, 0);
         
@@ -308,6 +352,9 @@ void FastConverter::copyAndCalculate() {
             statsXYZ.write({1}, {currentStokes});
             statsZ.write({1, height, width}, {currentStokes, 0, 0});
         }
+        end_io = std::chrono::high_resolution_clock::now();
+        duration_io = ms_d(end_io - start_io);
+        total_io_ms += double(duration_io.count());
                 
         // Clear the mipmaps before the next Stokes
         TIMER(timer.start("Mipmaps"););
@@ -315,9 +362,140 @@ void FastConverter::copyAndCalculate() {
         
     } // end of Stokes loop
     
+    // total I/O time:
+    std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);
     TIMER(timer.start("Free"););
     
     delete[] standardCube;
+    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = ms_d(end - start);
+    double duration_ms = double(duration.count());
+    std::cout << "Execution of entire FastConverter::copyAndCalculate took " << duration_ms << " milliseconds " << duration_ms/1000.00 << " seconds" << std::endl;
+    double unaccounted_for_ms = duration.count() - total_pureprocessing_ms - total_io_ms;
+    std::cout << "Unaccounted for: " << unaccounted_for_ms/1000.00 << " seconds" << std::endl;
+
+}
+
+// I/O cost model for FastConverter -- mirrors copyAndCalculate() call by call. Everything is done
+// one whole Stokes at a time, so every phase is one call (or one call per dataset/level) per Stokes:
+//
+//   FITS read of the whole Stokes cube -> standardDataSet write -> swizzledDataSet write
+//   -> mipmap writes (all XY levels) -> statsXY write -> statsXYZ write -> statsZ write
+//
+// Same modelling conventions as SmartFastTwoPassConverter::estimateIO (layouts as created in
+// Converter::convert(), on-disk element sizes), so the two estimates are directly comparable.
+IOCostBreakdown FastConverter::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
+                                          hsize_t numBins,
+                                          const IOCostModel& readModel,
+                                          const IOCostModel& writeModel) {
+    IOCostBreakdown result;
+
+    // ---- on-disk layouts (as created in Converter::convert()) ----
+    const std::vector<hsize_t> standardDims4 = {stokes, depth, height, width};
+    const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
+    const std::vector<hsize_t> statsZDims    = {stokes, height, width};
+
+    // standardDataSet: chunked {1,1,TILE,TILE} only if both image dims >= TILE_SIZE (useChunks)
+    const std::vector<hsize_t> standardChunks =
+        useChunks({height, width}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE} : std::vector<hsize_t>{};
+
+    // swizzledDataSet: always contiguous for FAST -- Converter::convert() only chunks it (-C) for
+    // SMART* and SLOW converters.
+    const std::vector<hsize_t> swizzledChunks = {};
+
+    // statsZ: chunked {1, min(TILE,H), min(TILE,W)}
+    const std::vector<hsize_t> statsZChunks = {1, std::min((hsize_t)TILE_SIZE, height), std::min((hsize_t)TILE_SIZE, width)};
+
+    // On-disk element sizes of the 5 basic-stats datasets: MIN, MAX, SUM, SUM_SQ are float,
+    // NAN_COUNT is int64.
+    const hsize_t basicElemSizes[] = {4, 4, 4, 4, 8};
+
+    const hsize_t cubeBytes = depth * height * width * sizeof(float);
+
+    {
+        // readFitsData(..., cubeSize, ...): one contiguous read of the whole Stokes cube
+        PhaseAccumulator acc;
+        acc.add(repeatEstimate(IOOpEstimate{1, cubeBytes, cubeBytes}, stokes), readModel);
+        result.phases.push_back(acc.toPhase("FITS read (whole Stokes cube)"));
+    }
+    {
+        // writeHdf5Data(standardDataSet, ...) of {1, depth, height, width}
+        PhaseAccumulator acc;
+        auto e = estimateHyperslabIO(standardDims4, standardChunks, {1, depth, height, width}, sizeof(float));
+        acc.add(repeatEstimate(e, stokes), writeModel);
+        result.phases.push_back(acc.toPhase("standardDataSet write"));
+    }
+    if (depth > 1) {
+        // writeHdf5Data(swizzledDataSet, ...) of {1, width, height, depth}: covers the whole Stokes
+        // plane of a contiguous dataset -> a single contiguous run
+        PhaseAccumulator acc;
+        auto e = estimateHyperslabIO(swizzledDims4, swizzledChunks, {1, width, height, depth}, sizeof(float));
+        acc.add(repeatEstimate(e, stokes), writeModel);
+        result.phases.push_back(acc.toPhase("swizzledDataSet write (contiguous)"));
+    }
+    {
+        // mipMaps.write(currentStokes, 0): one full-depth write per XY level. Levels mirror the MipMaps
+        // constructor without Z-mips. Datasets are float on disk, chunked with tileDims only if the
+        // level is >= TILE_SIZE in both dims (useChunks).
+        // NOTE: with -z the Z-mip levels would add further writes; they are not modelled here.
+        PhaseAccumulator acc;
+        hsize_t hLevel = height, wLevel = width;
+        int mipXY = 1;
+        do {
+            if (mipXY > 1) {
+                std::vector<hsize_t> levelDims = {stokes, depth, hLevel, wLevel};
+                std::vector<hsize_t> levelChunks =
+                    useChunks({hLevel, wLevel}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE} : std::vector<hsize_t>{};
+                auto e = estimateHyperslabIO(levelDims, levelChunks, {1, depth, hLevel, wLevel}, sizeof(float));
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            mipXY *= 2;
+            hLevel = (hsize_t)std::ceil((float)hLevel / 2);
+            wLevel = (hsize_t)std::ceil((float)wLevel / 2);
+        } while (2 * wLevel > MIN_MIPMAP_SIZE || 2 * hLevel > MIN_MIPMAP_SIZE);
+        result.phases.push_back(acc.toPhase("mipmap writes (all XY levels)"));
+    }
+    {
+        // statsXY.write({1, depth}, {s, 0}): 5 basic datasets + channel histograms
+        PhaseAccumulator acc;
+        for (auto es : basicElemSizes) {
+            auto e = estimateHyperslabIO({stokes, depth}, {}, {1, depth}, es);
+            acc.add(repeatEstimate(e, stokes), writeModel);
+        }
+        if (numBins > 0) {
+            auto h = estimateHyperslabIO({stokes, depth, numBins}, {}, {1, depth, numBins}, sizeof(int64_t));
+            acc.add(repeatEstimate(h, stokes), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("statsXY write (basic + channel histograms)"));
+    }
+    if (depth > 1) {
+        {
+            // statsXYZ.write({1}, {s}): 5 single values + the cube histogram
+            PhaseAccumulator acc;
+            for (auto es : basicElemSizes) {
+                auto e = estimateHyperslabIO({stokes}, {}, {1}, es);
+                acc.add(repeatEstimate(e, stokes), writeModel);
+            }
+            if (numBins > 0) {
+                auto h = estimateHyperslabIO({stokes, numBins}, {}, {1, numBins}, sizeof(int64_t));
+                acc.add(repeatEstimate(h, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsXYZ write (basic + cube histogram)"));
+        }
+        {
+            // statsZ.write({1, height, width}, {s, 0, 0}): whole image into each of the 5 chunked datasets
+            PhaseAccumulator acc;
+            for (auto es : basicElemSizes) {
+                auto z = estimateHyperslabIO(statsZDims, statsZChunks, {1, height, width}, es);
+                acc.add(repeatEstimate(z, stokes), writeModel);
+            }
+            result.phases.push_back(acc.toPhase("statsZ write"));
+        }
+    }
+
+    return result;
 }

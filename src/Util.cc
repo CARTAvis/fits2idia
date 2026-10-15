@@ -150,14 +150,35 @@ void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::st
     value = strValueTmp;
 }
 
-void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination) {
+void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
     long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
+    if (bSwapStokesFreqAxis) {
+       // basically should instead be : long fpixel[] = {1, 1, stokes + 1, (long)channel + 1};
+       fpixel[2] = stokes + 1;
+       fpixel[3] = (long)channel + 1;
+    }
     int status(0);
     
     fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
     
     if (status != 0) {
         throw "Could not read image data";
+    }
+}
+
+void readFitsDataRow(fitsfile* filePtr, hsize_t channel, hsize_t row, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
+    long fpixel[] = {1, (long)row + 1, (long)channel + 1, stokes + 1};
+    if (bSwapStokesFreqAxis) {
+       // basically should instead be : long fpixel[] = {1, (long)row + 1, stokes + 1, (long)channel + 1};
+       fpixel[2] = stokes + 1;
+       fpixel[3] = (long)channel + 1;
+    }
+    int status(0);
+    
+    fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
+    
+    if (status != 0) {
+        throw "Could not read image data row";
     }
 }
 
@@ -253,4 +274,21 @@ void readHdf5Data(H5::DataSet& dataset, float* data, const std::vector<hsize_t>&
         fileSpace.selectHyperslab(H5S_SELECT_SET, count.data(), start.data());
     }
     dataset.read(data, H5::PredType::NATIVE_FLOAT, memSpace, fileSpace);
+}
+
+void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsize_t width, hsize_t height, hsize_t factorX, hsize_t factorY, hsize_t factorZ) {
+    int mipHeight = (height + factorY - 1)/ factorY;      //round result up
+    int mipWidth = (width + factorX - 1) / factorX;       //round result up
+    x = (mipIndex % (mipWidth * mipHeight)) % mipWidth * factorX;
+    y = (mipIndex % (mipWidth * mipHeight)) / mipWidth * factorY;
+    z = mipIndex / (mipWidth * mipHeight) * factorZ;
+}
+
+void getDividers(long int value, std::vector<int>& dividers) {
+   dividers.clear();
+   for(long int i=2;i<value;i++){
+      if( (value % i) == 0 ) {
+          dividers.push_back(i);
+      }
+   }
 }

@@ -51,8 +51,14 @@ set(SOURCE_FILES
     src/MipMap.cc
     src/Converter.cc
     src/FastConverter.cc
+    src/FastConverterLimitedMemory.cc
     src/SlowConverter.cc
-    src/Util.cc)
+    src/SmartConverter.cc
+    src/SmartFastConverter.cc
+    src/SmartFastTwoPassConverter.cc
+    src/MicroMemoryConverter.cc
+    src/Util.cc
+    src/IOCost.cc)
 
 add_executable(fits2idia ${SOURCE_FILES})
 target_link_libraries(fits2idia ${LINK_LIBS})

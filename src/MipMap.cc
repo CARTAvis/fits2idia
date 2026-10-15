@@ -43,8 +43,17 @@ void MipMap::createDataset(H5::Group group, const std::vector<hsize_t>& chunkDim
 void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     bufferSize = product(bufferDims);
     
+    // NEW as otherwise memory leak may happen
+    if (!this->bufferDims.empty()) { 
+       delete [] vals; 
+       delete[] count; 
+    }
+    
     vals = new double[bufferSize];
     count = new int[bufferSize];
+    
+    size_t allocated_bytes = bufferSize*sizeof(double) + bufferSize*sizeof(int);
+    std::cout << "MEMORY (MipMap::createBuffers): allocating  " << allocated_bytes/1e9 << " GB " << std::endl;
     
     resetBuffers();
     
@@ -56,6 +65,18 @@ void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     height = bufferDims[N - 2];
     depth = N > 2 ? bufferDims[N - 3] : 1;
     stokes = N > 3 ? bufferDims[N - 4] : 1;        
+}
+
+void MipMap::freeBuffers() {
+    // the destructor and createBuffers() use a non-empty bufferDims as the "allocated" flag
+    if (!bufferDims.empty()) {
+        delete[] vals;
+        delete[] count;
+        vals = nullptr;
+        count = nullptr;
+        bufferDims.clear();
+        bufferSize = 0;
+    }
 }
 
 void MipMap::write(hsize_t stokesOffset, hsize_t channelOffset) {
@@ -139,6 +160,12 @@ void MipMaps::createBuffers(const std::vector<hsize_t>& standardBufferDims) {
     for (auto& mipMap : mipMaps) {
         auto dims = mipDims(standardBufferDims, mipMap.mipXY, mipMap.mipZ);
         mipMap.createBuffers(dims);
+    }
+}
+
+void MipMaps::freeBuffers() {
+    for (auto& mipMap : mipMaps) {
+        mipMap.freeBuffers();
     }
 }
 
