@@ -116,73 +116,84 @@ void Converter::ParseExcludeIncludeOptions( std::string exclude_list, std::strin
 }
 
 std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
-    hsize_t memoryLimit  = memoryLimitInMb*1e6; // memory limit in bytes
-    std::unique_ptr<SlowConverter> slow_ptr = std::unique_ptr<SlowConverter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
-    bool can_use_slow = slow_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically               
-    // first check what is the minimum requirement of the slow converter (one channel at a time no parallelisation) :
-    MemoryUsage slow_converter_memory = slow_ptr->reportMemoryAndExecTime();
-    double slow_converter_memory_mb = slow_converter_memory.total/1e6;
-                
-    // safety buffer factor - how much more memory is required than calculated, currently 10%
-    double safety_buffer_factor = 1.1; 
-    
-    // maximum numbe of iterations when checking memory limits:
-    int max_iter = 10;
-               
-    double single_channel_image_mb = slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
-    double cube_size_mb = slow_ptr->depth*slow_ptr->width*slow_ptr->height*sizeof(float)/1e6;
-               
-    // use this path if we have at least enough memory for SlowConverter
-    std::unique_ptr<SmartFastConverter> smartfast_ptr = std::unique_ptr<SmartFastConverter>(new SmartFastConverter(inputFileName, outputFileName, progress, zMips)); 
-    bool can_use_smartfast = smartfast_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
-    MemoryUsage smartfast_converter_memory = smartfast_ptr->reportMemoryAndExecTime();
-    double smartfast_converter_memory_mb = smartfast_converter_memory.total/1e6;
+    hsize_t memoryLimit = memoryLimitInMb*1e6; // memory limit in bytes
 
-    std::unique_ptr<SmartFastTwoPassConverter> smartfasttwopass_ptr = std::unique_ptr<SmartFastTwoPassConverter>(new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips)); 
-    bool can_use_smartfasttwopass = smartfasttwopass_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
-    MemoryUsage smartfasttwopass_converter_memory = smartfasttwopass_ptr->reportMemoryAndExecTime();
-    double smartfasttwopass_converter_memory_mb = smartfasttwopass_converter_memory.total/1e6;
-                  
-    std::unique_ptr<SmartConverter> smart_ptr = std::unique_ptr<SmartConverter>(new SmartConverter(inputFileName, outputFileName, progress, zMips));
-    bool can_use_smart = smart_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically
-    MemoryUsage smart_converter_memory = smart_ptr->reportMemoryAndExecTime();
-    double smart_converter_memory_mb = smart_converter_memory.total/1e6;
+    struct Candidate {
+        std::string name;
+        std::unique_ptr<Converter> ptr;
+        bool canUse = false;
+        MemoryUsage mem;
+        std::function<void(int)> setMemoryLimit; // empty if the converter has no memory-limit setter
+    };
+    std::vector<Candidate> candidates;
 
-    std::unique_ptr<FastConverter> fast_ptr = std::unique_ptr<FastConverter>(new FastConverter(inputFileName, outputFileName, progress, zMips)); 
-    bool can_use_fast = fast_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
-    MemoryUsage fast_converter_memory = fast_ptr->reportMemoryAndExecTime();
-    double fast_converter_memory_mb = fast_converter_memory.total/1e6;
+    // Construct + evaluate one converter. Generic lambda (C++14) so checkMemoryUsage() and
+    // reportMemoryAndExecTime() are called on the derived type, exactly as before.
+    auto evaluate = [&](const char* name, auto* p, std::function<void(int)> setLimit) {
+        Candidate c;
+        c.name = name;
+        c.ptr.reset(p);
+        c.canUse = p->checkMemoryUsage(-1, memoryLimit, auto_mode); // -1: n_io_blocks found automatically
+        c.mem = p->reportMemoryAndExecTime();
+        c.setMemoryLimit = std::move(setLimit);
+        candidates.push_back(std::move(c));
+    };
 
-    std::unique_ptr<FastConverterLimitedMemory> fastlimited_ptr = std::unique_ptr<FastConverterLimitedMemory>(new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips)); 
-    bool can_use_fastlimited = fastlimited_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
-    MemoryUsage fastlimited_converter_memory = fastlimited_ptr->reportMemoryAndExecTime();
-    double fastlimited_converter_memory_mb = fastlimited_converter_memory.total/1e6;
+    auto* micro = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
+    evaluate("MICRO", micro, [micro](int mb) { micro->setMemoryLimit(mb); });
 
-    std::unique_ptr<MicroMemoryConverter> micro_ptr = std::unique_ptr<MicroMemoryConverter>(new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips)); 
-    bool can_use_micro = micro_ptr->checkMemoryUsage( -1, memoryLimit, auto_mode); // -1 for n_io_blocks to be established automatically 
-    MemoryUsage micro_converter_memory = micro_ptr->reportMemoryAndExecTime();
-    double micro_converter_memory_mb = micro_converter_memory.total/1e6;
+    evaluate("SLOW", new SlowConverter(inputFileName, outputFileName, progress, zMips), nullptr);
+    evaluate("FAST", new FastConverter(inputFileName, outputFileName, progress, zMips), nullptr);
 
-    printf("-----------------------------------------------------------------------\n");       
-    printf("COMPARISON OF CONVERTERS:\n");
-    printf("-----------------------------------------------------------------------\n");
-    printf("MIRCO               : %d %.3f [MB] %.3f [sec]\n",can_use_micro,micro_converter_memory_mb,micro_converter_memory.exec_time_sec);
-    printf("SLOW                : %d %.3f [MB] %.3f [sec]\n",can_use_slow,slow_converter_memory_mb,slow_converter_memory.exec_time_sec);
-    printf("FAST                : %d %.3f [MB] %.3f [sec]\n",can_use_fast,fast_converter_memory_mb,fast_converter_memory.exec_time_sec);
-    printf("FAST-LIMITED        : %d %.3f [MB] %.3f [sec]\n",can_use_fastlimited,fastlimited_converter_memory_mb,fastlimited_converter_memory.exec_time_sec);
-    printf("SMART-FAST          : %d %.3f [MB] %.3f [sec]\n",can_use_smartfast,smartfast_converter_memory_mb,smartfast_converter_memory.exec_time_sec);
-    printf("SMART-FAST-TWO-PASS : %d %.3f [MB] %.3f [sec]\n",can_use_smartfasttwopass,smartfasttwopass_converter_memory_mb,smartfasttwopass_converter_memory.exec_time_sec);
-    printf("SMART               : %d %.3f [MB] %.3f [sec]\n",can_use_smart,smart_converter_memory_mb,smart_converter_memory.exec_time_sec);
-    printf("-----------------------------------------------------------------------\n");
-    
-    // nothing optimal identified -> fall back to MicroMemoryConverter. With enough memory for one
-    // channel it reads/writes whole channels (rows_per_block = height), i.e. SlowConverter's I/O pattern,
-    // and below that it degrades to chunk-aligned row blocks instead of failing.
-    if (memoryLimitInMb > 0 && !auto_mode) {
-        micro_ptr->setMemoryLimit(memoryLimitInMb); // auto_mode already fitted it in checkMemoryUsage()
+    auto* fastlimited = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
+    evaluate("FAST-LIMITED", fastlimited, [fastlimited](int mb) { fastlimited->setMemoryLimit(mb); });
+
+    auto* smartfast = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
+    evaluate("SMART-FAST", smartfast, [smartfast](int mb) { smartfast->setMemoryLimit(mb); });
+
+    auto* smartfast2p = new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips);
+    evaluate("SMART-FAST-TWO-PASS", smartfast2p, [smartfast2p](int mb) { smartfast2p->setMemoryLimit(mb); });
+
+    auto* smartc = new SmartConverter(inputFileName, outputFileName, progress, zMips);
+    evaluate("SMART", smartc, [smartc](int mb) { smartc->setMemoryLimit(mb); });
+
+    // A candidate is valid if it fits in memory and has a real time estimate
+    // (exec_time_sec == 0 means estimateIO() is not implemented for that class).
+    auto isValid = [](const Candidate& c) { return c.canUse && c.mem.exec_time_sec > 0.0; };
+
+    // valid first, then fastest, then least memory; stable_sort keeps declaration order on ties
+    std::stable_sort(candidates.begin(), candidates.end(), [&](const Candidate& a, const Candidate& b) {
+        if (isValid(a) != isValid(b)) return isValid(a);
+        if (a.mem.exec_time_sec != b.mem.exec_time_sec) return a.mem.exec_time_sec < b.mem.exec_time_sec;
+        return a.mem.total < b.mem.total;
+    });
+
+    auto best = candidates.begin();
+    if (!isValid(*best)) {
+        // nothing usable -> fall back to MicroMemoryConverter. With enough memory for one channel it
+        // reads/writes whole channels (SlowConverter's I/O pattern); below that it degrades to
+        // chunk-aligned row blocks instead of failing.
+        best = std::find_if(candidates.begin(), candidates.end(),
+                            [](const Candidate& c) { return c.name == "MICRO"; });
+        std::cout << "WARNING : no converter fits the memory limit with a valid time estimate -> falling back to MICRO" << std::endl;
     }
-    std::cout << "DEBUG : using MicroMemoryConverter as the fallback (rows_per_block = " << micro_ptr->getRowsPerBlock() << ")" << std::endl;
-    return micro_ptr;
+
+    printf("-----------------------------------------------------------------------\n");
+    printf("COMPARISON OF CONVERTERS (sorted by predicted execution time):\n");
+    printf("-----------------------------------------------------------------------\n");
+    for (const auto& c : candidates) {
+        printf("%s %-20s : %d %12.3f [MB] %10.3f [sec]\n", (&c == &*best) ? "*" : " ",
+               c.name.c_str(), c.canUse, c.mem.total/1e6, c.mem.exec_time_sec);
+    }
+    printf("-----------------------------------------------------------------------\n");
+
+    if (memoryLimitInMb > 0 && !auto_mode && best->setMemoryLimit) {
+        best->setMemoryLimit(memoryLimitInMb); // auto_mode already fitted it in checkMemoryUsage()
+    }
+    std::cout << "DEBUG : selected " << best->name << " converter (" << best->mem.exec_time_sec
+              << " sec, " << best->mem.total/1e6 << " MB)" << std::endl;
+
+    return std::move(best->ptr); // the other candidates are destroyed (and their FITS files closed) here
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
