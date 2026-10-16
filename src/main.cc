@@ -112,7 +112,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     usage << std::endl;
     usage << "Recommended usage to specify optimal convertion algorithm, and how much memory they have available in MB (mem_MB):" << std::endl
           << "   - to automatically select optimal smart conversion algorithm, execute : fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -S -a" << std::endl
-          << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM" << std::endl
+          << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM -a" << std::endl
           << "   - to obtain estimated memory requirements and execution time, add option: -m or -R" << std::endl;
 
     while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:AT:H:E:I:K:L:")) != -1) {
