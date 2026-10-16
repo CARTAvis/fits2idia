@@ -21,14 +21,22 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
    
    printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
 
+   if (strcasecmp(smartconverter_type,"slow")==0 || strcasecmp(first_char,"s")==0) {
+      return eSlowConverter;
+   }
+   if (strcasecmp(smartconverter_type,"fast")==0 || strcasecmp(first_char,"f")==0) {
+      return eFastConverter;
+   }
+   if (strcasecmp(smartconverter_type,"fast-limited")==0 || strcasecmp(smartconverter_type,"limited")==0 || strcasecmp(first_char,"l")==0) {
+      return eFastMemoryLimitedConverter;
+   }
    if (strcasecmp(smartconverter_type,"micro")==0 || strcasecmp(first_char,"m")==0) {
       return eSmartMicroMemoryConverter;
    }
    if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
       return eSmartConverterSpatialParallel;
    }
-   if (strcasecmp(smartconverter_type,"frequency")==0 || strcasecmp(smartconverter_type,"channel")==0 || strcasecmp(smartconverter_type,"fast")==0 ||
-       strcasecmp(first_char,"f")==0 || strcasecmp(first_char,"c")==0) {
+   if (strcasecmp(smartconverter_type,"frequency")==0 || strcasecmp(smartconverter_type,"channel")==0 || strcasecmp(first_char,"c")==0) {
       return eSmartConverterChannelParallel;
    }
    if (strcasecmp(smartconverter_type,"frequency-twopass")==0 || strcasecmp(smartconverter_type,"channel-twopass")==0 || strcasecmp(smartconverter_type,"fast-twopass")==0 ||
@@ -94,7 +102,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-o\tOutput filename" << std::endl 
     << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
-    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', 'micro' or 'fast' (parallelised over channels)" << std::endl
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', 'micro' or old algorithms 'slow' and 'fast' (parallelised over channels)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
@@ -108,6 +116,12 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl
     << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
     << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
+    
+    usage << std::endl;
+    usage << "Recommended usage to specify optimal convertion algorithm, and how much memory they have available in MB (mem_MB):" << std::endl
+          << "   - to automatically select optimal smart conversion algorithm, execute : fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -S -a" << std::endl
+          << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM" << std::endl
+          << "   - to obtain estimated memory requirements and execution time, add option: -m or -R" << std::endl;
 
     while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:AT:H:E:I:K:L:")) != -1) {
         switch (opt) {
@@ -224,6 +238,10 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                    converter_type = optarg;
                    cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
                    printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
+                   
+                   if( cmdLineOptions.smartconverter_type == eSlowConverter) {
+                      cmdLineOptions.slow = true;
+                   }
                 }
                 break;
             case 'z':

@@ -56,75 +56,162 @@
 // even a single channel and defeats this class's whole reason to exist.
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// STEP 5: pass 1 reads/writes a BLOCK of rows_per_block image rows per call instead of one row.
+//
+// rows_per_block is sized from the memory limit (setMemoryLimit / ReduceMemoryUsage -> fitToMemory):
+//   - enough memory for a whole channel -> rows_per_block = height, i.e. exactly the per-channel I/O
+//     of the old SlowConverter (but still without its second FITS reread, see STEP 4);
+//   - otherwise the largest multiple of TILE_SIZE rows that fits, so every block covers whole rows of
+//     standardDataSet chunks ({1,1,TILE_SIZE,TILE_SIZE}) and each chunk is written in one piece instead
+//     of TILE_SIZE partial row writes;
+//   - below TILE_SIZE rows, the largest power of two (a divisor of TILE_SIZE, so blocks never straddle a
+//     chunk row); 1 row is the old behaviour of this converter.
+// The FITS read needs no new helper: readFitsDataRow() starts at (row y0) and fits_read_pix() reads
+// nRows*width consecutive pixels, which are exactly rows y0..y0+nRows-1 of that channel.
+//
+// The row-block buffer and the rotation-pass tile buffers never coexist, so both knobs (rows_per_block,
+// rotation_tile_size) are fitted independently against the same budget:
+//   peak = fixed (mipmaps + XY/XYZ stats) + max(row block, rotation tile buffers)
+// ---------------------------------------------------------------------------------------------
+
 #include "Converter.h"
 
 #ifdef _OPENMP
     #include <omp.h>
 #endif
 
-MicroMemoryConverter::MicroMemoryConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) : SmartConverter(inputFileName, outputFileName, progress, zMips) {}
+MicroMemoryConverter::MicroMemoryConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips)
+    : SmartConverter(inputFileName, outputFileName, progress, zMips), rows_per_block(0) {
+    // default (no memory limit): whole channel per pass-1 call, full TILE_SIZE rotation tiles
+    rows_per_block = height;
+    rotation_tile_size = TILE_SIZE;
+}
+
+// Alive for the whole conversion: mipmap buffers (one channel) and the XY / XYZ stats buffers.
+hsize_t MicroMemoryConverter::fixedMemory() {
+    hsize_t fixed = MipMaps::size(standardDims, {1, height, width}, zMips);
+    fixed += Stats::size({depth}, numBins);
+    if (depth > 1) {
+        fixed += Stats::size({}, numBins, depth);
+    }
+    return fixed;
+}
+
+// Pass-1 buffer: rows image rows of one channel.
+hsize_t MicroMemoryConverter::rowBlockMemory(hsize_t rows) {
+    return rows * width * sizeof(float);
+}
+
+// Rotation pass: standardSlice + rotatedSlice (one Stokes, full depth, tile x tile) + tile-sized Z stats.
+hsize_t MicroMemoryConverter::rotationMemory(hsize_t tile) {
+    if (depth <= 1) {
+        return 0;
+    }
+    return 2 * product(trimAxes({1, depth, tile, tile}, N)) * sizeof(float) + Stats::size({tile, tile});
+}
+
+// Largest row count whose buffer fits in budget, aligned to the standardDataSet chunk rows:
+// whole channel if possible, else a multiple of TILE_SIZE, else a power of two (divides TILE_SIZE).
+// Returns 0 if not even one row fits.
+hsize_t MicroMemoryConverter::chooseRowsPerBlock(hsize_t budget) {
+    const hsize_t maxRows = budget / (width * sizeof(float));
+    if (maxRows == 0) {
+        return 0;
+    }
+    if (maxRows >= height) {
+        return height;
+    }
+    if (maxRows >= TILE_SIZE) {
+        return (maxRows / TILE_SIZE) * TILE_SIZE;
+    }
+    hsize_t rows = 1;
+    while (rows * 2 <= maxRows) {
+        rows *= 2;
+    }
+    return rows;
+}
+
+// Sets rows_per_block and rotation_tile_size for the given limit. Leaves both untouched and returns
+// false if nothing fits (so a failed attempt never degrades the configuration).
+bool MicroMemoryConverter::fitToMemory(hsize_t memoryLimit) {
+    const hsize_t fixed = fixedMemory();
+    if (fixed >= memoryLimit) {
+        std::cout << "MicroMemoryConverter: cannot fit, mipmaps + XY/XYZ stats alone need " << fixed * 1e-9
+                  << " GB (limit " << memoryLimit * 1e-9 << " GB)" << std::endl;
+        return false;
+    }
+    const hsize_t budget = memoryLimit - fixed;
+
+    const hsize_t rows = chooseRowsPerBlock(budget);
+    if (rows == 0) {
+        std::cout << "MicroMemoryConverter: cannot fit, not even one image row (" << rowBlockMemory(1) * 1e-9
+                  << " GB) fits in the remaining " << budget * 1e-9 << " GB" << std::endl;
+        return false;
+    }
+
+    hsize_t tile = TILE_SIZE;
+    if (depth > 1) {
+        while (rotationMemory(tile) > budget && tile / 2 >= (hsize_t)MIN_ROTATION_TILE) {
+            tile /= 2;
+        }
+        if (rotationMemory(tile) > budget) {
+            std::cout << "MicroMemoryConverter: cannot fit, even " << tile << "x" << tile << " rotation tiles need "
+                      << rotationMemory(tile) * 1e-9 << " GB (remaining budget " << budget * 1e-9 << " GB)" << std::endl;
+            return false;
+        }
+    }
+
+    rows_per_block = rows;
+    rotation_tile_size = (int)tile;
+    std::cout << "MicroMemoryConverter: rows_per_block = " << rows_per_block << " (of " << height
+              << "), rotation_tile_size = " << rotation_tile_size << std::endl;
+    return true;
+}
+
+void MicroMemoryConverter::setMemoryLimit(int _memoryLimitInMb) {
+    memoryLimitInMb = _memoryLimitInMb;
+    if (memoryLimitInMb > 0) {
+        if (!fitToMemory((hsize_t)(memoryLimitInMb * 1e6))) { // same MB convention as main.cc
+            std::cout << "WARNING (MicroMemoryConverter) : configuration does not fit in " << memoryLimitInMb
+                      << " MB -> keeping rows_per_block = " << rows_per_block << ", rotation_tile_size = "
+                      << rotation_tile_size << " (checkMemoryUsage will report the overrun)" << std::endl;
+        }
+    } else {
+        rows_per_block = height;
+        rotation_tile_size = TILE_SIZE;
+    }
+}
 
 MemoryUsage MicroMemoryConverter::calculateMemoryUsage() {
     MemoryUsage m;
     const hsize_t T = rotation_tile_size;
 
-    // STEP 2: "Main dataset" is now a single row, not a full channel.
-    m.sizes["Main dataset"] = width * sizeof(float);
+    m.sizes["Main dataset (block of " + std::to_string(rows_per_block) + " rows)"] = rowBlockMemory(rows_per_block);
     m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
     m.sizes["XY stats"] = Stats::size({depth}, numBins);
 
     if (depth > 1) {
-        m.sizes["Rotation"] = 2 * product(trimAxes({1, depth, T, T}, N)) * sizeof(float);
+        m.sizes["Rotation (" + std::to_string(T) + "x" + std::to_string(T) + " tiles)"] = 2 * product(trimAxes({1, depth, T, T}, N)) * sizeof(float);
         m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
         m.sizes["Z stats"] = Stats::size({T, T});
     }
 
-    for (auto& kv : m.sizes) {
-        m.total += kv.second;
-    }
+    // the row-block buffer and the rotation-pass buffers are never allocated at the same time
+    m.total = fixedMemory() + std::max(rowBlockMemory(rows_per_block), rotationMemory(T));
+    m.note = " (row-block buffer and rotation/Z-stats tile buffers are not allocated at the same time)";
 
-    if (depth > 1) {
-        // Main dataset (now a single row) and the rotation-pass buffers are never allocated at the
-        // same time, so we don't double-count whichever of the two is smaller (in practice, always
-        // the row buffer now).
-        m.total -= std::min(m.sizes["Main dataset"], m.sizes["Rotation"] + m.sizes["Z stats"]);
-        m.note = " (Main dataset row buffer and slices for rotation and Z statistics are not allocated at the same time.)";
-    }
-
-    printf("MicroMemoryConverter::calculateMemoryUsage = %.3f [MB]\n",m.total/1e6);
+    DEBUG(printf("MicroMemoryConverter::calculateMemoryUsage = %.3f [MB]\n", m.total / 1e6););
 
     return m;
 }
 
 bool MicroMemoryConverter::ReduceMemoryUsage(hsize_t memoryLimit, int max_iter) {
-    const int MIN_ROTATION_TILE = 32;
-    MemoryUsage mem = calculateMemoryUsage();
-    if (mem.total <= memoryLimit) return true;
-    if (depth <= 1) {
-        std::cout << "MicroMemoryConverter: depth == 1, nothing to tune" << std::endl;
-        return false;
+    UNUSED(max_iter);
+    if (calculateMemoryUsage().total <= memoryLimit) {
+        return true;
     }
-
-    // Best case: total memory at the smallest tile we are willing to use.
-    const int originalTile = rotation_tile_size;
-    rotation_tile_size = std::min(MIN_ROTATION_TILE, originalTile);
-    const hsize_t floorBytes = calculateMemoryUsage().total;
-    rotation_tile_size = originalTile;
-
-    if (floorBytes > memoryLimit) {
-        std::cout << "MicroMemoryConverter: cannot fit, even with " << MIN_ROTATION_TILE << "x" << MIN_ROTATION_TILE
-                  << " rotation tiles total is " << floorBytes/1e9 << " GB (limit " << memoryLimit/1e9 << " GB)" << std::endl;
-        return false;   // rotation_tile_size left untouched
-    }
-
-    int iter = 0;
-    while (mem.total > memoryLimit && rotation_tile_size / 2 >= MIN_ROTATION_TILE && iter++ < max_iter) {
-        rotation_tile_size /= 2;
-        mem = calculateMemoryUsage();
-        std::cout << "MicroMemoryConverter: rotation_tile_size -> " << rotation_tile_size
-                  << ", total = " << mem.total/1e9 << " GB" << std::endl;
-    }
-    return mem.total <= memoryLimit;
+    return fitToMemory(memoryLimit);
 }
 
 void MicroMemoryConverter::copyAndCalculate() {
@@ -134,9 +221,12 @@ void MicroMemoryConverter::copyAndCalculate() {
     hsize_t numTiles = ((width + T - 1) / T) * ((height + T - 1) / T);
     const hsize_t tileProgressStride = std::max((hsize_t)1, (hsize_t)(numTiles / 100));
 
-    // STEP 2: allocate a single row at a time (all X, fixed Y, channel, stokes) instead of a full channel.
+    // STEP 2/5: allocate a block of rows_per_block rows (all X, consecutive Y, one channel, one stokes).
+    const hsize_t R = std::max((hsize_t)1, std::min(rows_per_block, height));
     TIMER(timer.start("Allocate"););
-    standardCube = new float[width];
+    standardCube = new float[R * width];
+    std::cout << "MicroMemoryConverter: rows_per_block = " << R << " -> " << (height + R - 1) / R
+              << " FITS read / HDF5 write call(s) per channel" << std::endl;
 
     // Allocate one stokes of stats at a time
     statsXY.createBuffers({depth});
@@ -169,12 +259,8 @@ void MicroMemoryConverter::copyAndCalculate() {
     std::cout << "MicroMemoryConverter: splitting each row of width " << width << " into " << columnChunks.size()
               << " column chunks of ~" << chunkWidth << " columns (coarsest mip factor = " << coarsestMipXY << ")" << std::endl;
 
-    // One StatsCounter scratch slot per chunk, reused (and reset) for every row.
+    // One StatsCounter scratch slot per chunk, reused (and reset) for every row block.
     std::vector<StatsCounter> chunkCounters(columnChunks.size());
-
-    // Row-level HDF5 write geometry: the row buffer is 1-D (width elements); count/start below
-    // place it correctly within the (up to 4-D) standard dataset on disk.
-    std::vector<hsize_t> rowMemDims = {width};
 
     std::string timerLabelStatsMipmaps = depth > 1 ? "XY and XYZ statistics and mipmaps" : "XY statistics and mipmaps";
 
@@ -208,37 +294,40 @@ void MicroMemoryConverter::copyAndCalculate() {
 
             double channel_io_ms = 0.00;
             auto start1 = std::chrono::high_resolution_clock::now();
-            for (hsize_t y = 0; y < height; y++) {
-                // read one row
+            for (hsize_t y0 = 0; y0 < height; y0 += R) {
+                const hsize_t nRows = std::min(R, height - y0);
+
+                // read nRows consecutive rows: fits_read_pix continues across row ends
                 auto start_io = std::chrono::high_resolution_clock::now();
                 TIMER(timer.start("Read"););
-                readFitsDataRow(inputFilePtr, c, y, s, width, standardCube, swapStokesFreqAxis);
+                readFitsDataRow(inputFilePtr, c, y0, s, nRows * width, standardCube, swapStokesFreqAxis);
                 auto end_io = std::chrono::high_resolution_clock::now();
                 channel_io_ms += double(ms_d(end_io - start_io).count());
 
-                // write the row to the standard dataset
+                // write the row block to the standard dataset (whole chunk rows when R % TILE_SIZE == 0)
                 TIMER(timer.start("Write"););
                 start_io = std::chrono::high_resolution_clock::now();
-                std::vector<hsize_t> rowCount = trimAxes({1, 1, 1, width}, N);
-                std::vector<hsize_t> rowStart = trimAxes({s, c, y, 0}, N);
-                writeHdf5Data(standardDataSet, standardCube, rowMemDims, rowCount, rowStart);
+                std::vector<hsize_t> blockMemDims = {nRows, width};
+                std::vector<hsize_t> blockCount = trimAxes({1, 1, nRows, width}, N);
+                std::vector<hsize_t> blockStart = trimAxes({s, c, y0, 0}, N);
+                writeHdf5Data(standardDataSet, standardCube, blockMemDims, blockCount, blockStart);
                 end_io = std::chrono::high_resolution_clock::now();
                 channel_io_ms += double(ms_d(end_io - start_io).count());
 
                 TIMER(timer.start(timerLabelStatsMipmaps););
 
-                // STEP 3: process this row's columns in parallel chunks. Each chunk accumulates
-                // into its own StatsCounter (merged below) and writes directly into the shared
-                // mipMaps object — safe because chunk boundaries are aligned to the coarsest mip
-                // factor (see note at top of file).
+                // STEP 3: process the block's columns in parallel chunks (each chunk covers all nRows rows).
+                // Each chunk accumulates into its own StatsCounter (merged below) and writes directly into
+                // the shared mipMaps object -- safe because chunk boundaries are aligned to the coarsest mip
+                // factor, so disjoint column ranges never share a mip cell (see note at top of file).
                 for (auto& cc : chunkCounters) {
                     cc.reset();
                 }
 
-#pragma omp parallel for schedule(dynamic) default(none) shared(columnChunks, standardCube, mipMaps, chunkCounters, y)
+#pragma omp parallel for schedule(dynamic) shared(columnChunks, chunkCounters)
                 for (size_t ci = 0; ci < columnChunks.size(); ci++) {
-                    hsize_t xStart = columnChunks[ci].first;
-                    hsize_t xEnd = columnChunks[ci].second;
+                    const hsize_t xStart = columnChunks[ci].first;
+                    const hsize_t xEnd = columnChunks[ci].second;
                     StatsCounter& counterChunk = chunkCounters[ci];
 
                     std::function<void(float)> accumulateChunk;
@@ -254,14 +343,18 @@ void MicroMemoryConverter::copyAndCalculate() {
 
                     accumulateChunk = first_accumulate_chunk;
 
-                    for (hsize_t x = xStart; x < xEnd; x++) {
-                        auto& val = standardCube[x];
+                    for (hsize_t r = 0; r < nRows; r++) {
+                        const hsize_t y = y0 + r;              // GLOBAL row index for the mipmaps
+                        const float* row = standardCube + r * width;
+                        for (hsize_t x = xStart; x < xEnd; x++) {
+                            const float val = row[x];
 
-                        if (std::isfinite(val)) {
-                            accumulateChunk(val);
-                            mipMaps.accumulate(val, x, y, 0);
-                        } else {
-                            counterChunk.accumulateNonFinite();
+                            if (std::isfinite(val)) {
+                                accumulateChunk(val);
+                                mipMaps.accumulate(val, x, y, 0);
+                            } else {
+                                counterChunk.accumulateNonFinite();
+                            }
                         }
                     }
                 } // end of parallel column-chunk loop
@@ -269,9 +362,9 @@ void MicroMemoryConverter::copyAndCalculate() {
                 for (auto& counterChunk : chunkCounters) {
                     counterXY.accumulateFromCounter(counterChunk);
                 }
-            } // end of row loop
+            } // end of row-block loop
             total_io_ms += channel_io_ms;
-            std::cout << "I/O (readFitsDataRow+writeHdf5Data, " << height << " rows) for channel : " << c << " took " << channel_io_ms << " milliseconds." << std::endl;
+            std::cout << "I/O (readFitsDataRow+writeHdf5Data, " << (height + R - 1) / R << " block(s) of up to " << R << " rows) for channel : " << c << " took " << channel_io_ms << " milliseconds." << std::endl;
 
             // Final correction of XY min and max
             DEBUG(std::cout << " Final XY stats..." << std::flush;);
@@ -340,16 +433,17 @@ void MicroMemoryConverter::copyAndCalculate() {
             if (chanHist) {
                 double channel_io_ms = 0.00;
                 auto start1 = std::chrono::high_resolution_clock::now();
-                for (hsize_t y = 0; y < height; y++) {
+                for (hsize_t y0 = 0; y0 < height; y0 += R) {
+                    const hsize_t nRows = std::min(R, height - y0);
                     auto start_io = std::chrono::high_resolution_clock::now();
                     TIMER(timer.start("Read"););
-                    readFitsDataRow(inputFilePtr, c, y, s, width, standardCube, swapStokesFreqAxis);
+                    readFitsDataRow(inputFilePtr, c, y0, s, nRows * width, standardCube, swapStokesFreqAxis);
                     auto end_io = std::chrono::high_resolution_clock::now();
                     channel_io_ms += double(ms_d(end_io - start_io).count());
 
                     TIMER(timer.start("Histograms"););
-                    for (hsize_t x = 0; x < width; x++) {
-                        auto& val = standardCube[x];
+                    for (hsize_t p = 0; p < nRows * width; p++) {
+                        auto& val = standardCube[p];
                         if (std::isfinite(val)) {
                             statsXY.accumulateHistogram(val, chanMin, chanRange, c);
                         }
@@ -408,14 +502,13 @@ void MicroMemoryConverter::copyAndCalculate() {
     } // end of stokes
 
     // Free memory
-    DEBUG(std::cout << "Freeing memory from row buffer... " << std::endl;);
+    DEBUG(std::cout << "Freeing memory from row-block buffer... " << std::endl;);
     TIMER(timer.start("Free"););
 
     delete[] standardCube;
 
-    // Swizzle — UNCHANGED from SlowConverter. This reads from the already-written HDF5
-    // standardDataSet in TILE_SIZE tiles, so it doesn't care that the first pass populated that
-    // dataset one row at a time rather than one channel at a time.
+    // Swizzle -- reads the already-written HDF5 standardDataSet in rotation_tile_size x
+    // rotation_tile_size x depth tiles, so it doesn't care how many rows pass 1 wrote per call.
     if (depth > 1) {
         DEBUG(std::cout << "Performing tiled rotation." << std::endl;);
         PROGRESS("Tiled rotation & Z stats" << std::endl);
@@ -624,30 +717,36 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
     IOCostBreakdown result;
 
     std::vector<hsize_t> standardDims = {stokes, depth, height, width};
-    std::vector<hsize_t> chunkDims    = {1, 1, TILE_SIZE, TILE_SIZE};
+    // standardDataSet: chunked {1,1,TILE,TILE} only if both image dims >= TILE_SIZE (as in Converter::convert)
+    std::vector<hsize_t> chunkDims = useChunks({height, width}) ? std::vector<hsize_t>{1, 1, TILE_SIZE, TILE_SIZE}
+                                                                : std::vector<hsize_t>{};
 
-    // ---------- Main per-row loop: MicroMemoryConverter.cc lines ~174-281 ----------
-    // Same total bytes as SlowConverter's per-channel read/write, but issued one ROW
-    // at a time instead of one CHANNEL at a time -- `height` times as many logical
-    // HDF5/FITS calls for the same data. This is the real cost story for this
-    // converter: it trades memory footprint for transaction count.
+    // ---------- Pass 1: one FITS read + one HDF5 write per block of R rows ----------
+    // R = rows_per_block: R == height reproduces the old SlowConverter per-channel I/O, R == 1 the old
+    // row-at-a-time behaviour. With R a multiple of TILE_SIZE every write covers whole chunk rows.
+    const hsize_t R = std::max((hsize_t)1, std::min(rows_per_block, height));
+    const hsize_t nFullBlocks = height / R;
+    const hsize_t lastRows = height % R;
 
     {
         PhaseAccumulator acc;
-        hsize_t bytesPerOp = width * sizeof(float);
-        acc.add({ stokes * depth * height, bytesPerOp, stokes * depth * height * bytesPerOp }, readModel);
-        result.phases.push_back(acc.toPhase("1st pass: FITS row read (readFitsDataRow)"));
+        hsize_t bytesPerOp = R * width * sizeof(float);
+        acc.add(repeatEstimate(IOOpEstimate{1, bytesPerOp, bytesPerOp}, stokes * depth * nFullBlocks), readModel);
+        if (lastRows > 0) {
+            hsize_t lastBytes = lastRows * width * sizeof(float);
+            acc.add(repeatEstimate(IOOpEstimate{1, lastBytes, lastBytes}, stokes * depth), readModel);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: FITS row-block read (" + std::to_string(R) + " rows)"));
     }
     {
         PhaseAccumulator acc;
-        // One row (width elements) of one channel, into a dataset chunked at
-        // TILE_SIZE x TILE_SIZE. This call still touches every chunk spanning
-        // the row's full width, but only fills 1 of each chunk's TILE_SIZE rows
-        // -- see the note below on why that matters more than it looks.
-        auto perRow = estimateHyperslabIO(standardDims, chunkDims,
-                                           {1, 1, 1, width}, sizeof(float));
-        acc.add(repeatEstimate(perRow, stokes * depth * height), writeModel);
-        result.phases.push_back(acc.toPhase("1st pass: standardDataSet row write"));
+        auto perBlock = estimateHyperslabIO(standardDims, chunkDims, {1, 1, R, width}, sizeof(float));
+        acc.add(repeatEstimate(perBlock, stokes * depth * nFullBlocks), writeModel);
+        if (lastRows > 0) {
+            auto lastBlock = estimateHyperslabIO(standardDims, chunkDims, {1, 1, lastRows, width}, sizeof(float));
+            acc.add(repeatEstimate(lastBlock, stokes * depth), writeModel);
+        }
+        result.phases.push_back(acc.toPhase("1st pass: standardDataSet row-block write (" + std::to_string(R) + " rows)"));
     }
 
     // mipMaps.write(s, c): still once per channel (the row loop only computes one
@@ -667,13 +766,16 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
     }
 
     if (depth <= 1) {
-        // ---------- depth == 1: single-channel histogram pass, lines ~298-345 ----------
-        // Same row-at-a-time FITS reread as SlowConverter's whole-channel reread,
-        // just issued as `height` row-sized calls instead of one channel-sized call.
+        // ---------- depth == 1: single-channel histogram pass ----------
+        // FITS reread of the single channel in the same row blocks as pass 1.
         PhaseAccumulator acc;
-        hsize_t bytesPerOp = width * sizeof(float);
-        acc.add({ stokes * height, bytesPerOp, stokes * height * bytesPerOp }, readModel);
-        result.phases.push_back(acc.toPhase("Histogram pass (depth==1): FITS row reread"));
+        hsize_t bytesPerOp = R * width * sizeof(float);
+        acc.add(repeatEstimate(IOOpEstimate{1, bytesPerOp, bytesPerOp}, stokes * nFullBlocks), readModel);
+        if (lastRows > 0) {
+            hsize_t lastBytes = lastRows * width * sizeof(float);
+            acc.add(repeatEstimate(IOOpEstimate{1, lastBytes, lastBytes}, stokes), readModel);
+        }
+        result.phases.push_back(acc.toPhase("Histogram pass (depth==1): FITS row-block reread"));
 
         PhaseAccumulator statsAcc;
         const hsize_t elemSizes[] = {4, 4, 4, 4, 8}; // MIN, MAX, SUM, SUM_SQ (float on disk), NAN_COUNT (int64)
@@ -718,7 +820,7 @@ IOCostBreakdown MicroMemoryConverter::estimateIO(hsize_t stokes, hsize_t depth, 
             result.phases.push_back(histAcc.toPhase("Rotation pass: statsXY/statsXYZ writeHistogram"));
         }
 
-        // ---------- Tiled rotation pass: lines ~386-538, byte-for-byte the same as SlowConverter ----------
+        // ---------- Tiled rotation pass (rotation_tile_size tiles) ----------
         addTiledRotationPhases(result, stokes, depth, height, width, readModel, writeModel, getSwizzledChunkDims(), rotation_tile_size);
     }
 

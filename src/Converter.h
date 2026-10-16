@@ -15,7 +15,8 @@
 
 using ms_d = std::chrono::duration<double, std::milli>;
 
-enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4 };
+enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4, 
+                           eSlowConverter=5, eFastConverter=6, eFastMemoryLimitedConverter=7 };
 
 // It is now memory and execution time:
 struct MemoryUsage {
@@ -197,7 +198,9 @@ public:
     SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
 //    SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMip);
     MemoryUsage calculateMemoryUsage() override;
-    void setMemoryLimit(int _memoryLimitInMb){ memoryLimitInMb = _memoryLimitInMb; }
+    // virtual so that getConverter() (which holds a SmartConverter*) reaches overrides such as
+    // MicroMemoryConverter::setMemoryLimit, which also sizes its buffers to the limit
+    virtual void setMemoryLimit(int _memoryLimitInMb){ memoryLimitInMb = _memoryLimitInMb; }
 
     // flag to enable single pass through the data 
     // XYZ (cube) histogram is calculated using channel histograms 
@@ -341,8 +344,22 @@ public:
 
     virtual const char* getConverterType() override { return "MICRO-MEMORY"; }
 
+    // Sizes rows_per_block and rotation_tile_size to the limit (0 = no limit -> whole channel, full tile).
+    virtual void setMemoryLimit(int _memoryLimitInMb) override;
+    hsize_t getRowsPerBlock() const { return rows_per_block; }
+
 protected:
     void copyAndCalculate() override;
+
+    // memory model: peak = fixed + max(pass-1 row block, rotation tile buffers)
+    hsize_t fixedMemory();                       // mipmaps + XY/XYZ stats (alive for the whole run)
+    hsize_t rowBlockMemory(hsize_t rows);        // pass-1 FITS/HDF5 row-block buffer
+    hsize_t rotationMemory(hsize_t tile);        // standardSlice + rotatedSlice + tile-sized Z stats
+    hsize_t chooseRowsPerBlock(hsize_t budget);  // largest chunk-aligned row count fitting in budget, 0 if none
+    bool fitToMemory(hsize_t memoryLimit);       // sets rows_per_block / rotation_tile_size, false if nothing fits
+
+    static constexpr int MIN_ROTATION_TILE = 32;     // below this the rotation-pass I/O granularity is hopeless
+    hsize_t rows_per_block;                      // image rows read/written per pass-1 call (height = whole channel)
 };
 
 
