@@ -15,7 +15,8 @@
 
 using ms_d = std::chrono::duration<double, std::milli>;
 
-enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4 };
+enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4, 
+                           eSlowConverter=5, eFastConverter=6, eFastMemoryLimitedConverter=7 };
 
 // It is now memory and execution time:
 struct MemoryUsage {
