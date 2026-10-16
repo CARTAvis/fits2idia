@@ -32,7 +32,7 @@
 #include <algorithm>
 
 FastConverterLimitedMemory::FastConverterLimitedMemory(std::string inputFileName, std::string outputFileName, bool progress, bool zMips)
-    : FastConverter(inputFileName, outputFileName, progress, zMips), memoryLimitInMb(0), stripWidth(0), mipChannelBlock(0) {
+    : Converter(inputFileName, outputFileName, progress, zMips), memoryLimitInMb(0), stripWidth(0), mipChannelBlock(0) {
     // default: behave exactly like FastConverter (single strip, all channels' mipmaps at once)
     stripWidth = width;
     mipChannelBlock = depth;

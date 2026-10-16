@@ -16,7 +16,7 @@
 using ms_d = std::chrono::duration<double, std::milli>;
 
 enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4, 
-                           eSlowConverter=5, eFastConverter=6, eFastMemoryLimitedConverter=7 };
+                           eFastMemoryLimitedConverter=7 };
 
 // It is now memory and execution time:
 struct MemoryUsage {
@@ -145,24 +145,11 @@ protected:
 };
 
 
-class FastConverter : public Converter {
-public:
-    FastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
-    MemoryUsage calculateMemoryUsage() override;
-    
-    virtual const char* getConverterType() override { return "FAST"; }
-    
-    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
-    
-protected:
-    void copyAndCalculate() override;
-};
-
 // Like FastConverter (whole Stokes cube in memory, one FITS read per Stokes), but the rotated dataset
 // and the Z statistics are produced in spatial strips of stripWidth columns, so only one strip of the
 // rotated cube (and of statsZ) is in memory at a time. stripWidth is derived from the memory limit;
 // with no limit (or enough memory) stripWidth == width and it behaves exactly like FastConverter.
-class FastConverterLimitedMemory : public FastConverter {
+class FastConverterLimitedMemory : public Converter {
 public:
     FastConverterLimitedMemory(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;
@@ -321,19 +308,6 @@ protected:
 };    
 
 
-
-class SlowConverter : public Converter {
-public:
-    SlowConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
-    MemoryUsage calculateMemoryUsage() override;
-    
-    virtual const char* getConverterType() override { return "SLOW"; }
-    
-    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
-    
-protected:
-    void copyAndCalculate() override;
-};
 
 class MicroMemoryConverter : public SmartConverter {
 public:

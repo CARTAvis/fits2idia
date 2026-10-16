@@ -21,12 +21,6 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
    
    printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
 
-   if (strcasecmp(smartconverter_type,"slow")==0 || strcasecmp(first_char,"s")==0) {
-      return eSlowConverter;
-   }
-   if (strcasecmp(smartconverter_type,"fast")==0 || strcasecmp(first_char,"f")==0) {
-      return eFastConverter;
-   }
    if (strcasecmp(smartconverter_type,"fast-limited")==0 || strcasecmp(smartconverter_type,"limited")==0 || strcasecmp(first_char,"l")==0) {
       return eFastMemoryLimitedConverter;
    }
@@ -61,7 +55,6 @@ struct commandLineOptions
 {
    std::string inputFileName;
    std::string outputFileName;
-   bool slow{false};
    bool smart{false};
    eSmartConverterType smartconverter_type{eAutoSelectedSmartConverter};
    bool progress;
@@ -100,9 +93,8 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-L\tMaximum chunk size of the rotated dataset in MB, used with -C/-F (SLOW / SMART converters only) [default: " << Converter::maxSwizzledChunkBytes / 1e6 << " MB]" << std::endl
     << "-K\tExplicit chunk dims of the rotated dataset as w,h[,d] (d defaults to full depth), implies -C, overrides -F/-L. For experiments (SLOW / SMART converters only)" << std::endl
     << "-o\tOutput filename" << std::endl 
-    << "-s\tUse slower but less memory-intensive method (enable if memory allocation fails)" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
-    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', 'micro' or old algorithms 'slow' and 'fast' (parallelised over channels)" << std::endl
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', (parallelised over channels) 'micro' (less memory than single channel image)" << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
@@ -206,10 +198,6 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
             case 'o':
                 cmdLineOptions.outputFileName.assign(optarg);
                 break;
-            case 's':
-                // use slower but less memory-intensive method
-                cmdLineOptions.slow = true;
-                break;
             case 'S':
                 // use smart converter
                 cmdLineOptions.smart = true;
@@ -237,11 +225,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 if (optarg) {
                    converter_type = optarg;
                    cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
-                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
-                   
-                   if( cmdLineOptions.smartconverter_type == eSlowConverter) {
-                      cmdLineOptions.slow = true;
-                   }
+                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());                   
                 }
                 break;
             case 'z':
@@ -333,11 +317,6 @@ int main(int argc, char** argv) {
     
     printOptions();
 
-    if (cmdLineOptions.slow && cmdLineOptions.zMips){
-        std::cerr << "Currently unable to include depth in mipmap calculation for -s mode." << std::endl;
-        return -1;
-    }
-
     hsize_t memoryLimit(0);
     
     std::ifstream rcFile("/etc/fits2idiarc");
@@ -364,7 +343,7 @@ int main(int argc, char** argv) {
         
     try {
         converter = Converter::getConverter(cmdLineOptions.inputFileName, cmdLineOptions.outputFileName, 
-                                            cmdLineOptions.slow, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, progress, 
+                                            false, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, progress, 
                                             cmdLineOptions.zMips, cmdLineOptions.memoryLimitInMb, cmdLineOptions.auto_mode);
         
         if (strlen(cmdLineOptions.systemName.c_str())>0) {
@@ -398,7 +377,7 @@ int main(int argc, char** argv) {
             }
         }
                 
-        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
+        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {

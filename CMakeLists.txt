@@ -50,9 +50,7 @@ set(SOURCE_FILES
     src/Stats.cc
     src/MipMap.cc
     src/Converter.cc
-    src/FastConverter.cc
     src/FastConverterLimitedMemory.cc
-    src/SlowConverter.cc
     src/SmartConverter.cc
     src/SmartFastConverter.cc
     src/SmartFastTwoPassConverter.cc

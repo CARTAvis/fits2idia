@@ -142,8 +142,8 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
     auto* micro = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
     evaluate("MICRO", micro, [micro](int mb) { micro->setMemoryLimit(mb); });
 
-    evaluate("SLOW", new SlowConverter(inputFileName, outputFileName, progress, zMips), nullptr);
-    evaluate("FAST", new FastConverter(inputFileName, outputFileName, progress, zMips), nullptr);
+//    evaluate("SLOW", new SlowConverter(inputFileName, outputFileName, progress, zMips), nullptr);
+//    evaluate("FAST", new FastConverter(inputFileName, outputFileName, progress, zMips), nullptr);
 
     auto* fastlimited = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
     evaluate("FAST-LIMITED", fastlimited, [fastlimited](int mb) { fastlimited->setMemoryLimit(mb); });
@@ -197,22 +197,9 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
-    if (slow) {
-        // -s now maps to MicroMemoryConverter: without a memory limit it processes one whole channel per
-        // FITS read / HDF5 write (rows_per_block = height), which is the SlowConverter I/O pattern without
-        // SlowConverter's second FITS pass; with -M it shrinks the row blocks / rotation tiles to fit.
-        // SlowConverter itself is kept (still compiled) for A/B validation until it is removed.
-
-// TODO : for now just sticking to Slow and Micro converters being separated so that I can test both !
-        // std::cout << "DEBUG : -s -> using MicroMemoryConverter object (replaces SlowConverter)" << std::endl;
-        // MicroMemoryConverter* ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
-        // ptr->setMemoryLimit(memoryLimitInMb);
-        // return std::unique_ptr<Converter>(ptr);
-        std::cout << "DEBUG : using SlowConverter object" << std::endl;
-        return std::unique_ptr<Converter>(new SlowConverter(inputFileName, outputFileName, progress, zMips));
-     } else if (smart) { // was also && memoryLimitInMb > 0
+     SmartConverter* ptr = NULL;
+     if (smart) { // was also && memoryLimitInMb > 0
         std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << " smarttype = " << smarttype << std::endl;
-        SmartConverter* ptr = NULL;
         if (smarttype == eAutoSelectedSmartConverter) {
            std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
            if( auto_mode ){
@@ -248,10 +235,14 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
             FastConverterLimitedMemory* ptr = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
             ptr->setMemoryLimit(memoryLimitInMb);
             return std::unique_ptr<Converter>(ptr);
+        } else {
+           std::cerr << "ERROR : memory limit must be specified for this converter (-M LIMIT-IN-MB)" << std::endl;
         }
-        std::cout << "DEBUG : using FastConverter object" << std::endl;
-        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));
     }
+    
+    // fallback is micro memory converter (slowest):
+    ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);    
+    return std::unique_ptr<Converter>(ptr);
 }
 
 void Converter::setSystemName(const char* system_name )
