@@ -15,7 +15,8 @@
 
 using ms_d = std::chrono::duration<double, std::milli>;
 
-enum eSmartConverterType { eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4, 
+enum eSmartConverterType { eInvalidConverterType=-1, // returned by parse_smartconverter_type() for unknown -T names
+                           eAutoSelectedSmartConverter=0, eSmartConverterSpatialParallel=1, eSmartConverterChannelParallel=2, eSmartMicroMemoryConverter=3, eSmartConverterChannelParallelTwoPass=4,
                            eSlowConverter=5, eFastConverter=6, eFastMemoryLimitedConverter=7 };
 
 // It is now memory and execution time:

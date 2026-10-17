@@ -364,6 +364,9 @@ void FastConverter::copyAndCalculate() {
     
     // total I/O time:
     std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
+    // same summary line as the other converters (parse_converter_logs.py reads it as Proc[s])
+    std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms
+              << " milliseconds " << total_pureprocessing_ms/1000.00 << " seconds" << std::endl;
     
     // Free memory
     DEBUG(std::cout << "Freeing memory from main dataset... " << std::endl;);

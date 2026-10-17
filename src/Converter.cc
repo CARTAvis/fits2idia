@@ -197,6 +197,22 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
 }
 
 std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
+    // Explicitly requested non-smart converters (-T slow / fast / fast-limited) are handled first,
+    // so they can never fall through to the SmartConverter default below.
+    if (smarttype == eSlowConverter) {
+        slow = true;
+    } else if (smarttype == eFastConverter) {
+        std::cout << "DEBUG : -T fast -> using FastConverter object" << std::endl;
+        return std::unique_ptr<Converter>(new FastConverter(inputFileName, outputFileName, progress, zMips));
+    } else if (smarttype == eFastMemoryLimitedConverter) {
+        std::cout << "DEBUG : -T fast-limited -> using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;
+        FastConverterLimitedMemory* ptr = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
+        ptr->setMemoryLimit(memoryLimitInMb);
+        return std::unique_ptr<Converter>(ptr);
+    } else if (smarttype == eInvalidConverterType) {
+        throw "Invalid converter type (-T)";
+    }
+
     if (slow) {
         // -s now maps to MicroMemoryConverter: without a memory limit it processes one whole channel per
         // FITS read / HDF5 write (rows_per_block = height), which is the SlowConverter I/O pattern without
@@ -231,9 +247,13 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
             } else if (smarttype == eSmartMicroMemoryConverter) {
                 ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using MicroMemoryConverter object" << std::endl;
-            } else {
+            } else if (smarttype == eSmartConverterSpatialParallel) {
                 ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using SmartConverter object" << std::endl;
+            } else {
+                // no silent fallback: an unhandled type here is a programming error
+                std::cerr << "ERROR : getConverter : unhandled smart converter type " << smarttype << std::endl;
+                throw "Unhandled smart converter type";
             }
         }
         ptr->setMemoryLimit(memoryLimitInMb);

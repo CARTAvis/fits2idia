@@ -14,36 +14,35 @@
 #include <climits>   // HOST_NAME_MAX
 #include <string>
 
+// Maps a -T name to a converter type. Full names only: the old first-letter shortcuts were ambiguous
+// once 'slow'/'fast' were added ("spatial" -> 's' -> SLOW, "frequency"/"fast-twopass" -> 'f' -> FAST).
+// Unknown names return eInvalidConverterType so getOptions() can stop with an error instead of
+// silently running a different converter.
 eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
-   char first_char[2];
-   first_char[0] = smartconverter_type[0];
-   first_char[1] = '\0';
-   
    printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
 
-   if (strcasecmp(smartconverter_type,"slow")==0 || strcasecmp(first_char,"s")==0) {
-      return eSlowConverter;
+   struct { const char* name; eSmartConverterType type; } names[] = {
+      {"auto",              eAutoSelectedSmartConverter},
+      {"spatial",           eSmartConverterSpatialParallel},
+      {"channel",           eSmartConverterChannelParallel},
+      {"frequency",         eSmartConverterChannelParallel},
+      {"twopass",           eSmartConverterChannelParallelTwoPass},
+      {"2pass",             eSmartConverterChannelParallelTwoPass},
+      {"channel-twopass",   eSmartConverterChannelParallelTwoPass},
+      {"frequency-twopass", eSmartConverterChannelParallelTwoPass},
+      {"fast-twopass",      eSmartConverterChannelParallelTwoPass},
+      {"micro",             eSmartMicroMemoryConverter},
+      {"slow",              eSlowConverter},
+      {"fast",              eFastConverter},
+      {"fast-limited",      eFastMemoryLimitedConverter},
+      {"limited",           eFastMemoryLimitedConverter},
+   };
+   for (const auto& n : names) {
+      if (strcasecmp(smartconverter_type, n.name) == 0) {
+         return n.type;
+      }
    }
-   if (strcasecmp(smartconverter_type,"fast")==0 || strcasecmp(first_char,"f")==0) {
-      return eFastConverter;
-   }
-   if (strcasecmp(smartconverter_type,"fast-limited")==0 || strcasecmp(smartconverter_type,"limited")==0 || strcasecmp(first_char,"l")==0) {
-      return eFastMemoryLimitedConverter;
-   }
-   if (strcasecmp(smartconverter_type,"micro")==0 || strcasecmp(first_char,"m")==0) {
-      return eSmartMicroMemoryConverter;
-   }
-   if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
-      return eSmartConverterSpatialParallel;
-   }
-   if (strcasecmp(smartconverter_type,"frequency")==0 || strcasecmp(smartconverter_type,"channel")==0 || strcasecmp(first_char,"c")==0) {
-      return eSmartConverterChannelParallel;
-   }
-   if (strcasecmp(smartconverter_type,"frequency-twopass")==0 || strcasecmp(smartconverter_type,"channel-twopass")==0 || strcasecmp(smartconverter_type,"fast-twopass")==0 ||
-       strcasecmp(smartconverter_type,"twopass")==0 || strcasecmp(smartconverter_type,"2pass")==0) {
-      return eSmartConverterChannelParallelTwoPass;
-   }
-   return eAutoSelectedSmartConverter;
+   return eInvalidConverterType;
 }
 
 void getSystemName(std::string& systemName)
@@ -238,10 +237,13 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                    converter_type = optarg;
                    cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
                    printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
-                   
-                   if( cmdLineOptions.smartconverter_type == eSlowConverter) {
-                      cmdLineOptions.slow = true;
+                   if (cmdLineOptions.smartconverter_type == eInvalidConverterType) {
+                      std::cerr << "Unknown converter type '" << converter_type << "' for -T. Valid: auto, spatial, channel (frequency), "
+                                << "twopass (2pass), micro, slow, fast, fast-limited (limited)." << std::endl;
+                      err = true;
                    }
+                   // NOTE: -s / -S flags implied by the -T type are set after the option loop,
+                   //       so that the result does not depend on the order of -T and -S on the command line
                 }
                 break;
             case 'z':
@@ -258,6 +260,31 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
         }
     }
     
+    // An explicit non-smart -T type overrides -s/-S, whatever their order on the command line
+    switch (cmdLineOptions.smartconverter_type) {
+        case eSlowConverter:
+            cmdLineOptions.slow = true;
+            cmdLineOptions.smart = false;
+            break;
+        case eFastConverter:
+        case eFastMemoryLimitedConverter:
+            cmdLineOptions.slow = false;
+            cmdLineOptions.smart = false;
+            break;
+        case eSmartConverterSpatialParallel:
+        case eSmartConverterChannelParallel:
+        case eSmartConverterChannelParallelTwoPass:
+        case eSmartMicroMemoryConverter:
+            if (cmdLineOptions.slow) {
+                std::cerr << "WARNING: -s ignored because -T " << converter_type << " selects a smart converter" << std::endl;
+            }
+            cmdLineOptions.slow = false;
+            cmdLineOptions.smart = true;    // -T <smart type> implies -S
+            break;
+        default:
+            break;
+    }
+
     if (strlen(cmdLineOptions.systemName.c_str()) <= 0 ) {
        getSystemName(cmdLineOptions.systemName);
     }
