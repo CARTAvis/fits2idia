@@ -14,30 +14,33 @@
 #include <climits>   // HOST_NAME_MAX
 #include <string>
 
+// Maps a -T name to a converter type. Full names only: the old first-letter shortcuts were ambiguous
+// once 'slow'/'fast' were added ("spatial" -> 's' -> SLOW, "frequency"/"fast-twopass" -> 'f' -> FAST).
+// Unknown names return eInvalidConverterType so getOptions() can stop with an error instead of
+// silently running a different converter.
 eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
-   char first_char[2];
-   first_char[0] = smartconverter_type[0];
-   first_char[1] = '\0';
-   
    printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
 
-   if (strcasecmp(smartconverter_type,"fast-limited")==0 || strcasecmp(smartconverter_type,"limited")==0 || strcasecmp(first_char,"l")==0) {
-      return eFastMemoryLimitedConverter;
+   struct { const char* name; eSmartConverterType type; } names[] = {
+      {"auto",              eAutoSelectedSmartConverter},
+      {"spatial",           eSmartConverterSpatialParallel},
+      {"channel",           eSmartConverterChannelParallel},
+      {"frequency",         eSmartConverterChannelParallel},
+      {"twopass",           eSmartConverterChannelParallelTwoPass},
+      {"2pass",             eSmartConverterChannelParallelTwoPass},
+      {"channel-twopass",   eSmartConverterChannelParallelTwoPass},
+      {"frequency-twopass", eSmartConverterChannelParallelTwoPass},
+      {"fast-twopass",      eSmartConverterChannelParallelTwoPass},
+      {"micro",             eSmartMicroMemoryConverter},
+      {"fast-limited",      eFastMemoryLimitedConverter},
+      {"limited",           eFastMemoryLimitedConverter},
+   };
+   for (const auto& n : names) {
+      if (strcasecmp(smartconverter_type, n.name) == 0) {
+         return n.type;
+      }
    }
-   if (strcasecmp(smartconverter_type,"micro")==0 || strcasecmp(first_char,"m")==0) {
-      return eSmartMicroMemoryConverter;
-   }
-   if (strcasecmp(smartconverter_type,"spatial")==0 || strcasecmp(first_char,"s")==0) {
-      return eSmartConverterSpatialParallel;
-   }
-   if (strcasecmp(smartconverter_type,"frequency")==0 || strcasecmp(smartconverter_type,"channel")==0 || strcasecmp(first_char,"c")==0) {
-      return eSmartConverterChannelParallel;
-   }
-   if (strcasecmp(smartconverter_type,"frequency-twopass")==0 || strcasecmp(smartconverter_type,"channel-twopass")==0 || strcasecmp(smartconverter_type,"fast-twopass")==0 ||
-       strcasecmp(smartconverter_type,"twopass")==0 || strcasecmp(smartconverter_type,"2pass")==0) {
-      return eSmartConverterChannelParallelTwoPass;
-   }
-   return eAutoSelectedSmartConverter;
+   return eInvalidConverterType;
 }
 
 void getSystemName(std::string& systemName)
@@ -55,6 +58,7 @@ struct commandLineOptions
 {
    std::string inputFileName;
    std::string outputFileName;
+   bool slow{false};
    bool smart{false};
    eSmartConverterType smartconverter_type{eAutoSelectedSmartConverter};
    bool progress;
@@ -84,7 +88,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     std::ostringstream usage;
     usage << "IDIA FITS to HDF5 converter version " << HDF5_CONVERTER_VERSION 
     << " using IDIA schema version " << SCHEMA_VERSION << std::endl
-    << "Usage: fits2idia [-o output_filename] [-s] [-p] [-m] [-z] input_filename" << std::endl << std::endl
+    << "Usage: fits2idia [-o output_filename] [-p] [-m] [-z] input_filename" << std::endl << std::endl
     << "Options:" << std::endl 
     << "-a\tUse auto mode adjusting memory usage below the limit" << std::endl
     << "-B\tNumber of freq-images (i.e. blocks) read in one read transation [default " << cmdLineOptions.n_io_blocks << "]" << std::endl
@@ -94,7 +98,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-K\tExplicit chunk dims of the rotated dataset as w,h[,d] (d defaults to full depth), implies -C, overrides -F/-L. For experiments (SLOW / SMART converters only)" << std::endl
     << "-o\tOutput filename" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
-    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', (parallelised over channels) 'micro' (less memory than single channel image)" << std::endl
+    << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', (parallelised over channels) 'micro' " << std::endl
     << "-p\tPrint progress output (by default the program is silent)" << std::endl    
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
@@ -225,7 +229,14 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 if (optarg) {
                    converter_type = optarg;
                    cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
-                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());                   
+                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
+                   if (cmdLineOptions.smartconverter_type == eInvalidConverterType) {
+                      std::cerr << "Unknown converter type '" << converter_type << "' for -T. Valid: auto, spatial, channel (frequency), "
+                                << "twopass (2pass), micro, slow, fast, fast-limited (limited)." << std::endl;
+                      err = true;
+                   }
+                   // NOTE: -s / -S flags implied by the -T type are set after the option loop,
+                   //       so that the result does not depend on the order of -T and -S on the command line
                 }
                 break;
             case 'z':
@@ -242,6 +253,26 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
         }
     }
     
+    // An explicit non-smart -T type overrides -s/-S, whatever their order on the command line
+    switch (cmdLineOptions.smartconverter_type) {
+        case eFastMemoryLimitedConverter:
+            cmdLineOptions.slow = false;
+            cmdLineOptions.smart = false;
+            break;
+        case eSmartConverterSpatialParallel:
+        case eSmartConverterChannelParallel:
+        case eSmartConverterChannelParallelTwoPass:
+        case eSmartMicroMemoryConverter:
+            if (cmdLineOptions.slow) {
+                std::cerr << "WARNING: -s ignored because -T " << converter_type << " selects a smart converter" << std::endl;
+            }
+            cmdLineOptions.slow = false;
+            cmdLineOptions.smart = true;    // -T <smart type> implies -S
+            break;
+        default:
+            break;
+    }
+
     if (strlen(cmdLineOptions.systemName.c_str()) <= 0 ) {
        getSystemName(cmdLineOptions.systemName);
     }
@@ -317,8 +348,7 @@ int main(int argc, char** argv) {
     
     printOptions();
 
-    hsize_t memoryLimit(0);
-    
+    hsize_t memoryLimit(0);    
     std::ifstream rcFile("/etc/fits2idiarc");
     if (rcFile.fail()){
         DEBUG(std::cout << "No system configuration file found." << std::endl;);
@@ -377,7 +407,7 @@ int main(int argc, char** argv) {
             }
         }
                 
-        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << std::endl;);
+        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {
