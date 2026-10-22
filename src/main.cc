@@ -25,7 +25,7 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
       {"auto",              eAutoSelectedSmartConverter},
       {"spatial",           eSmartConverterSpatialParallel},
       {"channel",           eSmartConverterChannelParallelTwoPass},
-      {"frequency",         eSmartConverterChannelParallelTwpPass},
+      {"frequency",         eSmartConverterChannelParallelTwoPass},
       {"twopass",           eSmartConverterChannelParallelTwoPass},
       {"2pass",             eSmartConverterChannelParallelTwoPass},
       {"channel-twopass",   eSmartConverterChannelParallelTwoPass},
