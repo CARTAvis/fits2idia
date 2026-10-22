@@ -24,8 +24,8 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
    struct { const char* name; eSmartConverterType type; } names[] = {
       {"auto",              eAutoSelectedSmartConverter},
       {"spatial",           eSmartConverterSpatialParallel},
-      {"channel",           eSmartConverterChannelParallel},
-      {"frequency",         eSmartConverterChannelParallel},
+      {"channel",           eSmartConverterChannelParallelTwoPass},
+      {"frequency",         eSmartConverterChannelParallelTwpPass},
       {"twopass",           eSmartConverterChannelParallelTwoPass},
       {"2pass",             eSmartConverterChannelParallelTwoPass},
       {"channel-twopass",   eSmartConverterChannelParallelTwoPass},
@@ -327,7 +327,6 @@ void printOptions()
 }
 
 int main(int argc, char** argv) {
-    bool progress(false);    
     commandLineOptions cmdLineOptions;    
     
     if (!getOptions(argc, argv, cmdLineOptions)) {
@@ -361,7 +360,7 @@ int main(int argc, char** argv) {
         
     try {
         converter = Converter::getConverter(cmdLineOptions.inputFileName, cmdLineOptions.outputFileName, 
-                                            false, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, progress, 
+                                            false, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, cmdLineOptions.progress, 
                                             cmdLineOptions.zMips, cmdLineOptions.memoryLimitInMb, cmdLineOptions.auto_mode);
         
         if (strlen(cmdLineOptions.systemName.c_str())>0) {
