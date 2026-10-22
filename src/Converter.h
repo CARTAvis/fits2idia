@@ -72,8 +72,6 @@ public:
     // in saving metadata to the output HDF5 file:
     virtual const char* getConverterType() = 0;
     
-    bool getCubeHistogramApproximated(){ return false; }
-    
 public:
     static bool rotatedDatasetChunking;       // -C : allow chunking if it pays off
     static bool rotatedDatasetChunkingForce;  // optional: skip the write-side test (for retests)
@@ -190,16 +188,9 @@ public:
     // MicroMemoryConverter::setMemoryLimit, which also sizes its buffers to the limit
     virtual void setMemoryLimit(int _memoryLimitInMb){ memoryLimitInMb = _memoryLimitInMb; }
 
-    // flag to enable single pass through the data 
-    // XYZ (cube) histogram is calculated using channel histograms 
-    // which means it's approximate only, but this is "good enough" for the visualisation purposes
-    static bool bApproximateCubeHistogram;
-    
     // functions about the type of the converter and its parameters to be used 
     // in saving metadata to the output HDF5 file:
     virtual const char* getConverterType() override { return "SMART-XY-PARALLEL"; }
-    
-    bool getCubeHistogramApproximated(){  return bApproximateCubeHistogram; }
     
     // reduce memory usage:
     // needs to be public to be used in a static function in Converter
@@ -269,29 +260,7 @@ protected:
     std::vector<MipMaps> thread_mipmaps_array;
 };
 
-class SmartFastConverter : public SmartConverter {
-public:
-    SmartFastConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
-    MemoryUsage calculateMemoryUsage() override;
-    
-    // functions about the type of the converter and its parameters to be used 
-    // in saving metadata to the output HDF5 file:
-    virtual const char* getConverterType() override { return "SMART-CHAN-PARALLEL"; }
-    
-    virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
-    
-protected:
-    void copyAndCalculate() override;
-
-    // SmartFastConverter.cc requires extra arguments:
-    virtual double doSecondPass( unsigned int s, int n_blocks, int sliceIncrement, int leftOverSlices, double& total_io_ms );
-    
-    // calculates approximate XYZ (cube) histogram using channel histograms
-    // it is not exact, but good enough for visualisation purposes
-    double calcApproxCubeHistogram( unsigned int s );
-};    
-
-class SmartFastTwoPassConverter : public SmartFastConverter {
+class SmartFastTwoPassConverter : public SmartConverter {
 public:
     SmartFastTwoPassConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips);
     MemoryUsage calculateMemoryUsage() override;

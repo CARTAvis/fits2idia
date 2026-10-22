@@ -11,11 +11,6 @@
     #include <omp.h>
 #endif
 
-// flag to enable single pass through the data 
-// XYZ (cube) histogram is calculated using channel histograms 
-// which means it's approximate only, but this is "good enough" for the visualisation purposes
-bool SmartConverter::bApproximateCubeHistogram = false;
-
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
  : Converter(inputFileName, outputFileName, progress, zMips), allowed_mipmaps_threads(1), min_mipmap_threads(8), height_divider(1)
 {
@@ -63,12 +58,8 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
 
     // 2nd pass (cannot see any specific allocations)
     hsize_t total_pass2 = 0;
-    if ( bApproximateCubeHistogram ) {
-       std::cout << "MEMORY_ESTIMATE: 2nd pass (approx XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
-    }else {
-       // 2nd pass does not use any extra memory:
-       std::cout << "MEMORY_ESTIMATE: 2nd pass (accurate XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
-    }
+    // 2nd pass does not use any extra memory:
+    std::cout << "MEMORY_ESTIMATE: 2nd pass (accurate XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
     
     // rotation pass : standardSlice , rotatedSlice : 
     hsize_t total_rotation_pass = 0;
@@ -333,29 +324,6 @@ void SmartConverter::copyAndCalculate() {
         PROGRESS(std::endl);
         
 
-        // calculate cube (statsXYZ) histogram:
-//        auto start2 = std::chrono::high_resolution_clock::now();        
-//        statsXYZ.clearHistogramBuffers();
-//        double total_second_pass_processing_ms = 0.00;
-/*        if( bApproximateCubeHistogram ) {
-           // calculate approximate cube histogram by merging channel histograms
-           // which is perfectly enough for selecting the right colour scale
-           total_second_pass_processing_ms = calcApproxCubeHistogram(s);
-        } else {
-           // calculate exect cube histogram by doing second pass 
-           // thought the data (slower)
-           total_second_pass_processing_ms = doSecondPass(s, n_blocks, sliceIncrement, leftOverSlices, total_io_ms);
-        }*/
-
-/*        auto end2 = std::chrono::high_resolution_clock::now();
-        auto duration2 = ms_d(end2 - start2);        
-        std::cout << "Execution of 2nd big standard conversion loop over all channels took: " << duration2.count() << " milliseconds." << std::endl;
-        std::cout << "BENCHMARKING : total pure-processing time of 2nd pass: " << total_second_pass_processing_ms << " milliseconds " << (float(total_second_pass_processing_ms)/1000.00) << " seconds" << std::endl;
-        total_pureprocessing_ms += total_second_pass_processing_ms;*/
-
-        
-        PROGRESS(std::endl);
-        
         start_io = std::chrono::high_resolution_clock::now();
         if (depth > 1) {
             // statsXYZ.write({1}, {s});

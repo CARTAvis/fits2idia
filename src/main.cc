@@ -109,7 +109,6 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
     << std::endl
     << "Additional options specifying parameters of the convertion (e.g. allow for approximations):" << std::endl
-    << "-A\tUse approximated calculation of cube (XYZ) histogram using channel histograms [default " << SmartConverter::bApproximateCubeHistogram << " ]" << std::endl
     << "-E\tExclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl
     << "-I\tIxclude specific datasets which can be: r (rotated), s (standard), m (mipmaps), h (channel histograms), c (cube histogram)" << std::endl;
     
@@ -119,15 +118,12 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
           << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM -a" << std::endl
           << "   - to obtain estimated memory requirements and execution time, add option: -m or -R" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:AT:H:E:I:K:L:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:T:H:E:I:K:L:")) != -1) {
         switch (opt) {
             case 'a':
             case 'r':
                 cmdLineOptions.auto_mode = true;
                 cmdLineOptions.n_io_blocks = -1; // it will be automatically calculated based on memory limit
-                break;
-            case 'A':
-                SmartConverter::bApproximateCubeHistogram = true;
                 break;
             case 'B':
                 if (optarg) {
@@ -290,13 +286,6 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
         std::cerr << "Unexpected additional parameters." << std::endl;
     }
     
-    if (SmartConverter::bApproximateCubeHistogram) {
-        if (cmdLineOptions.smartconverter_type == eSmartConverterSpatialParallel || cmdLineOptions.smartconverter_type == eSmartConverterChannelParallelTwoPass) {
-            err = true;
-            std::cerr << "Approximate 3D histogram is not supported in " << converter_type.c_str() << " converter." << std::endl;
-        }
-    }
-
     if (cmdLineOptions.maxSwizzledChunkMb > 0) {
         if (!Converter::rotatedDatasetChunking) {
             std::cerr << "WARNING: -L has no effect without -C or -F" << std::endl;
@@ -328,7 +317,6 @@ void printOptions()
    std::cout << "##########################################" << std::endl;
    std::cout << "PARAMETERS:" << std::endl;
    std::cout << "Approximations:" << std::endl;
-   std::cout << "\tApproximate histogram: " << SmartConverter::bApproximateCubeHistogram << std::endl;
    std::cout << "\tChunk rotated dataset if it is worth : " << Converter::rotatedDatasetChunking << std::endl;
    std::cout << "\tForce chunking rotated dataset       : " << Converter::rotatedDatasetChunkingForce << std::endl;
    std::cout << "\tMax rotated chunk size               : " << Converter::maxSwizzledChunkBytes / 1e6 << " MB" << std::endl;

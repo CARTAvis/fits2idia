@@ -7,7 +7,7 @@
 #include <algorithm> // for std::min
 
 SmartFastTwoPassConverter::SmartFastTwoPassConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
- : SmartFastConverter(inputFileName, outputFileName, progress, zMips)
+ : SmartConverter(inputFileName, outputFileName, progress, zMips)
 {}
 
 // Memory model -- mirrors the allocations made in copyAndCalculate() and in

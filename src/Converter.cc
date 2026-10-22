@@ -148,8 +148,8 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
     auto* fastlimited = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
     evaluate("FAST-LIMITED", fastlimited, [fastlimited](int mb) { fastlimited->setMemoryLimit(mb); });
 
-    auto* smartfast = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
-    evaluate("SMART-FAST", smartfast, [smartfast](int mb) { smartfast->setMemoryLimit(mb); });
+//    auto* smartfast = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
+//    evaluate("SMART-FAST", smartfast, [smartfast](int mb) { smartfast->setMemoryLimit(mb); });
 
     auto* smartfast2p = new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips);
     evaluate("SMART-FAST-TWO-PASS", smartfast2p, [smartfast2p](int mb) { smartfast2p->setMemoryLimit(mb); });
@@ -220,12 +220,9 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
               ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
            }
         } else {
-            if (smarttype == eSmartConverterChannelParallelTwoPass) {
+            if (smarttype == eSmartConverterChannelParallelTwoPass || smarttype == eSmartConverterChannelParallel) {
                 ptr = new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using SmartFastTwoPassConverter object" << std::endl;
-            } else if (smarttype == eSmartConverterChannelParallel) {
-                ptr = new SmartFastConverter(inputFileName, outputFileName, progress, zMips);
-                std::cout << "DEBUG : using SmartFastConverter object" << std::endl;
             } else if (smarttype == eSmartMicroMemoryConverter) {
                 ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
                 std::cout << "DEBUG : using MicroMemoryConverter object" << std::endl;
@@ -458,54 +455,35 @@ std::vector<hsize_t> Converter::chooseSwizzledChunkDims() {
         
     const bool force = rotatedDatasetChunkingForce;
 
-    // only SMART-CHAN-PARALLEL writes partial-depth slabs; SLOW, SMART-XY, 2PASS write full-depth tiles
-    const bool partialDepthWriter = (strcmp(getConverterType(), "SMART-CHAN-PARALLEL") == 0);
-    const hsize_t chunkDepth = partialDepthWriter ? std::max((hsize_t)1, (hsize_t)n_io_blocks) : depth;
-
-    // 1. read-side guard: a cursor spectrum must not span more than a few chunks (-F overrides with a warning)
-    const hsize_t MAX_CHUNKS_PER_SPECTRUM = 4;
-    const hsize_t chunksPerSpectrum = (depth + chunkDepth - 1) / chunkDepth;
-    if (chunksPerSpectrum > MAX_CHUNKS_PER_SPECTRUM) {
-        if (!force) {
-            std::cout << "INFO: rotated dataset kept contiguous: chunk depth " << chunkDepth
-                      << " would split each spectrum into " << chunksPerSpectrum << " chunks" << std::endl;
-            return {};
-        }
-        std::cout << "WARNING: -F: forcing chunk depth " << chunkDepth << " -> each spectrum spans "
-                  << chunksPerSpectrum << " chunks, expect slow spectral profiles" << std::endl;
-    }
-
     IOCostModel seqRead, seqWrite, randRead, randWrite;
     get_io_cost_model(systemName.c_str(), seqRead, seqWrite, false);
     get_io_cost_model(systemName.c_str(), randRead, randWrite, true);
 
-    // 2. chunk sizing: cap set by the read side, shrink x first (CARTA reads favour y-generous shapes)
+    // 1. chunk sizing: all remaining converters write full-depth tiles, so chunks span the full
+    //    depth (one chunk per spectrum). Cap set by the read side, shrink x first
+    //    (CARTA reads favour y-generous shapes).
     hsize_t cw = std::min((hsize_t)T, width), ch = std::min((hsize_t)T, height);
-    while (cw * ch * chunkDepth * sizeof(float) > maxSwizzledChunkBytes && (cw > 1 || ch > 1)) {
+    while (cw * ch * depth * sizeof(float) > maxSwizzledChunkBytes && (cw > 1 || ch > 1)) {
         if (cw > 16 || ch == 1) cw = std::max((hsize_t)1, cw / 2);
         else                     ch = std::max((hsize_t)1, ch / 2);
     }
-    std::vector<hsize_t> chunkDims4 = {1, cw, ch, chunkDepth};
+    std::vector<hsize_t> chunkDims4 = {1, cw, ch, depth};
+    const hsize_t chunkBytes = cw * ch * depth * sizeof(float);
 
-    if (cw * ch * chunkDepth * sizeof(float) > maxSwizzledChunkBytes) {
+    if (chunkBytes > maxSwizzledChunkBytes) {
         std::cout << "WARNING: chunk size limit " << maxSwizzledChunkBytes / 1e6 << " MB is smaller than one "
-                  << chunkDepth << "-channel spectrum -> using " << chunkDims4 << std::endl;
+                  << depth << "-channel spectrum -> using " << chunkDims4 << std::endl;
     }
-
-
-    const hsize_t chunkBytes = cw * ch * chunkDepth * sizeof(float);
     std::cout << "INFO: candidate rotated chunk " << chunkDims4 << " = " << chunkBytes / 1e6 << " MB"
               << " (cap " << maxSwizzledChunkBytes / 1e6 << " MB, write plateau "
               << plateauBytes(seqWrite) / 1e6 << " MB)" << std::endl;
 
-    // 3. write-side gate (full-depth tile writers only). Always printed; decides only without -F.
-    if (!partialDepthWriter) {
-        const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
-        bool payOff = chunkingPaysOffOnWrite(swizzledDims4, chunkDims4, stokes, depth, height, width, seqWrite, randWrite, 2.0, T);
-        if (!payOff) {
-            if (!force) return {};
-            std::cout << "INFO: -F: chunking although the predicted write speedup is below the threshold" << std::endl;
-        }
+    // 2. write-side gate. Always printed; decides only without -F.
+    const std::vector<hsize_t> swizzledDims4 = {stokes, width, height, depth};
+    bool payOff = chunkingPaysOffOnWrite(swizzledDims4, chunkDims4, stokes, depth, height, width, seqWrite, randWrite, 2.0, T);
+    if (!payOff) {
+        if (!force) return {};
+        std::cout << "INFO: -F: chunking although the predicted write speedup is below the threshold" << std::endl;
     }
 
     std::cout << "INFO: chunking rotated dataset with chunk dims " << chunkDims4
@@ -561,7 +539,6 @@ void Converter::convert() {
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_TYPE", getConverterType() );
-    writeHdf5Attribute(outputGroup, "HDF5_PARAM_CUBE_HISTOGRAM_APPROXIMATE", getCubeHistogramApproximated() );
 
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);
