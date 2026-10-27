@@ -56,7 +56,13 @@ public:
     
     // reduce memory usage:
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
-    bool checkMemory(hsize_t memoryLimit, bool auto_mode );    
+    // restores the full-speed tuning (threads, dividers) before a new n_io_blocks is tried in checkMemoryUsage;
+    // can_reduce_io_blocks = true means halving n_io_blocks is still possible and should be preferred over
+    // degrading the tuning below its minimum (e.g. min_mipmap_threads):
+    virtual void resetMemoryTuning( bool can_reduce_io_blocks ) {}
+    // description of the current tuning parameters (empty if the converter has none):
+    virtual std::string memoryTuningInfo() { return ""; }
+    bool checkMemory(hsize_t memoryLimit, bool auto_mode );
     bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
     // calculate IO cost :
@@ -195,7 +201,9 @@ public:
     // reduce memory usage:
     // needs to be public to be used in a static function in Converter
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
-    
+    virtual void resetMemoryTuning( bool can_reduce_io_blocks ) override;
+    virtual std::string memoryTuningInfo() override;
+
     // calculate IO cost :
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
 
@@ -254,8 +262,9 @@ protected:
     hsize_t height_chunk; // block in height used for partial histograms calculations = height / height_divider
     int height_divider; // this specify how to divide height for partial histograms OpenMP optimisation 
                         // this is required when too much memory is required without any division
-    int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)       
-    
+    int min_mipmap_threads; // minimum number of MipMap threads in OMP version (otherwise = CONST = 1)
+    bool keep_min_mipmap_threads; // true -> ReduceMemoryUsage does not go below min_mipmap_threads (n_io_blocks is reduced first)
+
     // auxiliary objects used in calculations:
     std::vector<MipMaps> thread_mipmaps_array;
 };

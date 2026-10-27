@@ -45,6 +45,14 @@ eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
 
 void getSystemName(std::string& systemName)
 {
+   // on HPC compute nodes hostname is a node name (e.g. nid002820 on Setonix) -> SLURM cluster name has priority:
+   const char* slurmCluster = getenv("SLURM_CLUSTER_NAME");
+   if (slurmCluster && slurmCluster[0] != '\0') {
+      systemName = slurmCluster;
+      std::cout << "INFO : system name = " << systemName << " (from SLURM_CLUSTER_NAME)" << std::endl;
+      return;
+   }
+
    // use system name from OS functions:
    char buf[HOST_NAME_MAX + 1] = {0};
    if (gethostname(buf, sizeof(buf)) != 0) {

@@ -709,9 +709,12 @@ bool Converter::checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool aut
          while( n_io_blocks > 0 ) {
             std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;
             this->setIOBlocks(n_io_blocks);
+            this->resetMemoryTuning( n_io_blocks > 1 );
             bool ret = checkMemory(memoryLimit, auto_mode);
             if( ret ) {
-               std::cout << "INFO : checkMemoryUsage: using n_io_blocks = " << n_io_blocks << std::endl;
+               hsize_t predictedTotal = this->calculateMemoryUsage().total; // prints its own MEMORY_ESTIMATE lines
+               std::cout << "INFO : checkMemoryUsage: using n_io_blocks = " << n_io_blocks << " , " << this->memoryTuningInfo()
+                         << " , predicted memory = " << predictedTotal * 1e-9 << " GB" << std::endl;
                return ret;
             }
             

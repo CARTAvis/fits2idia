@@ -12,7 +12,7 @@
 #endif
 
 SmartConverter::SmartConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
- : Converter(inputFileName, outputFileName, progress, zMips), allowed_mipmaps_threads(1), min_mipmap_threads(8), height_divider(1)
+ : Converter(inputFileName, outputFileName, progress, zMips), allowed_mipmaps_threads(1), min_mipmap_threads(8), height_divider(1), keep_min_mipmap_threads(false)
 {
    SetChunkDivider(height_divider);
 #ifdef _OPENMP
@@ -100,8 +100,12 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
    getDividers(height, heigth_dividers);
 
    
+   // do not go below min_mipmap_threads while n_io_blocks can still be halved by checkMemoryUsage (single MipMap thread
+   // makes 1st pass several times slower than reading a smaller block):
+   int min_threads = (keep_min_mipmap_threads ? min_mipmap_threads : 1);
+
    // outer most is change of number of threads which we want to avoid as much as possible:
-   while( allowed_mipmaps_threads >= 1 ) {          
+   while( allowed_mipmaps_threads >= 1 ) {
        int iter = 0;
 
        // number of iterations is limited by the number of dividers in the array heigth_dividers:
@@ -124,17 +128,37 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
           iter++;
        }
        
-       if( allowed_mipmaps_threads > 1 ) {
+       if( allowed_mipmaps_threads > 1 && int(allowed_mipmaps_threads/2) >= min_threads ) {
            // reduce number of threads used for MipMaps as well:
            allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
            std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
        }else{
-           std::cout << "WARNING : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
+           if( keep_min_mipmap_threads ) {
+              std::cout << "MEMORY REDUCTION : not reducing allowed_mipmaps_threads below " << min_threads << " -> n_io_blocks = " << n_io_blocks << " should be reduced first" << std::endl;
+           } else {
+              std::cout << "WARNING : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
+           }
            break;
        }
    }
-   
+
    return false;
+}
+
+void SmartConverter::resetMemoryTuning( bool can_reduce_io_blocks ) {
+   // start from the full-speed settings for every n_io_blocks (otherwise settings degraded for a larger block are kept):
+   allowed_mipmaps_threads = 1;
+#ifdef _OPENMP
+   allowed_mipmaps_threads = omp_get_max_threads();
+#endif
+   SetChunkDivider(1);
+   keep_min_mipmap_threads = can_reduce_io_blocks;
+}
+
+std::string SmartConverter::memoryTuningInfo() {
+   std::stringstream ss;
+   ss << "height_divider = " << height_divider << " (height_chunk = " << height_chunk << "), allowed_mipmaps_threads = " << allowed_mipmaps_threads;
+   return ss.str();
 }
 
 void SmartConverter::SetChunkDivider( int divider ) {
