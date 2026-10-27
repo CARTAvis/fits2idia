@@ -5,6 +5,9 @@
 
 #include "Converter.h"
 #include <algorithm> // for std::min
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 
 SmartFastTwoPassConverter::SmartFastTwoPassConverter(std::string inputFileName, std::string outputFileName, bool progress, bool zMips) 
  : SmartConverter(inputFileName, outputFileName, progress, zMips)
@@ -61,8 +64,15 @@ MemoryUsage SmartFastTwoPassConverter::calculateMemoryUsage() {
 
         // statsZ.createBuffers({TILE_SIZE, TILE_SIZE}) -> no histograms
         m.sizes["Z stats (tile)"] = Stats::size({TILE_SIZE, TILE_SIZE});
+        
+        // per-thread cube histograms in calculateRotatedDataAndCubeHistogram()
+        int nThreads = 1;
+#ifdef _OPENMP
+        nThreads = omp_get_max_threads();
+#endif
+        m.sizes["Cube histogram (per-thread)"] = (hsize_t)nThreads * numBins * sizeof(int64_t);
 
-        total_rotation = m.sizes["Rotation tile slices"] + m.sizes["Z stats (tile)"];
+        total_rotation = m.sizes["Rotation tile slices"] + m.sizes["Z stats (tile)"] + m.sizes["Cube histogram (per-thread)"];
     }
 
     m.total = persistent + std::max(total_pass1, total_rotation);

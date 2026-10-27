@@ -70,8 +70,16 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
         
         m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});        
         std::cout << "MEMORY_ESTIMATE: Z stats " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
+        
+        int nThreads = 1;
+#ifdef _OPENMP
+        nThreads = omp_get_max_threads();
+        printf("DEBUG: _OPENMP version\n");
+#endif
+        printf("DEBUG: nThreads = %d\n",nThreads);
+        m.sizes["Cube histogram (per-thread)"] = (hsize_t)nThreads * numBins * sizeof(int64_t);
 
-        total_rotation_pass = m.sizes["Rotation"] + m.sizes["Z stats"];
+        total_rotation_pass = m.sizes["Rotation"] + m.sizes["Z stats"] + m.sizes["Cube histogram (per-thread)"];
         std::cout << "MEMORY_ESTIMATE: Rotation = "  << total_rotation_pass * 1e-9 << " GB " << std::endl;
     }
 
@@ -509,6 +517,16 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
 
     bool doCubeHistogram = (numBins > 0);
+    
+    // per-thread cube histograms (numBins x nThreads x 8 B, ~10 MB for 128 threads),
+    // merged into statsXYZ.histograms after each tile -> race-free parallel binning
+    int nThreads = 1;
+#ifdef _OPENMP
+    nThreads = omp_get_max_threads();
+    printf("DEBUG: _OPENMP version\n");
+#endif
+    printf("DEBUG: nThreads = %d\n",nThreads);
+    std::vector<int64_t> threadHist(doCubeHistogram ? (size_t)nThreads * numBins : 0);
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = ms_d(end - start);
@@ -655,7 +673,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 // bins, and Stats::accumulateHistogram's plain `++` isn't
                 // atomic. The Z-statistics loop above has no such collision
                 // (each (j,k) owns its own statsZ slot), so it stays parallel.
-                if (doCubeHistogram && cubeHist) {
+/*                if (doCubeHistogram && cubeHist) {
                     TIMER(timer.start("Histograms"););
                     for (hsize_t j = 0; j < ySize; j++) {
                         for (hsize_t k = 0; k < xSize; k++) {
@@ -667,6 +685,47 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                                 }
                             }
                         }
+                    }
+                }*/
+                
+                // parallel version to speed things up at a small memory cost:
+                if (doCubeHistogram && cubeHist) {
+                    TIMER(timer.start("Histograms"););
+                    std::fill(threadHist.begin(), threadHist.end(), 0);
+
+                    // standardSlice holds depth x ySize x xSize values packed contiguously
+                    // (also for edge tiles), so a linear sweep visits every value of the tile once
+                    const hsize_t nVals = depth * tile_size;
+                    int64_t* threadHistData = threadHist.data();
+                    const hsize_t nb = numBins;
+
+                    #pragma omp parallel default(none) shared(standardSlice, threadHistData, nVals, nb, cubeMin, cubeRange)
+                    {
+                        int tid = 0;
+#ifdef _OPENMP
+                        tid = omp_get_thread_num();
+#endif
+                        int64_t* h = threadHistData + (size_t)tid * nb;
+
+                        #pragma omp for schedule(static)
+                        for (hsize_t p = 0; p < nVals; p++) {
+                            const float val = standardSlice[p];
+                            if (std::isfinite(val)) {
+                                // same binning as Stats::accumulateHistogram -> identical result
+                                hsize_t b = std::min(nb - 1, (hsize_t)(nb * (val - cubeMin) / cubeRange));
+                                h[b]++;
+                            }
+                        }
+                    }
+
+                    // merge per-thread histograms (bin-parallel, no conflicts)
+                    #pragma omp parallel for default(none) shared(statsXYZ, threadHistData, nThreads, nb)
+                    for (hsize_t b = 0; b < nb; b++) {
+                        int64_t sum = 0;
+                        for (int t = 0; t < nThreads; t++) {
+                            sum += threadHistData[(size_t)t * nb + b];
+                        }
+                        statsXYZ.histograms[b] += sum;
                     }
                 }
 

@@ -250,6 +250,9 @@ void MicroMemoryConverter::copyAndCalculate() {
 #endif
     std::cout << "MicroMemoryConverter: numThreads = " << numThreads << std::endl;
 
+    // columnChunks are column ranges which are processed in separate threads.
+    // chunkWidth is the width calculated so that each threads writes to separate (exclusive) mipMap (no overlaps between threads)
+    // it is calculated to match the resolution of the coarsest MipMap (coarsestMipXY)
     hsize_t chunkWidth = (hsize_t)coarsestMipXY * std::max((hsize_t)1, (width / numThreads) / (hsize_t)coarsestMipXY);
 
     std::vector<std::pair<hsize_t, hsize_t>> columnChunks; // [start, end) pairs
@@ -324,6 +327,7 @@ void MicroMemoryConverter::copyAndCalculate() {
                     cc.reset();
                 }
 
+// parallelisation over columnsChunks : each threads processes range of columns of a row or multiple rows.
 #pragma omp parallel for schedule(dynamic) shared(columnChunks, chunkCounters)
                 for (size_t ci = 0; ci < columnChunks.size(); ci++) {
                     const hsize_t xStart = columnChunks[ci].first;
