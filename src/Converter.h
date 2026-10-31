@@ -64,6 +64,8 @@ public:
     virtual std::string memoryTuningInfo() { return ""; }
     // false if -a cannot reduce the memory of this converter (used to avoid suggesting -a):
     virtual bool autoModeCanReduceMemory() { return true; }
+    // false if the converter ignores n_io_blocks (checkMemoryUsage then does not search for it):
+    virtual bool usesIOBlocks() { return true; }
     bool checkMemory(hsize_t memoryLimit, bool auto_mode );
     bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
@@ -169,6 +171,7 @@ public:
     virtual const char* getConverterType() override { return "FAST-LIMITED-MEMORY"; }
     // strip width / mipmap block are already fitted in setMemoryLimit() and the whole cube is always in memory:
     virtual bool autoModeCanReduceMemory() override { return false; }
+    virtual bool usesIOBlocks() override { return false; }
 
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 
@@ -300,6 +303,8 @@ public:
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 
     virtual const char* getConverterType() override { return "MICRO-MEMORY"; }
+    // I/O granularity is set by rows_per_block / rotation_tile_size instead:
+    virtual bool usesIOBlocks() override { return false; }
 
     // Sizes rows_per_block and rotation_tile_size to the limit (0 = no limit -> whole channel, full tile).
     virtual void setMemoryLimit(int _memoryLimitInMb) override;

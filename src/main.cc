@@ -376,7 +376,11 @@ int main(int argc, char** argv) {
         }
         
         if (cmdLineOptions.n_io_blocks>1) {
-           converter->setIOBlocks(cmdLineOptions.n_io_blocks);
+           if (converter->usesIOBlocks()) {
+              converter->setIOBlocks(cmdLineOptions.n_io_blocks);
+           } else {
+              std::cout << "WARNING : option -B " << cmdLineOptions.n_io_blocks << " is ignored by converter " << converter->getConverterType() << std::endl;
+           }
         }
         
         // needs to be before memory and I/O and compute cost report 

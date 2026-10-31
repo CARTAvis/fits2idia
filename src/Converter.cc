@@ -292,7 +292,11 @@ MemoryUsage Converter::reportMemoryUsage() {
     
     std::cout << std::endl;
     std::cout << "--------------------------------------------------------------------------" << std::endl;
-    std::cout << "Converter type: " << getConverterType() << " n_io_blocks = " << n_io_blocks << std::endl;
+    std::cout << "Converter type: " << getConverterType();
+    if (usesIOBlocks()) {
+        std::cout << " n_io_blocks = " << n_io_blocks;
+    }
+    std::cout << std::endl;
     std::cout << "APPROXIMATE MEMORY REQUIREMENTS:" << std::endl;    
     hsize_t maxAllocationBytes = 0;
     std::string maxAllocationDataset = "";
@@ -683,7 +687,7 @@ bool Converter::checkMemory(hsize_t memoryLimit, bool auto_mode ) {
               
         if( !ok ) {
            std::cout << "WARNING : Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-           if (auto_mode) {
+           if (auto_mode && usesIOBlocks()) {
               std::cout << "INFO : -a could not fit n_io_blocks = " << n_io_blocks << " in the memory limit -> a smaller block will be tried (if possible)" << std::endl;
            } else if (autoModeCanReduceMemory()) {
               std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
@@ -697,8 +701,9 @@ bool Converter::checkMemory(hsize_t memoryLimit, bool auto_mode ) {
 
 bool Converter::checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode )
 {
-   // if number of blocks is unspecified, first establish what it should be based on available memory:
-   if (n_io_blocks <= 0) {
+   // if number of blocks is unspecified, first establish what it should be based on available memory
+   // (not for converters ignoring n_io_blocks - they only need the memory check at the end of this function):
+   if (n_io_blocks <= 0 && this->usesIOBlocks()) {
       hsize_t _stokes, _depth, _height, _width;
       this->getDimensions( _stokes, _depth,  _height, _width );
       std::cout << "INFO checkMemoryUsage : N blocks <= 0 -> finding number of blocks automatically" << std::endl;
