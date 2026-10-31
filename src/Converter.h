@@ -39,8 +39,8 @@ public:
     
     
     // static factory function to get the required or automatically suggested converter object:
-    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode);
-    static std::unique_ptr<Converter> getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode);    
+    static std::unique_ptr<Converter> getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode, const std::string& systemName);
+    static std::unique_ptr<Converter> getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode, const std::string& systemName);    
     
     void convert();
     MemoryUsage reportMemoryUsage();
@@ -62,6 +62,8 @@ public:
     virtual void resetMemoryTuning( bool can_reduce_io_blocks ) {}
     // description of the current tuning parameters (empty if the converter has none):
     virtual std::string memoryTuningInfo() { return ""; }
+    // false if -a cannot reduce the memory of this converter (used to avoid suggesting -a):
+    virtual bool autoModeCanReduceMemory() { return true; }
     bool checkMemory(hsize_t memoryLimit, bool auto_mode );
     bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
@@ -165,6 +167,8 @@ public:
     hsize_t getMipChannelBlock() const { return mipChannelBlock; }
 
     virtual const char* getConverterType() override { return "FAST-LIMITED-MEMORY"; }
+    // strip width / mipmap block are already fitted in setMemoryLimit() and the whole cube is always in memory:
+    virtual bool autoModeCanReduceMemory() override { return false; }
 
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 

@@ -612,9 +612,11 @@ void MicroMemoryConverter::copyAndCalculate() {
                             StatsCounter counterZ;
                             auto indexZ = k + xSize * j;
 
+                            // spectrum of pixel (k,j) is contiguous in rotatedSlice (standardSlice would need
+                            // a stride of ySize*xSize floats per channel -> cache miss for almost every value):
+                            auto spectrumStart = depth * j + (ySize * depth) * k;
                             for (hsize_t i = 0; i < depth; i++) {
-                                auto sourceIndex = k + xSize * j + (ySize * xSize) * i;
-                                auto& val = standardSlice[sourceIndex];
+                                auto& val = rotatedSlice[spectrumStart + i];
 
                                 if (std::isfinite(val)) {
                                     // Not lazy; too much risk of encountering an ascending / descending sequence.

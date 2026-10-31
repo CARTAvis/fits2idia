@@ -369,7 +369,7 @@ int main(int argc, char** argv) {
     try {
         converter = Converter::getConverter(cmdLineOptions.inputFileName, cmdLineOptions.outputFileName, 
                                             false, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, cmdLineOptions.progress, 
-                                            cmdLineOptions.zMips, cmdLineOptions.memoryLimitInMb, cmdLineOptions.auto_mode);
+                                            cmdLineOptions.zMips, cmdLineOptions.memoryLimitInMb, cmdLineOptions.auto_mode, cmdLineOptions.systemName);
         
         if (strlen(cmdLineOptions.systemName.c_str())>0) {
            converter->setSystemName(cmdLineOptions.systemName.c_str());

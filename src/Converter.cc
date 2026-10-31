@@ -115,7 +115,7 @@ void Converter::ParseExcludeIncludeOptions( std::string exclude_list, std::strin
    
 }
 
-std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
+std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode, const std::string& systemName) {
     hsize_t memoryLimit = memoryLimitInMb*1e6; // memory limit in bytes
 
     struct Candidate {
@@ -133,6 +133,8 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
         Candidate c;
         c.name = name;
         c.ptr.reset(p);
+        // estimates below select the converter and cache the rotated chunk dimensions -> system name must be known here:
+        p->setSystemName(systemName.c_str());
         c.canUse = p->checkMemoryUsage(-1, memoryLimit, auto_mode); // -1: n_io_blocks found automatically
         c.mem = p->reportMemoryAndExecTime();
         c.setMemoryLimit = std::move(setLimit);
@@ -196,7 +198,7 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
     return std::move(best->ptr); // the other candidates are destroyed (and their FITS files closed) here
 }
 
-std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode) {
+std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, std::string outputFileName, bool slow, bool smart, eSmartConverterType smarttype, bool progress, bool zMips, int memoryLimitInMb, bool auto_mode, const std::string& systemName) {
     // Explicitly requested non-smart converters (-T slow / fast / fast-limited) are handled first,
     // so they can never fall through to the SmartConverter default below.
     if (smarttype == eFastMemoryLimitedConverter) {
@@ -214,7 +216,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         if (smarttype == eAutoSelectedSmartConverter) {
            std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
            if( auto_mode ){
-               return getOptimalConverter(inputFileName, outputFileName, slow, smart, smarttype, progress, zMips, memoryLimitInMb, auto_mode);
+               return getOptimalConverter(inputFileName, outputFileName, slow, smart, smarttype, progress, zMips, memoryLimitInMb, auto_mode, systemName);
            } else {
               // otherwise use the default one:
               ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
@@ -681,7 +683,11 @@ bool Converter::checkMemory(hsize_t memoryLimit, bool auto_mode ) {
               
         if( !ok ) {
            std::cout << "WARNING : Approximate memory requirement of " << predictedTotal * 1e-9 << "GB exceeds configured memory limit of " << memoryLimit * 1e-9 << "GB." << std::endl;
-           std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
+           if (auto_mode) {
+              std::cout << "INFO : -a could not fit n_io_blocks = " << n_io_blocks << " in the memory limit -> a smaller block will be tried (if possible)" << std::endl;
+           } else if (autoModeCanReduceMemory()) {
+              std::cout << "Suggestion: try using -a option to automatically reduce the required memory usage." << std::endl;
+           }
            return false;
         }
     }

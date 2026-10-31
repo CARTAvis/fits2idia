@@ -47,6 +47,10 @@ void FastConverterLimitedMemory::setMemoryLimit(int _memoryLimitInMb) {
             // calculateMemoryUsage() reports the true minimum and checkMemoryUsage() rejects it
             stripWidth = 1;
             mipChannelBlock = minMipChannelBlock();
+            std::cout << "WARNING (FastConverterLimitedMemory) : this converter keeps the whole cube in memory ("
+                      << depth * height * width * sizeof(float) * 1e-9 << " GB of data, minimum " << peakMemory(stripWidth, mipChannelBlock) * 1e-9
+                      << " GB in total) which exceeds the memory limit of " << memoryLimit * 1e-9
+                      << " GB (-a cannot reduce it) -> use -T spatial, twopass or micro instead" << std::endl;
         }
     } else {
         stripWidth = width;
@@ -111,7 +115,9 @@ bool FastConverterLimitedMemory::fitToMemory(hsize_t memoryLimit) {
         if (peakMemory(1, cbMin) > memoryLimit) {
             return false;
         }
+                
         // largest sw in [1, width] with peakMemory(sw, cbMin) <= limit (monotonic in sw)
+        // Binary search to find maximum stripe width (number of channels) which still fits in memory
         hsize_t lo = 1, hi = width;
         while (lo < hi) {
             hsize_t mid = lo + (hi - lo + 1) / 2;
@@ -125,6 +131,7 @@ bool FastConverterLimitedMemory::fitToMemory(hsize_t memoryLimit) {
         return false;
     }
 
+    // For the maximum stripeWidth find maximum MipMap channel block:
     // largest cb in [cbMin, depth] with peakMemory(sw, cb) <= limit (monotonic in cb)
     hsize_t lo = cbMin, hi = depth;
     while (lo < hi) {
@@ -386,6 +393,10 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                 const hsize_t BLK = 32;                 // tile edge: 32 rows x 32 columns x up to 32 channels
                 const hsize_t strideK = height * depth; // distance (floats) between consecutive columns kl in dst
 
+                // We operate on cubes of BLK^3 pixels here, first HOT iteration (over the pixels in CUBE) is all misses
+                // but then the next 15 iterations are all hits, because the entire BLK^3 cube is already loaded into 
+                // the L1 cache - easy !
+                
                 // ---- Loop 1+2: split the strip (H rows x nx columns) into 32x32 tiles in (y, x).
                 //      Each (jb, kb) tile is an independent unit of work given to one thread.
                 //      Tiles write disjoint parts of rotatedCube -> no races, no shared cache lines.
