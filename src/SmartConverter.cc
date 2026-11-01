@@ -238,6 +238,14 @@ void SmartConverter::copyAndCalculate() {
         StatsCounter counterXYZ;
         
         double total_first_pass_processing_ms = 0.00;
+
+        // statsXY buffers hold one Stokes at a time, and histograms are only ever
+        // added to -> clear them here (also the first initialisation, new[] does not zero)
+        auto start_clear = std::chrono::high_resolution_clock::now();
+        statsXY.clearHistogramBuffers();
+        auto end_clear = std::chrono::high_resolution_clock::now();
+        total_first_pass_processing_ms += double(ms_d(end_clear - start_clear).count());
+
         for (hsize_t block = 0; block < n_blocks; block++ ) {
             hsize_t c_start = block*sliceIncrement;
             hsize_t c_end   = c_start + sliceIncrement;
