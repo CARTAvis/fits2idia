@@ -102,45 +102,53 @@ hsize_t FastConverterLimitedMemory::peakMemory(hsize_t sw, hsize_t cb) {
 // Strip widths are rounded down to multiples of TILE_SIZE when possible, so strips stay aligned with the
 // statsZ chunks. Returns false if nothing fits.
 bool FastConverterLimitedMemory::fitToMemory(hsize_t memoryLimit) {
+    // minimal size of MipMap buffer memory which is :
+    //   1 : typically when Z-MipMaps are not calculated
+    //   depth : if z-MipMaps calculated we need all the channels at once 
     const hsize_t cbMin = minMipChannelBlock();
 
+    // if enough memory for the converter to work as FastConverter (everything in memory) just return true here 
     if (peakMemory(width, depth) <= memoryLimit) {
         stripWidth = width;
         mipChannelBlock = depth;
         return true;
     }
 
+    // otherwise maximise StripeWidth first, but make sure there is still enough memory
+    // for minimum size MipMap channel buffer:
     hsize_t sw = width;
     if (depth > 1) {
+        // if width cannot be even 1 with the minmum for MipMaps -> we cannot use this converter -> return false here
         if (peakMemory(1, cbMin) > memoryLimit) {
             return false;
         }
                 
-        // largest sw in [1, width] with peakMemory(sw, cbMin) <= limit (monotonic in sw)
-        // Binary search to find maximum stripe width (number of channels) which still fits in memory
-        hsize_t lo = 1, hi = width;
-        while (lo < hi) {
-            hsize_t mid = lo + (hi - lo + 1) / 2;
-            if (peakMemory(mid, cbMin) <= memoryLimit) lo = mid; else hi = mid - 1;
+        // largest sw in [1, width] with peakMemory(sw, cbMin) <= limit
+        // Linear search down from width (simple and fast enough here, as fitToMemory runs about once per
+        // conversion; a binary search needs fewer peakMemory calls, each of them logs when DEBUG is on)
+        while (sw > 1 && peakMemory(sw, cbMin) > memoryLimit) {
+            sw--;
         }
-        if (lo >= (hsize_t)TILE_SIZE) {
-            lo = (lo / TILE_SIZE) * TILE_SIZE;
+
+        // exits loop with sw being the largest StripWidth still having enough memory of Minimum MipMap (cbMin):
+        if (sw >= (hsize_t)TILE_SIZE) {
+            // if sw is bigger than TILE_SIZE make sw multiplicity of TILE_SIZE:
+            sw = (sw / TILE_SIZE) * TILE_SIZE;
         }
-        sw = lo;
     } else if (peakMemory(width, cbMin) > memoryLimit) {
+        // if single channel image, but not enough memory for MipMaps and full StripeWidth=full width -> cannot use this converter
         return false;
     }
 
     // For the maximum stripeWidth find maximum MipMap channel block:
-    // largest cb in [cbMin, depth] with peakMemory(sw, cb) <= limit (monotonic in cb)
-    hsize_t lo = cbMin, hi = depth;
-    while (lo < hi) {
-        hsize_t mid = lo + (hi - lo + 1) / 2;
-        if (peakMemory(sw, mid) <= memoryLimit) lo = mid; else hi = mid - 1;
+    // largest cb in [cbMin, depth] with peakMemory(sw, cb) <= limit
+    hsize_t cb = depth;
+    while (cb > cbMin && peakMemory(sw, cb) > memoryLimit) {
+        cb--;
     }
 
     stripWidth = sw;
-    mipChannelBlock = lo;
+    mipChannelBlock = cb;
     return true;
 }
 
