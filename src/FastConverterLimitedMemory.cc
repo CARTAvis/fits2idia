@@ -254,6 +254,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         std::cout << "I/O (readFitsData) for Stokes : " << currentStokes << " took " << duration_io.count() << " milliseconds." << std::endl;
 
         // ------------------------------------------------------------------ 1st loop: XY stats
+        // Stats XY (statsXY) - calculate basic stats per channel (min, max, sums, sumsSq etc). statsXY
         // (identical to FastConverter, minus the rotation which is now done strip-wise below)
         PROGRESS("\tXY statistics\t");
         TIMER(timer.start("XY statistics"););
@@ -299,12 +300,15 @@ void FastConverterLimitedMemory::copyAndCalculate() {
             for (hsize_t i = 0; i < depth; i++) {
                 statsXY.accumulateStatsToCounter(counterXYZ, i);
             }
+            // calculate basics stats of 3D histogram: min, max, sums[0], sumsSq[0] etc. 
+            // stored in index=0 : minVals[0]  etc...
             statsXYZ.copyStatsFromCounter(0, cubeSize, counterXYZ);
             end1 = std::chrono::high_resolution_clock::now();
             total_pureprocessing_ms += ms_d(end1 - start1).count();
         }
 
         // ------------------------------------------------------------------ histograms (unchanged)
+        // calculate channel histograms and 3D cube histogram (using basic stats calculated in the previous step)
         PROGRESS("\tHistograms\t");
         TIMER(timer.start("Histograms"););
 
@@ -339,9 +343,14 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                 const float val = channel[p];
                 if (std::isfinite(val)) {
                     if (chanHist) {
+                        // accumulate channel histogram:
                         statsXY.accumulateHistogram(val, chanMin, chanRange, i);
                     }
                     if (cubeHist) {
+                        // accumulate partial histograms for all channels, but alligned to 3D histogram
+                        // binning, cubeMin is used here and cubeRange - so this it has to be 
+                        // separate from the above  statsXY.accumulateHistogram to calculate accurate 
+                        // 3D histogram
                         statsXYZ.accumulatePartialHistogram(val, cubeMin, cubeRange, i);
                     }
                 }
@@ -349,6 +358,8 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         }
 
         if (depth > 1) {
+            // add up all the channel histograms in 3D histogram binning accumulated above with 
+            //  statsXYZ.accumulatePartialHistogram into the full accurate 3D histogram:
             statsXYZ.consolidatePartialHistogram();
         }
         end1 = std::chrono::high_resolution_clock::now();
@@ -452,11 +463,15 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                 // Buffer index is dense for THIS strip (kl + j * nx), so the last, narrower strip uses
                 // a contiguous prefix of the statsZ buffers and is written with bufferDims {height, nx}.
                 TIMER(timer.start("Z statistics"););
+// one thread per group of pixels in XY direction (stripe):                
 #pragma omp parallel for collapse(2) schedule(static)
                 for (hsize_t j = 0; j < height; j++) {
                     for (hsize_t kl = 0; kl < nx; kl++) {
                         StatsCounter counterZ;
                         const float* spectrum = rotatedCube + kl * strideK + j * depth;
+                        
+                        // indeed one thread goes over all channels (from i=0 to depth) -> 
+                        // it is all OpenMP paralllised over spectra
                         for (hsize_t i = 0; i < depth; i++) {
                             const float val = spectrum[i];
                             if (std::isfinite(val)) {
@@ -505,6 +520,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         PROGRESS("\tMipmaps\t\t");
         double mip_proc_ms = 0.0, mip_io_ms = 0.0;
         hsize_t mipBufferChannels = 0; // 0 = no buffers allocated
+        // Loop over blocks of channels to calculate MipMAps:
         for (hsize_t c_start = 0; c_start < depth; c_start += mipChannelBlock) {
             const hsize_t nCh = std::min(mipChannelBlock, depth - c_start);
             PROGRESS("|");
@@ -518,7 +534,10 @@ void FastConverterLimitedMemory::copyAndCalculate() {
 
             start1 = std::chrono::high_resolution_clock::now();
             if (!zMips) {
+                // no mipmaps in Z direction
                 // (channel, row band) pairs touch disjoint mip cells -> race-free
+// no race condition because the largest MipMap factor us used to calculate  maxMipXY (see above) and nBands
+// because separate threads act on separate MipMaps 
 #pragma omp parallel for collapse(2) schedule(dynamic)
                 for (hsize_t c = 0; c < nCh; c++) {
                     for (hsize_t b = 0; b < nBands; b++) {
