@@ -55,5 +55,9 @@ void RegionIndexToXYZ(hsize_t mipIndex, hsize_t& x, hsize_t& y, hsize_t& z, hsiz
 // optimisation requirements:
 void getDividers(long int value, std::vector<int>& dividers);
 
+// Smallest memory limit found for this process in bytes (0 = none found): cgroup, SLURM, ulimit -v, MemAvailable.
+// source is set to the name of the source of the returned limit.
+hsize_t detectMemoryLimit(std::string& source);
+
 
 #endif

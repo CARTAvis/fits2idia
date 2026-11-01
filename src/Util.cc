@@ -5,6 +5,10 @@
 
 #include "Util.h"
 
+#include <cstdlib>
+#include <fstream>
+#include <sys/resource.h>
+
 std::vector<std::string> split(const std::string &str, char separator) {
     std::vector<std::string> result;
     std::istringstream stream(str);
@@ -291,4 +295,95 @@ void getDividers(long int value, std::vector<int>& dividers) {
           dividers.push_back(i);
       }
    }
+}
+
+// false if the file is missing or does not start with a number (e.g. "max" = no limit in cgroup v2)
+static bool readNumberFromFile(const std::string& path, hsize_t& value) {
+    std::ifstream file(path);
+    return bool(file >> value);
+}
+
+hsize_t detectMemoryLimit(std::string& source) {
+    const hsize_t MiB = 1024 * 1024;
+    const hsize_t NO_LIMIT = (hsize_t)1 << 60; // "unlimited" is a huge number in cgroup v1 (9223372036854771712)
+
+    hsize_t limit = 0;
+    source = "";
+    auto consider = [&](hsize_t bytes, const std::string& name) {
+        if (bytes == 0 || bytes >= NO_LIMIT) {
+            return;
+        }
+        std::cout << "INFO : memory limit " << bytes * 1e-9 << " GB found in " << name << std::endl;
+        if (limit == 0 || bytes < limit) {
+            limit = bytes;
+            source = name;
+        }
+    };
+
+    // cgroup (enforced limit of a SLURM job). Lines of /proc/self/cgroup are HIERARCHY:CONTROLLERS:PATH,
+    // with empty CONTROLLERS for cgroup v2. Limits of parent cgroups (SLURM: step, job, user) apply too.
+    std::ifstream cgroupFile("/proc/self/cgroup");
+    std::string line;
+    while (std::getline(cgroupFile, line)) {
+        const auto first = line.find(':');
+        const auto second = line.find(':', first + 1);
+        if (first == std::string::npos || second == std::string::npos) {
+            continue;
+        }
+        const auto controllers = split(line.substr(first + 1, second - first - 1), ',');
+        std::string path = line.substr(second + 1);
+
+        std::string base, fileName;
+        if (controllers.empty()) {
+            base = "/sys/fs/cgroup";
+            fileName = "memory.max";
+        } else if (std::find(controllers.begin(), controllers.end(), "memory") != controllers.end()) {
+            base = "/sys/fs/cgroup/memory";
+            fileName = "memory.limit_in_bytes";
+        } else {
+            continue;
+        }
+
+        while (true) {
+            const std::string file = base + path + "/" + fileName;
+            hsize_t value = 0;
+            if (readNumberFromFile(file, value)) {
+                consider(value, file);
+            }
+            const auto slash = path.rfind('/');
+            if (slash == std::string::npos) {
+                break;
+            }
+            path = path.substr(0, slash);
+        }
+    }
+
+    // SLURM request (when the cgroup files are not visible, e.g. in a container). Units are MiB, 0 = whole node
+    const char* memPerNode = getenv("SLURM_MEM_PER_NODE");
+    if (memPerNode) {
+        consider(strtoull(memPerNode, nullptr, 10) * MiB, "SLURM_MEM_PER_NODE");
+    }
+    const char* memPerCpu = getenv("SLURM_MEM_PER_CPU");
+    const char* cpusOnNode = getenv("SLURM_CPUS_ON_NODE");
+    if (memPerCpu && cpusOnNode) {
+        consider(strtoull(memPerCpu, nullptr, 10) * strtoull(cpusOnNode, nullptr, 10) * MiB, "SLURM_MEM_PER_CPU x SLURM_CPUS_ON_NODE");
+    }
+
+    // ulimit -v
+    struct rlimit addressSpace;
+    if (getrlimit(RLIMIT_AS, &addressSpace) == 0 && addressSpace.rlim_cur != RLIM_INFINITY) {
+        consider(addressSpace.rlim_cur, "ulimit -v (RLIMIT_AS)");
+    }
+
+    // memory free now, including reclaimable page cache
+    std::ifstream memInfo("/proc/meminfo");
+    while (std::getline(memInfo, line)) {
+        hsize_t kB = 0;
+        if (sscanf(line.c_str(), "MemAvailable: %llu kB", (unsigned long long*)&kB) == 1) {
+            consider(kB * 1024, "MemAvailable in /proc/meminfo");
+            break;
+        }
+    }
+
+    return limit;
 }

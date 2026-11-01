@@ -72,6 +72,13 @@ configuration file. The executable will not attempt to convert a file if the
 predicted memory usage exceeds this limit. A value of `0` means that there is no
 limit. Use a very small value (like `1`) to disable all conversions.
 
+The `-M` option has priority over this file. If neither sets a limit, the
+executable uses 90% of the smallest limit it can detect: the cgroup limit (the
+one enforced on a SLURM job), `SLURM_MEM_PER_NODE`, `SLURM_MEM_PER_CPU`,
+`ulimit -v` or `MemAvailable` from `/proc/meminfo`. The detected limit is not
+applied with `-m` or `-R`, so reports show what a job would need wherever they
+are run. Use `-M` to override a limit which was detected incorrectly.
+
 An example configuration file is provided in the `static` directory, and is 
 installed by the Ubuntu package to `usr/share/doc/fits2idia/examples`.
 

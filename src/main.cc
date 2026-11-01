@@ -9,6 +9,9 @@
 #include <sstream>
 #include "Converter.h"
 
+// fraction of the memory limit detected from the system used when the limit is not specified:
+static const double DETECTED_MEMORY_FRACTION = 0.9;
+
 // gethostname:
 #include <unistd.h>
 #include <climits>   // HOST_NAME_MAX
@@ -112,7 +115,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
     << "-R\tReport predicted memory usage and execution time without performing the conversion" << std::endl
     << "-m\tReport predicted memory usage and exit without performing the conversion. This is for backward compatibility, use -R to also see predicted exection time." << std::endl
-    << "-M\tSpecify memory limit in MB" << std::endl
+    << "-M\tSpecify memory limit in MB [default: memory_limit from /etc/fits2idiarc, otherwise 90% of the limit detected from the system (cgroup, SLURM, ulimit -v or MemAvailable)]" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
     << std::endl
@@ -343,7 +346,8 @@ int main(int argc, char** argv) {
     
     printOptions();
 
-    hsize_t memoryLimit(0);    
+    hsize_t memoryLimit(0);
+    bool memoryLimitInRcFile(false); // memory_limit = 0 in the file explicitly means no limit
     std::ifstream rcFile("/etc/fits2idiarc");
     if (rcFile.fail()){
         DEBUG(std::cout << "No system configuration file found." << std::endl;);
@@ -357,13 +361,40 @@ int main(int argc, char** argv) {
             if (std::regex_match(line, match, std::regex(" *memory_limit *= *(\\d+) *"))) {
                 std::stringstream sstream(match[1]);
                 sstream >> memoryLimit;
+                memoryLimitInRcFile = true;
             }
         }
     }
+
+    // memory limit priority: -M, /etc/fits2idiarc, limit detected from the system (safety net for a forgotten -M)
+    std::string detectedSource;
+    const hsize_t detectedLimit = detectMemoryLimit(detectedSource);
+    const bool onlyReport = cmdLineOptions.onlyReportMemory || cmdLineOptions.onlyReportMemoryAndExectime;
     if (cmdLineOptions.memoryLimitInMb > 0) {
        memoryLimit = cmdLineOptions.memoryLimitInMb * 1e6; // converting from MB to bytes
+    } else if (memoryLimitInRcFile) {
+       // getConverter() and the converters use the limit in MB:
+       cmdLineOptions.memoryLimitInMb = std::min(memoryLimit / (hsize_t)1000000, (hsize_t)INT_MAX);
+       std::cout << "INFO : memory limit = " << memoryLimit * 1e-9 << " GB from /etc/fits2idiarc" << std::endl;
+    } else if (onlyReport) {
+       // the report tells what a job would need, possibly from a login node -> its free memory must not change the answer
+       if (detectedLimit > 0) {
+          std::cout << "INFO : memory limit " << detectedLimit * 1e-9 << " GB detected from " << detectedSource << " is not applied in report mode (use -M to apply a limit)" << std::endl;
+       }
+    } else if (detectedLimit > 0) {
+       // the memory estimates do not include HDF5 / CFITSIO overheads
+       cmdLineOptions.memoryLimitInMb = std::min((hsize_t)(detectedLimit * DETECTED_MEMORY_FRACTION / 1e6), (hsize_t)INT_MAX);
+       memoryLimit = cmdLineOptions.memoryLimitInMb * 1e6;
+       std::cout << "INFO : no -M -> memory limit = " << memoryLimit * 1e-9 << " GB (" << int(DETECTED_MEMORY_FRACTION * 100 + 0.5) << "% of "
+                 << detectedLimit * 1e-9 << " GB from " << detectedSource << ")" << std::endl;
+    } else {
+       std::cout << "WARNING : no memory limit specified (-M) or detected -> running without a memory limit" << std::endl;
     }
-    
+    if (!onlyReport && detectedLimit > 0 && memoryLimit > detectedLimit) {
+       std::cout << "WARNING : memory limit of " << memoryLimit * 1e-9 << " GB exceeds the detected limit of " << detectedLimit * 1e-9
+                 << " GB (" << detectedSource << ") -> the job may be killed when it runs out of memory" << std::endl;
+    }
+
     std::unique_ptr<Converter> converter;
         
     try {
