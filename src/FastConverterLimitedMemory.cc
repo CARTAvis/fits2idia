@@ -240,9 +240,13 @@ void FastConverterLimitedMemory::copyAndCalculate() {
     const hsize_t nBands = (height + maxMipXY - 1) / maxMipXY;
 
     double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
+    double total_pass1_ms = 0.00, total_pass2_ms = 0.00, total_pass3_ms = 0.00; // wall-clock time including I/O
     for (unsigned int currentStokes = 0; currentStokes < stokes; currentStokes++) {
         DEBUG(std::cout << "Processing Stokes " << currentStokes << "..." << std::endl;);
         PROGRESS("Stokes " << currentStokes << ":" << std::endl);
+
+        // ================================================================== pass 1 (standard dataset + stats)
+        auto start_pass = std::chrono::high_resolution_clock::now();
 
         // ------------------------------------------------------------------ read whole Stokes cube
         TIMER(timer.start("Read"););
@@ -288,7 +292,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         }
         auto end1 = std::chrono::high_resolution_clock::now();
         double duration1_ms = ms_d(end1 - start1).count();
-        std::cout << "BENCHMARKING : total pure-processing time of 1st pass (statsXY): " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        std::cout << "BENCHMARKING : pure-processing time of statsXY: " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += duration1_ms;
         PROGRESS(std::endl);
 
@@ -364,7 +368,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         }
         end1 = std::chrono::high_resolution_clock::now();
         duration1_ms = ms_d(end1 - start1).count();
-        std::cout << "BENCHMARKING : total pure-processing time of histograms pass: " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
+        std::cout << "BENCHMARKING : pure-processing time of histograms: " << duration1_ms << " milliseconds " << duration1_ms/1000.00 << " seconds" << std::endl;
         total_pureprocessing_ms += duration1_ms;
         PROGRESS(std::endl);
 
@@ -381,8 +385,14 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         end_io = std::chrono::high_resolution_clock::now();
         total_io_ms += ms_d(end_io - start_io).count();
 
+        double pass_ms = ms_d(std::chrono::high_resolution_clock::now() - start_pass).count();
+        total_pass1_ms += pass_ms;
+        std::cout << "BENCHMARKING : pass 1 (standard dataset + stats) for Stokes " << currentStokes << " took: " << pass_ms << " milliseconds " << pass_ms/1000.00 << " seconds" << std::endl;
+
+        // ================================================================== pass 2 (rotation)
         // ------------------------------------------------------------------ strip-wise rotation + Z stats
         if (depth > 1) {
+            start_pass = std::chrono::high_resolution_clock::now();
             PROGRESS("\tRotation + Z stats (" << nStrips << " strips)\t");
             double strip_proc_ms = 0.0, strip_io_ms = 0.0;
 
@@ -514,7 +524,14 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                       << " s, I/O (swizzled + statsZ writes) " << strip_io_ms / 1000.0 << " s" << std::endl;
             total_pureprocessing_ms += strip_proc_ms;
             total_io_ms += strip_io_ms;
+
+            pass_ms = ms_d(std::chrono::high_resolution_clock::now() - start_pass).count();
+            total_pass2_ms += pass_ms;
+            std::cout << "BENCHMARKING : pass 2 (rotation) for Stokes " << currentStokes << " took: " << pass_ms << " milliseconds " << pass_ms/1000.00 << " seconds" << std::endl;
         }
+
+        // ================================================================== pass 3 (mipmap calculation)
+        start_pass = std::chrono::high_resolution_clock::now();
 
         // ------------------------------------------------------------------ mipmaps in channel blocks
         PROGRESS("\tMipmaps\t\t");
@@ -605,8 +622,15 @@ void FastConverterLimitedMemory::copyAndCalculate() {
         }
         end_io = std::chrono::high_resolution_clock::now();
         total_io_ms += ms_d(end_io - start_io).count();
+
+        pass_ms = ms_d(std::chrono::high_resolution_clock::now() - start_pass).count();
+        total_pass3_ms += pass_ms;
+        std::cout << "BENCHMARKING : pass 3 (mipmap calculation) for Stokes " << currentStokes << " took: " << pass_ms << " milliseconds " << pass_ms/1000.00 << " seconds" << std::endl;
     } // end of Stokes loop
 
+    std::cout << "BENCHMARKING : total time of pass 1 (standard dataset + stats): " << total_pass1_ms << " milliseconds " << total_pass1_ms/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total time of pass 2 (rotation): " << total_pass2_ms << " milliseconds " << total_pass2_ms/1000.00 << " seconds" << std::endl;
+    std::cout << "BENCHMARKING : total time of pass 3 (mipmap calculation): " << total_pass3_ms << " milliseconds " << total_pass3_ms/1000.00 << " seconds" << std::endl;
     std::cout << "BENCHMARKING: total time spent in I/O (both read and write) = " << total_io_ms << " milliseconds " << float(total_io_ms)/1000.00 << " seconds" << std::endl;
     // same summary line as the other converters (parse_converter_logs.py reads it as Proc[s])
     std::cout << "BENCHMARKING : total pure-processing time of 1st, 2nd and rotation passes: " << total_pureprocessing_ms
