@@ -173,8 +173,8 @@ void SmartConverter::copyAndCalculate() {
     auto start = std::chrono::high_resolution_clock::now();
     
     if(memoryLimitInMb <= 0) {
-       std::cerr << "ERROR : memory limit not set for the SmartConverter and it is strictly required -> exiting SmartConverter::copyAndCalculate function" << std::endl;
-       return;
+       // throw and not return : Converter::convert() would publish the empty output file and main() would exit with 0
+       throw "Memory limit not set for the SmartConverter and it is strictly required";
     }
     
     // calculate memory limits in different units, slice here is image in a single freq. channel:

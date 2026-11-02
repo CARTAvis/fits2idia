@@ -189,8 +189,9 @@ std::unique_ptr<Converter> Converter::getOptimalConverter(std::string inputFileN
     }
     printf("-----------------------------------------------------------------------\n");
 
-    if (memoryLimitInMb > 0 && !auto_mode && best->setMemoryLimit) {
-        best->setMemoryLimit(memoryLimitInMb); // auto_mode already fitted it in checkMemoryUsage()
+    // needed also in auto_mode: checkMemoryUsage() fits the converter, but only this stores the limit in it
+    if (memoryLimitInMb > 0 && best->setMemoryLimit) {
+        best->setMemoryLimit(memoryLimitInMb);
     }
     std::cout << "DEBUG : selected " << best->name << " converter (" << best->mem.exec_time_sec
               << " sec, " << best->mem.total/1e6 << " MB)" << std::endl;

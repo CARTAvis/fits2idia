@@ -99,8 +99,8 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
     auto start = std::chrono::high_resolution_clock::now();
     
     if(memoryLimitInMb <= 0) {
-       std::cerr << "ERROR : memory limit not set for the SmartConverter and it is strictly required -> exiting SmartFastTwoPassConverter::copyAndCalculate function" << std::endl;
-       return;
+       // throw and not return : Converter::convert() would publish the empty output file and main() would exit with 0
+       throw "Memory limit not set for the SmartConverter and it is strictly required";
     }
     
     // NOTE: Z-mipmaps are not supported by this channel-blocked converter: MipMap::write() uses
