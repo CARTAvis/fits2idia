@@ -46,7 +46,7 @@ endif ()
 
 set(SOURCE_FILES
     ${SOURCE_FILES}
-    src/main.cc
+    src/fits2idia.cc
     src/Stats.cc
     src/MipMap.cc
     src/Converter.cc
@@ -60,6 +60,9 @@ set(SOURCE_FILES
 add_executable(fits2idia ${SOURCE_FILES})
 target_link_libraries(fits2idia ${LINK_LIBS})
 
-install(TARGETS fits2idia
+add_executable(idia2fits src/idia2fits.cc)
+target_link_libraries(idia2fits ${LINK_LIBS})
+
+install(TARGETS fits2idia idia2fits
     RUNTIME DESTINATION bin
 )
