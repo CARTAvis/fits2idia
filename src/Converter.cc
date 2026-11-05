@@ -4,6 +4,7 @@
 */
 
 #include "Converter.h"
+#include <regex>
 
 bool Converter::rotatedDatasetChunking = false;
 bool Converter::rotatedDatasetChunkingForce = false;
@@ -329,6 +330,28 @@ bool Converter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*/ ) {
    return false;
 }
 
+// Name of a header keyword after swapping axes 3 and 4 (STOKES,FREQ -> FREQ,STOKES), unchanged if it
+// does not refer to axis 3 or 4. Covers the per-axis keywords (incl. NAXISn and alternate WCS
+// letters, e.g. CTYPE3A), both indices of the PCi_j / CDi_j matrices and the axis index of PVi_m / PSi_m.
+static std::string swapStokesFreqKeyword(const std::string& name) {
+    static const std::regex axisKeyword("(NAXIS|CTYPE|CRVAL|CDELT|CRPIX|CUNIT|CROTA|CNAME|CRDER|CSYER)([34])([A-Z]?)");
+    static const std::regex matrixKeyword("(PC|CD)([0-9]+)_([0-9]+)([A-Z]?)");
+    static const std::regex parameterKeyword("(PV|PS)([0-9]+)_([0-9]+)([A-Z]?)");
+    auto swapAxis = [](const std::string& axis) -> std::string { return axis == "3" ? "4" : (axis == "4" ? "3" : axis); };
+
+    std::smatch m;
+    if (std::regex_match(name, m, axisKeyword)) {
+        return m[1].str() + swapAxis(m[2].str()) + m[3].str();
+    }
+    if (std::regex_match(name, m, matrixKeyword)) {
+        return m[1].str() + swapAxis(m[2].str()) + "_" + swapAxis(m[3].str()) + m[4].str();
+    }
+    if (std::regex_match(name, m, parameterKeyword)) {
+        return m[1].str() + swapAxis(m[2].str()) + "_" + m[3].str() + m[4].str();
+    }
+    return name;
+}
+
 bool Converter::checkIfSwapAxisRequired() {
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);
@@ -546,38 +569,27 @@ void Converter::convert() {
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER", std::string(HDF5_CONVERTER));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_VERSION", std::string(HDF5_CONVERTER_VERSION));
     writeHdf5Attribute(outputGroup, "HDF5_CONVERTER_TYPE", getConverterType() );
+    if (swapStokesFreqAxis) {
+        // the FITS file had axis order STOKES,FREQ; DATA and the axis keywords below are stored as FREQ,STOKES
+        writeHdf5Attribute(outputGroup, "HDF5_STOKES_FREQ_SWAPPED", (int64_t)1);
+    }
 
     int numAttributes;
     readFitsHeader(inputFilePtr, numAttributes);
     
-    std::vector<std::string> wcsStokesKeywords = {"CTYPE3","CRVAL3","CDELT3","CRPIX3","CUNIT3"};
-    std::vector<std::string> wcsFreqKeywords = {"CTYPE4","CRVAL4","CDELT4","CRPIX4","CUNIT4"};
-    
     // IMPORTANT: This is 1-indexed!
     for (int i = 1; i <= numAttributes; i++) {
-        bool bSwappingStokesFreqAxisNow = false;
         std::string attributeName;
         std::string attributeValue;
         readFitsAttribute(inputFilePtr, i, attributeName, attributeValue);
+        // keyword name in the FITS file, used to read string values (attributeName may be swapped below)
+        const std::string fitsKeywordName = attributeName;
  
-        if (swapStokesFreqAxis) { // check if swap of STOKES <-> FREQ axis is required:
-           // If Stokes is 3rd axis and Freq 4th axis -> SWAP Stokes and Frequency axis in FITS header
-           if (std::find(wcsStokesKeywords.begin(), wcsStokesKeywords.end(), attributeName) != wcsStokesKeywords.end()) {
-              if(attributeName.back() == '3') {
-                 // if swap of STOKES and FREQ axis is required change 3 -> 4:
-                 std::cout << "INFO : swapping attribute " << attributeName << " (3 -> 4) " << std::endl;
-                 attributeName.back() = '4';
-                 bSwappingStokesFreqAxisNow = true;
-              }
-           }else{
-              if ( std::find(wcsFreqKeywords.begin(), wcsFreqKeywords.end(), attributeName) != wcsFreqKeywords.end() ){
-                 if(attributeName.back() == '4') {
-                    // if swap of STOKES and FREQ axis is required change 4 -> 3:
-                    std::cout << "INFO : swapping attribute " << attributeName << " (4 -> 3) " << std::endl;
-                    attributeName.back() = '3';
-                    bSwappingStokesFreqAxisNow = true;
-                 }
-              }
+        if (swapStokesFreqAxis) {
+           // Stokes is the 3rd axis and Freq the 4th -> store the axis keywords with axes 3 and 4 swapped
+           attributeName = swapStokesFreqKeyword(attributeName);
+           if (attributeName != fitsKeywordName) {
+              std::cout << "INFO : swapping attribute " << fitsKeywordName << " -> " << attributeName << std::endl;
            }
         }
         
@@ -593,13 +605,7 @@ void Converter::convert() {
                     attributeValue.find_last_of('\'') == attributeValue.length() - 1) {
                     // STRING
                     std::string attributeValueStr;
-                    readFitsStringAttribute(inputFilePtr, attributeName, attributeValueStr);
-                    // this may not be required 
-                    if( bSwappingStokesFreqAxisNow ) {
-                       // if swapping axis now, we have to use attributeValue as the attributes's name has been swapped 
-                       // for example CTYPE3 -> CTYPE4 which means value of CTYPE4 would be read (FREQ) and no swap would happen!
-                       attributeValueStr = attributeValue;
-                    }
+                    readFitsStringAttribute(inputFilePtr, fitsKeywordName, attributeValueStr);
                     writeHdf5Attribute(outputGroup, attributeName, attributeValueStr);
                     DEBUG(std::cout << "Written attribute " << attributeName.c_str() << " = " << attributeValueStr.c_str() << std::endl;);
                 } else if (attributeValue == "T" || attributeValue == "F") {
@@ -635,10 +641,13 @@ void Converter::convert() {
                 } else {
                     // TRY TO PARSE AS INTEGER
                     try {
-                        int64_t attributeValueInt = std::stoi(attributeValue);
+                        int64_t attributeValueInt = std::stoll(attributeValue);
                         writeHdf5Attribute(outputGroup, attributeName, attributeValueInt);
                     } catch (const std::invalid_argument& ia) {
                         std::cout << "Warning: could not parse attribute '" << attributeName << "' as an integer." << std::endl;
+                        parsingFailure = true;
+                    } catch (const std::out_of_range& e) {
+                        std::cout << "Warning: integer attribute '" << attributeName << "' does not fit in 64 bits -> stored as a string." << std::endl;
                         parsingFailure = true;
                     }
                 }

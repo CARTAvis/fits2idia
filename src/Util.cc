@@ -154,36 +154,51 @@ void readFitsStringAttribute(fitsfile* filePtr, const std::string& name, std::st
     value = strValueTmp;
 }
 
-void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
-    long fpixel[] = {1, 1, (long)channel + 1, stokes + 1};
-    if (bSwapStokesFreqAxis) {
-       // basically should instead be : long fpixel[] = {1, 1, stokes + 1, (long)channel + 1};
-       fpixel[2] = stokes + 1;
-       fpixel[3] = (long)channel + 1;
-    }
+// Reads size pixels starting at (row, channel, stokes) into destination, in the order of the
+// standard dataset [stokes][channel][y][x], i.e. consecutive channels of one Stokes follow each other.
+// In a FITS file with axis order STOKES,FREQ (bSwapStokesFreqAxis) consecutive planes in the file
+// alternate between Stokes, so the read is split into one read per channel (each one contiguous).
+static void readFitsPixels(fitsfile* filePtr, hsize_t channel, hsize_t row, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis, const char* errorMessage) {
     int status(0);
-    
-    fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
-    
+
+    if (!bSwapStokesFreqAxis) {
+        long fpixel[] = {1, (long)row + 1, (long)channel + 1, stokes + 1};
+        fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
+        if (status != 0) {
+            throw errorMessage;
+        }
+        return;
+    }
+
+    long naxes[4] = {1, 1, 1, 1};
+    fits_get_img_size(filePtr, 4, naxes, &status);
     if (status != 0) {
-        throw "Could not read image data";
+        throw errorMessage;
+    }
+    const hsize_t width = naxes[0];
+    const hsize_t planeSize = naxes[0] * naxes[1];
+    hsize_t offset = row * width; // position within the first plane, always at a row start
+
+    while (size > 0) {
+        hsize_t n = std::min(size, planeSize - offset);
+        long fpixel[] = {1, (long)(offset / width) + 1, stokes + 1, (long)channel + 1};
+        fits_read_pix(filePtr, TFLOAT, fpixel, n, NULL, destination, NULL, &status);
+        if (status != 0) {
+            throw errorMessage;
+        }
+        destination += n;
+        size -= n;
+        channel++;
+        offset = 0;
     }
 }
 
+void readFitsData(fitsfile* filePtr, hsize_t channel, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
+    readFitsPixels(filePtr, channel, 0, stokes, size, destination, bSwapStokesFreqAxis, "Could not read image data");
+}
+
 void readFitsDataRow(fitsfile* filePtr, hsize_t channel, hsize_t row, unsigned int stokes, hsize_t size, float* destination, bool bSwapStokesFreqAxis) {
-    long fpixel[] = {1, (long)row + 1, (long)channel + 1, stokes + 1};
-    if (bSwapStokesFreqAxis) {
-       // basically should instead be : long fpixel[] = {1, (long)row + 1, stokes + 1, (long)channel + 1};
-       fpixel[2] = stokes + 1;
-       fpixel[3] = (long)channel + 1;
-    }
-    int status(0);
-    
-    fits_read_pix(filePtr, TFLOAT, fpixel, size, NULL, destination, NULL, &status);
-    
-    if (status != 0) {
-        throw "Could not read image data row";
-    }
+    readFitsPixels(filePtr, channel, row, stokes, size, destination, bSwapStokesFreqAxis, "Could not read image data row");
 }
 
 // Only available in C++ API from 1.10.1
