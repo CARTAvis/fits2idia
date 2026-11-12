@@ -59,5 +59,33 @@ void getDividers(long int value, std::vector<int>& dividers);
 // source is set to the name of the source of the returned limit.
 hsize_t detectMemoryLimit(std::string& source);
 
+// Status file for scripts, one key=value per line, STATUS first:
+//   STARTED      written by the constructor; still there after a crash or a kill (segfault, OOM, time limit)
+//   OK           conversion finished
+//   MEMORY_LIMIT conversion refused because the predicted memory exceeds the limit (-M)
+//   REPORT_ONLY  -m / -R : only the memory / execution time report was requested
+//   ERROR        any other failure (default if set() was not called before the destructor runs)
+// The final status is written by the destructor, so every return from main() records one. Each write goes to
+// <path>.tmp first and is then renamed, so a reader never sees a half-written file.
+class StatusFile {
+public:
+    explicit StatusFile(const std::string& path); // empty path = no status file
+    ~StatusFile();
+    StatusFile(const StatusFile&) = delete;
+    StatusFile& operator=(const StatusFile&) = delete;
+
+    void set(const std::string& status, const std::string& message = "");
+    void add(const std::string& key, const std::string& value);
+
+private:
+    void write(const std::string& status) const;
+
+    std::string path;
+    std::string status{"ERROR"};
+    std::string message;
+    std::vector<std::pair<std::string, std::string>> fields;
+    std::chrono::steady_clock::time_point start;
+};
+
 
 #endif

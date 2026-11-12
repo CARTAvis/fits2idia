@@ -5,6 +5,7 @@
 
 #include "Util.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <sys/resource.h>
@@ -401,4 +402,61 @@ hsize_t detectMemoryLimit(std::string& source) {
     }
 
     return limit;
+}
+StatusFile::StatusFile(const std::string& _path) : path(_path), start(std::chrono::steady_clock::now()) {
+    write("STARTED");
+}
+
+StatusFile::~StatusFile() {
+    write(status);
+}
+
+void StatusFile::set(const std::string& _status, const std::string& _message) {
+    status = _status;
+    message = _message;
+}
+
+void StatusFile::add(const std::string& key, const std::string& value) {
+    for (auto& field : fields) {
+        if (field.first == key) {
+            field.second = value;
+            return;
+        }
+    }
+    fields.push_back({key, value});
+}
+
+void StatusFile::write(const std::string& currentStatus) const {
+    if (path.empty()) {
+        return;
+    }
+    // must not throw: also called from the destructor
+    const std::string tmpPath = path + ".tmp";
+    {
+        std::ofstream out(tmpPath);
+        if (!out) {
+            std::cerr << "WARNING : could not write status file " << tmpPath << std::endl;
+            return;
+        }
+        std::string oneLineMessage = message;
+        std::replace(oneLineMessage.begin(), oneLineMessage.end(), '\n', ' ');
+        out << "STATUS=" << currentStatus << std::endl;
+        if (!oneLineMessage.empty()) {
+            out << "MESSAGE=" << oneLineMessage << std::endl;
+        }
+        for (auto& field : fields) {
+            out << field.first << "=" << field.second << std::endl;
+        }
+        out << "ELAPSED_S=" << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << std::endl;
+        out.close();
+        if (out.fail()) {
+            // e.g. disk full: keep the previous status file rather than replacing it with an empty / partial one
+            std::cerr << "WARNING : could not write status file " << tmpPath << " -> " << path << " not updated" << std::endl;
+            std::remove(tmpPath.c_str());
+            return;
+        }
+    }
+    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+        std::cerr << "WARNING : could not rename " << tmpPath << " to " << path << std::endl;
+    }
 }

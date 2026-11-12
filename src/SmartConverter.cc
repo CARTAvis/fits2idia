@@ -490,7 +490,8 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
       int portions = (height / height_chunk);
       if ( (height % height_chunk) != 0 ) {
          std::cerr << "ERROR : height chunk " << height_chunk << " is not a divider of height " << height << " due to bug in the code -> aborting now" << std::endl;
-         exit(0);
+         // throw, not exit(0): exit code 0 would report this internal error as a successful conversion
+         throw "Height chunk is not a divider of the image height (internal error)";
       }
 
       hsize_t y;

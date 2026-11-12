@@ -86,6 +86,7 @@ struct commandLineOptions
    std::string exclude_list;
    std::string include_list;
    std::string systemName;
+   std::string statusFileName; // empty = <output>.status, "-" = no status file
 };
 
 bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
@@ -117,6 +118,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-m\tReport predicted memory usage and exit without performing the conversion. This is for backward compatibility, use -R to also see predicted exection time." << std::endl
     << "-M\tSpecify memory limit in MB [default: memory_limit from /etc/fits2idiarc, otherwise 90% of the limit detected from the system (cgroup, SLURM, ulimit -v or MemAvailable)]" << std::endl
     << "-q\tSuppress all non-error output. Deprecated; this is now the default." << std::endl
+    << "-w\tStatus file with the result of the run (STATUS=OK, MEMORY_LIMIT, REPORT_ONLY, ERROR, or STARTED after a crash), '-' = none [default: output_filename.status]" << std::endl
     << "-z\tInclude axis 3 in mipmap calculation (currently not compatible with -s mode)." << std::endl
     << std::endl
     << "Additional options specifying parameters of the convertion (e.g. allow for approximations):" << std::endl
@@ -129,7 +131,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
           << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM -a" << std::endl
           << "   - to obtain estimated memory requirements and execution time, add option: -m or -R" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:T:H:E:I:K:L:")) != -1) {
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:T:H:E:I:K:L:w:")) != -1) {
         switch (opt) {
             case 'a':
             case 'r':
@@ -249,6 +251,9 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
             case 'z':
                 cmdLineOptions.zMips = true;
                 break;
+            case 'w':
+                cmdLineOptions.statusFileName.assign(optarg);
+                break;
             case ':':
                 err = true;
                 std::cerr << "Missing argument for option " << opt << "." << std::endl;
@@ -319,7 +324,13 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
             cmdLineOptions.outputFileName = cmdLineOptions.inputFileName + ".hdf5";
         }
     }
-    
+
+    if (cmdLineOptions.statusFileName.empty()) {
+        cmdLineOptions.statusFileName = cmdLineOptions.outputFileName + ".status";
+    } else if (cmdLineOptions.statusFileName == "-") {
+        cmdLineOptions.statusFileName.clear();
+    }
+
     return true;
 }
 
@@ -345,6 +356,11 @@ int main(int argc, char** argv) {
     }
     
     printOptions();
+
+    // STATUS=STARTED now; the final status is written when main() returns (ERROR unless set below)
+    StatusFile status(cmdLineOptions.statusFileName);
+    status.add("INPUT", cmdLineOptions.inputFileName);
+    status.add("OUTPUT", cmdLineOptions.outputFileName);
 
     hsize_t memoryLimit(0);
     bool memoryLimitInRcFile(false); // memory_limit = 0 in the file explicitly means no limit
@@ -395,8 +411,10 @@ int main(int argc, char** argv) {
                  << " GB (" << detectedSource << ") -> the job may be killed when it runs out of memory" << std::endl;
     }
 
+    status.add("MEMORY_LIMIT_MB", std::to_string(cmdLineOptions.memoryLimitInMb)); // 0 = no limit
+
     std::unique_ptr<Converter> converter;
-        
+
     try {
         converter = Converter::getConverter(cmdLineOptions.inputFileName, cmdLineOptions.outputFileName, 
                                             false, cmdLineOptions.smart, cmdLineOptions.smartconverter_type, cmdLineOptions.progress, 
@@ -417,9 +435,13 @@ int main(int argc, char** argv) {
         // needs to be before memory and I/O and compute cost report 
         // as this function also selects the most optimal algorithm
         // so the report is based on what is decided here:
-        if( !converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode) ) {
+        bool memoryOk = converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode);
+        status.add("CONVERTER", converter->getConverterType());
+        if( !memoryOk ) {
             if (!cmdLineOptions.onlyReportMemoryAndExectime && !cmdLineOptions.onlyReportMemory) {
                // only exit in the full execution mode, not in report-only mode
+               status.add("PREDICTED_MEMORY_MB", std::to_string(converter->calculateMemoryUsage().total / 1000000));
+               status.set("MEMORY_LIMIT", "predicted memory exceeds the memory limit of " + std::to_string(cmdLineOptions.memoryLimitInMb) + " MB");
                return 1;
             }
         }
@@ -429,10 +451,12 @@ int main(int argc, char** argv) {
         converter->reportMemoryAndExecTime();
         
         if (cmdLineOptions.onlyReportMemoryAndExectime) {
+            status.set("REPORT_ONLY");
             return 0;
         } else {
             if (cmdLineOptions.onlyReportMemory) {
                 converter->reportMemoryUsage();
+                status.set("REPORT_ONLY");
                 return 0;
             }
         }
@@ -442,9 +466,11 @@ int main(int argc, char** argv) {
         converter->convert();
     } catch (const char* msg) {
         std::cerr << "Error: " << msg << ". Aborting." << std::endl;
+        status.set("ERROR", msg);
         return 1;
     }
 
+    status.set("OK");
     return 0;
 }
 
