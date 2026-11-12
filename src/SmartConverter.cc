@@ -64,11 +64,14 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
     // rotation pass : standardSlice , rotatedSlice : 
     hsize_t total_rotation_pass = 0;
     if (depth > 1) {
-        hsize_t sliceSize = product(trimAxes({stokes, depth, TILE_SIZE, TILE_SIZE}, N));
+        // one Stokes at a time, tile capped at the image size (agrees with calculateRotatedDataAndCubeHistogram)
+        const hsize_t tileH = std::min(TILE_SIZE, height);
+        const hsize_t tileW = std::min(TILE_SIZE, width);
+        hsize_t sliceSize = product(trimAxes({1, depth, tileH, tileW}, N));
         m.sizes["Rotation"] = 2*sliceSize*sizeof(float);
         std::cout << "MEMORY_ESTIMATE: rotation " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;
-        
-        m.sizes["Z stats"] = Stats::size({TILE_SIZE, TILE_SIZE}); // agrees with statsZ.createBuffers({TILE_SIZE, TILE_SIZE});        
+
+        m.sizes["Z stats"] = Stats::size({tileH, tileW}); // agrees with statsZ.createBuffers({tileH, tileW});
         std::cout << "MEMORY_ESTIMATE: Z stats " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
         
         int nThreads = 1;
@@ -539,14 +542,17 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     PROGRESS("Tiled rotation, Z stats & cube histogram" << std::endl);
     TIMER(timer.start("Allocate"););
 
-    hsize_t sliceSize = product(trimAxes({1, depth, TILE_SIZE, TILE_SIZE}, N));   // was {stokes, ...} but just 1 stokes at a time
-    std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
+    // tiles are at most TILE_SIZE x TILE_SIZE, but never larger than the image itself (e.g. 64 x 64 x 100000)
+    const hsize_t tileH = std::min(TILE_SIZE, height);
+    const hsize_t tileW = std::min(TILE_SIZE, width);
+    hsize_t sliceSize = product(trimAxes({1, depth, tileH, tileW}, N));   // was {stokes, ...} but just 1 stokes at a time
+    std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " tile:" << tileH << "x" << tileW << " N:" << N << std::endl;
     std::cout << "MEMORY (SmartConverter::calculateRotatedDataAndCubeHistogram for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
     float* standardSlice = new float[sliceSize];
     float* rotatedSlice = new float[sliceSize];
 
-    printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",TILE_SIZE,TILE_SIZE);
-    statsZ.createBuffers({TILE_SIZE, TILE_SIZE});
+    printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",tileH,tileW);
+    statsZ.createBuffers({tileH, tileW});
 
     bool doCubeHistogram = (numBins > 0);
     

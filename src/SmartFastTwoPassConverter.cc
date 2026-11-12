@@ -58,12 +58,14 @@ MemoryUsage SmartFastTwoPassConverter::calculateMemoryUsage() {
     if (depth > 1) {
         // standardSlice + rotatedSlice: one full-depth tile each, for ONE Stokes at a time.
         // Must match sliceSize in SmartConverter::calculateRotatedDataAndCubeHistogram().
-        // Always TILE_SIZE x TILE_SIZE, even when the image (or an edge tile) is smaller.
-        hsize_t sliceSize = product(trimAxes({1, depth, TILE_SIZE, TILE_SIZE}, N));
+        // TILE_SIZE x TILE_SIZE, capped at the image size (edge tiles reuse a prefix of the buffers).
+        const hsize_t tileH = std::min(TILE_SIZE, height);
+        const hsize_t tileW = std::min(TILE_SIZE, width);
+        hsize_t sliceSize = product(trimAxes({1, depth, tileH, tileW}, N));
         m.sizes["Rotation tile slices"] = 2 * sliceSize * sizeof(float);
 
-        // statsZ.createBuffers({TILE_SIZE, TILE_SIZE}) -> no histograms
-        m.sizes["Z stats (tile)"] = Stats::size({TILE_SIZE, TILE_SIZE});
+        // statsZ.createBuffers({tileH, tileW}) -> no histograms
+        m.sizes["Z stats (tile)"] = Stats::size({tileH, tileW});
         
         // per-thread cube histograms in calculateRotatedDataAndCubeHistogram()
         int nThreads = 1;
@@ -141,7 +143,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
         statsXYZ.createBuffers({}, 0);
 
         // FIX 3: statsZ is NOT allocated here any more. Z statistics are computed tile-by-tile in the
-        //        rotation pass, which allocates statsZ with {TILE_SIZE, TILE_SIZE}. Allocating {height, width}
+        //        rotation pass, which allocates statsZ with one tile ({tileH, tileW}). Allocating {height, width}
         //        here was unused and leaked (Stats::createBuffers does not free previous buffers).
     }
 
