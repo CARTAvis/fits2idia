@@ -66,6 +66,15 @@ public:
     virtual bool autoModeCanReduceMemory() { return true; }
     // false if the converter ignores n_io_blocks (checkMemoryUsage then does not search for it):
     virtual bool usesIOBlocks() { return true; }
+    // Memory range in which the converter's configuration depends on the limit (bytes).
+    // Informational only, these are NOT limits (the memory limit is always -M / fits2idiarc / detected limit).
+    // 0 = not reported (unknown): the field is then not written to the status file and scripts fall back
+    // to their own range.
+    //   minimumMemory()       : smallest limit (-M) the converter accepts
+    //   maximumUsefulMemory() : peak memory of the unconstrained configuration; a larger limit changes nothing
+    // Written to the status file as MIN_MEMORY_MB / MAX_USEFUL_MEMORY_MB, e.g. for memory sweeps in test scripts.
+    virtual hsize_t minimumMemory() { return 0; }
+    virtual hsize_t maximumUsefulMemory() { return 0; }
     bool checkMemory(hsize_t memoryLimit, bool auto_mode );
     bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
@@ -172,6 +181,9 @@ public:
     // strip width / mipmap block are already fitted in setMemoryLimit() and the whole cube is always in memory:
     virtual bool autoModeCanReduceMemory() override { return false; }
     virtual bool usesIOBlocks() override { return false; }
+    // smallest configuration (1-column strip, smallest mipmap block) / single strip and single mipmap block:
+    virtual hsize_t minimumMemory() override { return peakMemory(1, minMipChannelBlock()); }
+    virtual hsize_t maximumUsefulMemory() override { return peakMemory(width, depth); }
 
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 

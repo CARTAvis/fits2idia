@@ -437,6 +437,14 @@ int main(int argc, char** argv) {
         // so the report is based on what is decided here:
         bool memoryOk = converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode);
         status.add("CONVERTER", converter->getConverterType());
+        // memory range for scripts (rounded up, so that -M <value> is accepted / reaches the full configuration):
+        auto toMbCeil = [](hsize_t bytes) { return std::to_string((bytes + 999999) / 1000000); };
+        if (converter->minimumMemory() > 0) {
+            status.add("MIN_MEMORY_MB", toMbCeil(converter->minimumMemory()));
+        }
+        if (converter->maximumUsefulMemory() > 0) {
+            status.add("MAX_USEFUL_MEMORY_MB", toMbCeil(converter->maximumUsefulMemory()));
+        }
         if( !memoryOk ) {
             if (!cmdLineOptions.onlyReportMemoryAndExectime && !cmdLineOptions.onlyReportMemory) {
                // only exit in the full execution mode, not in report-only mode
