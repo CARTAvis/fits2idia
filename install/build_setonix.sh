@@ -70,9 +70,9 @@ echo "Loading modules for PAWSEY_CLUSTER = $PAWSEY_CLUSTER"
 if [ $PAWSEY_CLUSTER = "setonix" ]; then
    module reset
    
-   module load cpe/25.03 
-   module swap pawseyenv/2026.11 pawseyenv/2025.08 
-   module load gcc-native/14.2
+#   module load cpe/25.03 
+#   module swap pawseyenv/2026.11 pawseyenv/2025.08 
+#   module load gcc-native/14.2
 
    module_load cfitsio/4.4.0 cray-hdf5/1.14.3.7
    
