@@ -403,11 +403,30 @@ hsize_t detectMemoryLimit(std::string& source) {
 
     return limit;
 }
+hsize_t peakRssBytes() {
+    std::ifstream procStatus("/proc/self/status");
+    std::string line;
+    while (std::getline(procStatus, line)) {
+        unsigned long long kB = 0;
+        if (sscanf(line.c_str(), "VmHWM: %llu kB", &kB) == 1) {
+            return (hsize_t)kB * 1024;
+        }
+    }
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) == 0 && usage.ru_maxrss > 0) {
+        return (hsize_t)usage.ru_maxrss * 1024; // kB on Linux
+    }
+    return 0;
+}
+
 StatusFile::StatusFile(const std::string& _path) : path(_path), start(std::chrono::steady_clock::now()) {
     write("STARTED");
 }
 
 StatusFile::~StatusFile() {
+    if (status != "REPORT_ONLY") {
+        std::cout << "INFO : peak RSS (VmHWM) = " << peakRssBytes() * 1e-9 << " GB" << std::endl;
+    }
     write(status);
 }
 
@@ -447,6 +466,7 @@ void StatusFile::write(const std::string& currentStatus) const {
         for (auto& field : fields) {
             out << field.first << "=" << field.second << std::endl;
         }
+        out << "PEAK_RSS_MB=" << (peakRssBytes() + 500000) / 1000000 << std::endl;
         out << "ELAPSED_S=" << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << std::endl;
         out.close();
         if (out.fail()) {

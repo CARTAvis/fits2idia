@@ -59,12 +59,18 @@ void getDividers(long int value, std::vector<int>& dividers);
 // source is set to the name of the source of the returned limit.
 hsize_t detectMemoryLimit(std::string& source);
 
+// Peak resident set size of this process in bytes: VmHWM from /proc/self/status, falling back to
+// getrusage(RUSAGE_SELF).ru_maxrss; 0 if neither is available. Unlike the SLURM / cgroup MaxRSS it does
+// not include the page cache, so it can be compared directly with the predicted memory (TOTAL ALLOCATION).
+hsize_t peakRssBytes();
+
 // Status file for scripts, one key=value per line, STATUS first:
 //   STARTED      written by the constructor; still there after a crash or a kill (segfault, OOM, time limit)
 //   OK           conversion finished
 //   MEMORY_LIMIT conversion refused because the predicted memory exceeds the limit (-M)
 //   REPORT_ONLY  -m / -R : only the memory / execution time report was requested
 //   ERROR        any other failure (default if set() was not called before the destructor runs)
+// Every write also records PEAK_RSS_MB (peakRssBytes() / 1e6, same MB as MEMORY_LIMIT_MB) and ELAPSED_S.
 // The final status is written by the destructor, so every return from main() records one. Each write goes to
 // <path>.tmp first and is then renamed, so a reader never sees a half-written file.
 class StatusFile {
