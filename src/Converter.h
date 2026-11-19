@@ -75,6 +75,17 @@ public:
     // Written to the status file as MIN_MEMORY_MB / MAX_USEFUL_MEMORY_MB, e.g. for memory sweeps in test scripts.
     virtual hsize_t minimumMemory() { return 0; }
     virtual hsize_t maximumUsefulMemory() { return 0; }
+    // Compact description of everything the memory limit decides (block sizes, strips, dividers, threads),
+    // valid after checkMemoryUsage(). Two runs with the same converter, input, options and CONFIG produce
+    // the same output, so test scripts can skip re-checking them. Written to the status file as CONFIG.
+    // Format: <TYPE>[:key=value,key=value...] without spaces.
+    virtual std::string configSignature() {
+        std::string sig = getConverterType();
+        if (usesIOBlocks()) {
+            sig += ":n_io_blocks=" + std::to_string(n_io_blocks);
+        }
+        return sig;
+    }
     bool checkMemory(hsize_t memoryLimit, bool auto_mode );
     bool checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool auto_mode );
     
@@ -184,6 +195,10 @@ public:
     // smallest configuration (1-column strip, smallest mipmap block) / single strip and single mipmap block:
     virtual hsize_t minimumMemory() override { return peakMemory(1, minMipChannelBlock()); }
     virtual hsize_t maximumUsefulMemory() override { return peakMemory(width, depth); }
+    virtual std::string configSignature() override {
+        return std::string(getConverterType()) + ":strip_width=" + std::to_string(stripWidth)
+               + ",mip_channel_block=" + std::to_string(mipChannelBlock);
+    }
 
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel) override;
 
@@ -222,6 +237,10 @@ public:
     virtual bool ReduceMemoryUsage( hsize_t memoryLimit, int max_iter=10 );
     virtual void resetMemoryTuning( bool can_reduce_io_blocks ) override;
     virtual std::string memoryTuningInfo() override;
+    virtual std::string configSignature() override {
+        return Converter::configSignature() + ",height_divider=" + std::to_string(height_divider)
+               + ",mipmap_threads=" + std::to_string(allowed_mipmaps_threads);
+    }
 
     // calculate IO cost :
     virtual IOCostBreakdown estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width, hsize_t numBins, const IOCostModel& readModel, const IOCostModel& writeModel);
@@ -321,6 +340,10 @@ public:
     // Sizes rows_per_block and rotation_tile_size to the limit (0 = no limit -> whole channel, full tile).
     virtual void setMemoryLimit(int _memoryLimitInMb) override;
     hsize_t getRowsPerBlock() const { return rows_per_block; }
+    virtual std::string configSignature() override {
+        return std::string(getConverterType()) + ":rows_per_block=" + std::to_string(rows_per_block)
+               + ",rotation_tile=" + std::to_string(rotation_tile_size);
+    }
 
 protected:
     void copyAndCalculate() override;

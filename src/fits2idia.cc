@@ -437,6 +437,7 @@ int main(int argc, char** argv) {
         // so the report is based on what is decided here:
         bool memoryOk = converter->checkMemoryUsage(cmdLineOptions.n_io_blocks, memoryLimit, cmdLineOptions.auto_mode);
         status.add("CONVERTER", converter->getConverterType());
+        status.add("CONFIG", converter->configSignature()); // what the memory limit decided, for test scripts
         // memory range for scripts (rounded up, so that -M <value> is accepted / reaches the full configuration):
         auto toMbCeil = [](hsize_t bytes) { return std::to_string((bytes + 999999) / 1000000); };
         if (converter->minimumMemory() > 0) {
