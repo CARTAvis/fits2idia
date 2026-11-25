@@ -53,7 +53,7 @@ void MipMap::createBuffers(std::vector<hsize_t>& bufferDims) {
     count = new int[bufferSize];
     
     size_t allocated_bytes = bufferSize*sizeof(double) + bufferSize*sizeof(int);
-    std::cout << "MEMORY (MipMap::createBuffers): allocating  " << allocated_bytes/1e9 << " GB " << std::endl;
+    VERBOSE(1, std::cout << "MEMORY (MipMap::createBuffers): allocating  " << allocated_bytes/1e9 << " GB " << std::endl;);
     
     resetBuffers();
     

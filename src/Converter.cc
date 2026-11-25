@@ -204,7 +204,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
     // Explicitly requested non-smart converters (-T slow / fast / fast-limited) are handled first,
     // so they can never fall through to the SmartConverter default below.
     if (smarttype == eFastMemoryLimitedConverter) {
-        std::cout << "DEBUG : -T fast-limited -> using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;
+        DEBUG(std::cout << "DEBUG : -T fast-limited -> using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;);
         FastConverterLimitedMemory* ptr = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
         ptr->setMemoryLimit(memoryLimitInMb);
         return std::unique_ptr<Converter>(ptr);
@@ -214,9 +214,9 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
 
     SmartConverter* ptr = NULL;
     if (smart) { // was also && memoryLimitInMb > 0
-        std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << " smarttype = " << smarttype << std::endl;
+        DEBUG(std::cout << "DEBUG : using SmartConverter object with memory limit = " << memoryLimitInMb << " MB." << " smarttype = " << smarttype << std::endl;);
         if (smarttype == eAutoSelectedSmartConverter) {
-           std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;
+           DEBUG(std::cout << "DEBUG : using AutoSelectedSmartConverter object" << std::endl;);
            if( auto_mode ){
                return getOptimalConverter(inputFileName, outputFileName, slow, smart, smarttype, progress, zMips, memoryLimitInMb, auto_mode, systemName);
            } else {
@@ -226,13 +226,13 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
         } else {
             if (smarttype == eSmartConverterChannelParallelTwoPass || smarttype == eSmartConverterChannelParallel) {
                 ptr = new SmartFastTwoPassConverter(inputFileName, outputFileName, progress, zMips);
-                std::cout << "DEBUG : using SmartFastTwoPassConverter object" << std::endl;
+                DEBUG(std::cout << "DEBUG : using SmartFastTwoPassConverter object" << std::endl;);
             } else if (smarttype == eSmartMicroMemoryConverter) {
                 ptr = new MicroMemoryConverter(inputFileName, outputFileName, progress, zMips);
-                std::cout << "DEBUG : using MicroMemoryConverter object" << std::endl;
+                DEBUG(std::cout << "DEBUG : using MicroMemoryConverter object" << std::endl;);
             } else if (smarttype == eSmartConverterSpatialParallel) {
                 ptr = new SmartConverter(inputFileName, outputFileName, progress, zMips);
-                std::cout << "DEBUG : using SmartConverter object" << std::endl;
+                DEBUG(std::cout << "DEBUG : using SmartConverter object" << std::endl;);
             } else {
                 // no silent fallback: an unhandled type here is a programming error
                 std::cerr << "ERROR : getConverter : unhandled smart converter type " << smarttype << std::endl;
@@ -247,7 +247,7 @@ std::unique_ptr<Converter> Converter::getConverter(std::string inputFileName, st
             // Fast path with a memory limit: rotate in strips so the whole rotated cube
             // (and full-size Z stats) never have to be in memory. Identical to FastConverter
             // when the limit is large enough (single strip).
-            std::cout << "DEBUG : using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;
+            DEBUG(std::cout << "DEBUG : using FastConverterLimitedMemory object with memory limit = " << memoryLimitInMb << " MB" << std::endl;);
             FastConverterLimitedMemory* ptr = new FastConverterLimitedMemory(inputFileName, outputFileName, progress, zMips);
             ptr->setMemoryLimit(memoryLimitInMb);
             return std::unique_ptr<Converter>(ptr);
@@ -415,9 +415,9 @@ void Converter::DebugDimsAndParameters( const std::vector<hsize_t>& swizzledDims
    double rdccW0 = 0.0;
    currentAccessPlist.getChunkCache(rdccNumSlots, rdccNumBytes, rdccW0);
 
-   std::cout << "DEBUG chunk cache: nslots=" << rdccNumSlots
+   DEBUG(std::cout << "DEBUG chunk cache: nslots=" << rdccNumSlots
              << " nbytes=" << rdccNumBytes << " (" << (rdccNumBytes / 1e6) << " MB)"
-             << " w0=" << rdccW0 << std::endl;
+             << " w0=" << rdccW0 << std::endl;);
    // --- END DEBUG ---
 
 }
@@ -716,19 +716,19 @@ bool Converter::checkMemoryUsage( int n_io_blocks, hsize_t memoryLimit, bool aut
    if (n_io_blocks <= 0 && this->usesIOBlocks()) {
       hsize_t _stokes, _depth, _height, _width;
       this->getDimensions( _stokes, _depth,  _height, _width );
-      std::cout << "INFO checkMemoryUsage : N blocks <= 0 -> finding number of blocks automatically" << std::endl;
-      std::cout << "INFO checkMemoryUsage, image dimensions are : stokes x depth x height x width = " << _stokes << " x " << _depth << " x " << _height << " x " << _width << std::endl;
+      VERBOSE(1, std::cout << "INFO checkMemoryUsage : N blocks <= 0 -> finding number of blocks automatically" << std::endl;);
+      VERBOSE(1, std::cout << "INFO checkMemoryUsage, image dimensions are : stokes x depth x height x width = " << _stokes << " x " << _depth << " x " << _height << " x " << _width << std::endl;);
 
       if (memoryLimit <= 0) {
          // when there is no memory limit just set N blocks to number of channels (entire image like in FastConveretr):
          this->setIOBlocks(_depth);
-         std::cout << "INFO checkMemoryUsage : no memory limit -> setting n_io_blocks = " << _depth << " = number of channels" << std::endl;        
+         VERBOSE(1, std::cout << "INFO checkMemoryUsage : no memory limit -> setting n_io_blocks = " << _depth << " = number of channels" << std::endl;);
       } else {
          // there is memory limit -> check what number of blocks we can do at once and try to use the maximum one 
          // hence going from largest (depth) down 
          int n_io_blocks = _depth;         
          while( n_io_blocks > 0 ) {
-            std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;
+            VERBOSE(1, std::cout << "INFO checkMemoryUsage : comparing estimated memory requirements against the limit for n_io_blocks = " << n_io_blocks << std::endl;);
             this->setIOBlocks(n_io_blocks);
             this->resetMemoryTuning( n_io_blocks > 1 );
             bool ret = checkMemory(memoryLimit, auto_mode);

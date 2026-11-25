@@ -24,14 +24,14 @@ SmartConverter::SmartConverter(std::string inputFileName, std::string outputFile
 MemoryUsage SmartConverter::calculateMemoryUsage() {
     MemoryUsage m;
     
-    std::cout << "MEMORY_ESTIMATE: (SmartConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , height = " << height << " , width = " << width << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: (SmartConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , height = " << height << " , width = " << width << std::endl;);
 
     // memory used in pass 1 :
     m.sizes["Main dataset"] = n_io_blocks * height * width * sizeof(float); // multiple (_sliceIncrement) image slices can be read in 1 block , TICKED 
-    std::cout << "MEMORY_ESTIMATE: Main dataset  = " << m.sizes["Main dataset"]* 1e-9 << " GB" << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: Main dataset  = " << m.sizes["Main dataset"]* 1e-9 << " GB" << std::endl;);
     
     m.sizes["XY stats"] = Stats::size({depth}, numBins, height_chunk); // height added - has to agree with statsXY.createBuffers({depth}, height_chunk);, TICKED
-    std::cout << "MEMORY_ESTIMATE: XY stats  = " << m.sizes["XY stats"]* 1e-9 << " GB" << std::endl; 
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: XY stats  = " << m.sizes["XY stats"]* 1e-9 << " GB" << std::endl;);
     
     // MipMaps in multiple threads:
     m.sizes["Mipmaps"] = MipMaps::size(standardDims, {1, height, width}, zMips);
@@ -39,12 +39,12 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
        // times number of threads (see function SmartConverter::calculateChannelStats) :
        m.sizes["Mipmaps"] *= (1+allowed_mipmaps_threads); // for mipMaps and thread_mipmaps_array
     }
-    std::cout << "MEMORY_ESTIMATE: MipMaps calculations (#threads = " << allowed_mipmaps_threads << ") = " << m.sizes["Mipmaps"] * 1e-9 << " GB " << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: MipMaps calculations (#threads = " << allowed_mipmaps_threads << ") = " << m.sizes["Mipmaps"] * 1e-9 << " GB " << std::endl;);
     
 
     if (depth > 1) {
        m.sizes["XYZ stats"] = Stats::size({}, numBins, height ); // was depth); has to agree with statsXYZ.createBuffers({}, height);
-       std::cout << "MEMORY_ESTIMATE: XYZ stats  = " << m.sizes["XYZ stats"]* 1e-9 << " GB" << std::endl;
+       VERBOSE(1, std::cout << "MEMORY_ESTIMATE: XYZ stats  = " << m.sizes["XYZ stats"]* 1e-9 << " GB" << std::endl;);
     }
 
     hsize_t total_pass1 = 0;
@@ -52,14 +52,14 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
         total_pass1 += kv.second;
     }
        
-    std::cout << "MEMORY_ESTIMATE: 1st pass = " << total_pass1 * 1e-9 << " GB " << std::endl;
-    std::cout << "MEMORY_ESTIMATE: height_chunk = " << height_chunk << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: 1st pass = " << total_pass1 * 1e-9 << " GB " << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: height_chunk = " << height_chunk << std::endl;);
     //----------------------------------------------- end of 1st pass -----------------------------------------------
 
     // 2nd pass (cannot see any specific allocations)
     hsize_t total_pass2 = 0;
     // 2nd pass does not use any extra memory:
-    std::cout << "MEMORY_ESTIMATE: 2nd pass (accurate XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: 2nd pass (accurate XYZ histogram) = " << total_pass2 * 1e-9 << " GB " << std::endl;);
     
     // rotation pass : standardSlice , rotatedSlice : 
     hsize_t total_rotation_pass = 0;
@@ -69,29 +69,29 @@ MemoryUsage SmartConverter::calculateMemoryUsage() {
         const hsize_t tileW = std::min(TILE_SIZE, width);
         hsize_t sliceSize = product(trimAxes({1, depth, tileH, tileW}, N));
         m.sizes["Rotation"] = 2*sliceSize*sizeof(float);
-        std::cout << "MEMORY_ESTIMATE: rotation " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;
+        VERBOSE(1, std::cout << "MEMORY_ESTIMATE: rotation " << m.sizes["Rotation"] * 1e-9 << " GB " << std::endl;);
 
         m.sizes["Z stats"] = Stats::size({tileH, tileW}); // agrees with statsZ.createBuffers({tileH, tileW});
-        std::cout << "MEMORY_ESTIMATE: Z stats " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;
+        VERBOSE(1, std::cout << "MEMORY_ESTIMATE: Z stats " << m.sizes["Z stats"] * 1e-9 << " GB " << std::endl;);
         
         int nThreads = 1;
 #ifdef _OPENMP
         nThreads = omp_get_max_threads();
-        printf("DEBUG: _OPENMP version\n");
+        DEBUG(printf("DEBUG: _OPENMP version\n"););
 #endif
-        printf("DEBUG: nThreads = %d\n",nThreads);
+        DEBUG(printf("DEBUG: nThreads = %d\n",nThreads););
         m.sizes["Cube histogram (per-thread)"] = (hsize_t)nThreads * numBins * sizeof(int64_t);
 
         total_rotation_pass = m.sizes["Rotation"] + m.sizes["Z stats"] + m.sizes["Cube histogram (per-thread)"];
-        std::cout << "MEMORY_ESTIMATE: Rotation = "  << total_rotation_pass * 1e-9 << " GB " << std::endl;
+        VERBOSE(1, std::cout << "MEMORY_ESTIMATE: Rotation = "  << total_rotation_pass * 1e-9 << " GB " << std::endl;);
     }
 
 
     m.total = std::max( std::max(total_pass1, total_pass2), total_rotation_pass);
-    std::cout << "MEMORY_ESTIMATE peak usage = " << m.total * 1e-9 << " GB " << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE peak usage = " << m.total * 1e-9 << " GB " << std::endl;);
     
     size_t sum_total = total_pass1 + total_pass2 + total_rotation_pass;
-    std::cout << "MEMORY_ESTIMATE sum usage = " << m.total * 1e-9 << " GB " << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE sum usage = " << m.total * 1e-9 << " GB " << std::endl;);
     
     return m;
 }
@@ -114,17 +114,17 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
        // number of iterations is limited by the number of dividers in the array heigth_dividers:
        while (iter < heigth_dividers.size() && iter < max_iter && predictedTotal>memoryLimit ) {
           int divider = heigth_dividers[iter];
-          std::cout << "MEMORY REDUCTION : testing divider = " << divider << ", #MipMap_Threads = " << allowed_mipmaps_threads << std::endl;
+          VERBOSE(1, std::cout << "MEMORY REDUCTION : testing divider = " << divider << ", #MipMap_Threads = " << allowed_mipmaps_threads << std::endl;);
           SetChunkDivider( divider );
       
           MemoryUsage memusage = calculateMemoryUsage();
           predictedTotal = memusage.total;
 
           if (predictedTotal <= memoryLimit ) {
-              std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;
+              VERBOSE(1, std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB below memory limit of " << memoryLimit * 1e-9 << "GB -> exiting loop" << std::endl;);
               return true;
           } else {
-              std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;
+              VERBOSE(1, std::cout << "MEMORY MINIMSATION : required predicted memory " << predictedTotal * 1e-9 << "GB still exceeds the limit of " << memoryLimit * 1e-9 << "GB (divider = " << divider << ")" << std::endl;);
           }
           
           // counts all iterations:
@@ -134,10 +134,10 @@ bool SmartConverter::ReduceMemoryUsage( hsize_t memoryLimit, int max_iter /*=10*
        if( allowed_mipmaps_threads > 1 && int(allowed_mipmaps_threads/2) >= min_threads ) {
            // reduce number of threads used for MipMaps as well:
            allowed_mipmaps_threads = int(allowed_mipmaps_threads/2);
-           std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;
+           VERBOSE(1, std::cout << "MEMORY REDUCTION : reduced number of allowed_mipmaps_threads to " << allowed_mipmaps_threads << std::endl;);
        }else{
            if( keep_min_mipmap_threads ) {
-              std::cout << "MEMORY REDUCTION : not reducing allowed_mipmaps_threads below " << min_threads << " -> n_io_blocks = " << n_io_blocks << " should be reduced first" << std::endl;
+              VERBOSE(1, std::cout << "MEMORY REDUCTION : not reducing allowed_mipmaps_threads below " << min_threads << " -> n_io_blocks = " << n_io_blocks << " should be reduced first" << std::endl;);
            } else {
               std::cout << "WARNING : reached the minimum possible memory for specified number of n_io_blocks = " << n_io_blocks << std::endl;
            }
@@ -168,7 +168,7 @@ void SmartConverter::SetChunkDivider( int divider ) {
    height_divider = divider;
    height_chunk = height / divider;
 
-   std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;
+   VERBOSE(1, std::cout << "Divider set to " << divider << " and height_chunk = " << height_chunk << std::endl;);
 }
 
 
@@ -188,7 +188,7 @@ void SmartConverter::copyAndCalculate() {
     if (leftOverSlices > 0) {
        n_blocks++;
     }
-    std::cout << "DEBUG : n_blocks = " << n_blocks << " vs.  sliceIncrementCount = " << sliceIncrementCount << " and leftOverSlices = " << leftOverSlices << std::endl;
+    DEBUG(std::cout << "DEBUG : n_blocks = " << n_blocks << " vs.  sliceIncrementCount = " << sliceIncrementCount << " and leftOverSlices = " << leftOverSlices << std::endl;);
               
               
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
@@ -197,21 +197,21 @@ void SmartConverter::copyAndCalculate() {
     auto start1 = std::chrono::high_resolution_clock::now();    
     // Allocate one channel at a time, and no swizzled data
     TIMER(timer.start("Allocate"););
-    std::cout << "MEMORY : stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
-    std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating standardCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
+    VERBOSE(1, std::cout << "MEMORY : stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY (SmartConverter::copyAndCalculate): allocating standardCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;);
     standardCube = new float[height * width * sliceIncrement];    
     
     // Allocate one stokes of stats at a time
     // statsXY.createBuffers({depth});
-    printf("DEBUG : before statsXY.createBuffers({%llu}, %llu)\n",depth,height);
+    DEBUG(printf("DEBUG : before statsXY.createBuffers({%llu}, %llu)\n",depth,height););
     statsXY.createBuffers({depth}, height_chunk);
         
     if (depth > 1) {
-        printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",height);
+        DEBUG(printf("DEBUG : before statsXYZ.createBuffers({}, %llu)\n",height););
         statsXYZ.createBuffers({}, height);
     }
 
-    printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n",1,depth,height);    
+    DEBUG(printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n",1,depth,height););
     mipMaps.createBuffers({1, height, width});
     
     // Allocate thread-local MipMaps array once
@@ -257,9 +257,9 @@ void SmartConverter::copyAndCalculate() {
             }
             hsize_t n_channels = (c_end-c_start);
             hsize_t block_size = n_channels*height*width;
-            std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;
+            VERBOSE(2, std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;);
             
-            std::cout << "DEBUG : reading from c_start = " << c_start << " blockSize = " <<  block_size << " bytes" << std::endl;
+            VERBOSE(2, std::cout << "DEBUG : reading from c_start = " << c_start << " blockSize = " <<  block_size << " bytes" << std::endl;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             // measuring I/O :
@@ -277,7 +277,7 @@ void SmartConverter::copyAndCalculate() {
             auto end_io = std::chrono::high_resolution_clock::now();
             auto duration_io = ms_d(end_io - start_io);
             total_io_ms += double(duration_io.count());
-            std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+            VERBOSE(2, std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;);
                     
             for(hsize_t c = c_start; c < c_end; c++) {                 
                 PROGRESS_DECIMATED(c, channelProgressStride, "|");
@@ -464,7 +464,7 @@ double SmartConverter::calculateChannelStats( hsize_t indexXY, hsize_t block_pos
 
    auto end1 = std::chrono::high_resolution_clock::now();
    auto duration1 = ms_d(end1 - start1);
-   std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
+   VERBOSE(2, std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;);
 
    return duration1.count();
 }
@@ -481,7 +481,7 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
    bool chanHist(std::isfinite(chanMin) && std::isfinite(chanMax) && chanRange > 0);
 
    if( chanHist ) {
-      printf("DEBUG : calculating channel histogram for channel = %ld\n",(long int)indexXY);
+      DEBUG(printf("DEBUG : calculating channel histogram for channel = %ld\n",(long int)indexXY););
       auto doChannelHistogram = [&] (float val, hsize_t offset) {
          // XY histogram
          statsXY.accumulatePartialHistogram(val, chanMin, chanRange, offset);
@@ -518,7 +518,7 @@ double SmartConverter::calculateChannelHistogram( hsize_t indexXY, hsize_t block
 
    auto end1 = std::chrono::high_resolution_clock::now();
    auto duration1 = ms_d(end1 - start1);
-   std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;
+   VERBOSE(2, std::cout << "Execution of 1st loop took: " << duration1.count() << " milliseconds." << std::endl;);
 
    return duration1.count();
 }
@@ -547,12 +547,12 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     const hsize_t tileH = std::min(TILE_SIZE, height);
     const hsize_t tileW = std::min(TILE_SIZE, width);
     hsize_t sliceSize = product(trimAxes({1, depth, tileH, tileW}, N));   // was {stokes, ...} but just 1 stokes at a time
-    std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " tile:" << tileH << "x" << tileW << " N:" << N << std::endl;
-    std::cout << "MEMORY (SmartConverter::calculateRotatedDataAndCubeHistogram for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
+    VERBOSE(1, std::cout << "MEMORY : sliceSize = " << sliceSize << " stokes:" << stokes << " depth: " << depth << " tile:" << tileH << "x" << tileW << " N:" << N << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY (SmartConverter::calculateRotatedDataAndCubeHistogram for standardSlice and rotatedSlice ): allocating " << double(2*sliceSize*sizeof(float))/1e9 << " GB " << std::endl << std::flush;);
     float* standardSlice = new float[sliceSize];
     float* rotatedSlice = new float[sliceSize];
 
-    printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",tileH,tileW);
+    DEBUG(printf("DEBUG : before statsZ.createBuffers({%llu,%llu})\n",tileH,tileW););
     statsZ.createBuffers({tileH, tileW});
 
     bool doCubeHistogram = (numBins > 0);
@@ -562,9 +562,9 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
     int nThreads = 1;
 #ifdef _OPENMP
     nThreads = omp_get_max_threads();
-    printf("DEBUG: _OPENMP version\n");
+    DEBUG(printf("DEBUG: _OPENMP version\n"););
 #endif
-    printf("DEBUG: nThreads = %d\n",nThreads);
+    DEBUG(printf("DEBUG: nThreads = %d\n",nThreads););
     std::vector<int64_t> threadHist(doCubeHistogram ? (size_t)nThreads * numBins : 0);
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -624,7 +624,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 auto end_io = std::chrono::high_resolution_clock::now();
                 auto duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
-                std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+                VERBOSE(2, std::cout << "3nd I/O (readHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;);
 
                 auto starttile = std::chrono::high_resolution_clock::now();
                 // rotate tile slice
@@ -775,7 +775,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 auto endtile = std::chrono::high_resolution_clock::now();
                 auto durationtile = ms_d(endtile - starttile);
                 total_rotation_pass_processing_ms += double(durationtile.count());
-                std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;
+                VERBOSE(2, std::cout << "Pure processing of rotation of 1 tile, including writting, took: " << durationtile.count() << " milliseconds." << std::endl;);
 
                 DEBUG(std::cout << " Writing rotated dataset..." << std::endl;);
                 TIMER(timer.start("Write"););
@@ -785,7 +785,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 end_io = std::chrono::high_resolution_clock::now();
                 duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
-                std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+                VERBOSE(2, std::cout << "4th I/O (writeHdf5Data) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;);
 
                 DEBUG(std::cout << " Writing Z statistics..." << std::endl;);
                 start_io = std::chrono::high_resolution_clock::now();
@@ -793,7 +793,7 @@ double SmartConverter::calculateRotatedDataAndCubeHistogram(double& total_io_ms,
                 end_io = std::chrono::high_resolution_clock::now();
                 duration_io = ms_d(end_io - start_io);
                 total_rotation_io_ms += double(duration_io.count());
-                std::cout << "5th I/O (statsZ.write) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;
+                VERBOSE(2, std::cout << "5th I/O (statsZ.write) for xOffset/yOffset : " << xOffset << " , " << yOffset << " took " << duration_io.count() << " milliseconds." << std::endl;);
             }
         }
 

@@ -29,7 +29,7 @@ MemoryUsage SmartFastTwoPassConverter::calculateMemoryUsage() {
     MemoryUsage m;
     const hsize_t nBlock = (hsize_t)n_io_blocks; // channels per block (= sliceIncrement in copyAndCalculate)
 
-    std::cout << "MEMORY_ESTIMATE: (SmartFastTwoPassConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , depth = " << depth << " , height = " << height << " , width = " << width << " , numBins = " << numBins << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: (SmartFastTwoPassConverter::calculateMemoryUsage) parameters: n_io_blocks = " << n_io_blocks << " , depth = " << depth << " , height = " << height << " , width = " << width << " , numBins = " << numBins << std::endl;);
 
     // ---------------- persistent (both passes) ----------------
     // statsXY.createBuffers({depth}) -> partialHistMultiplier = 0
@@ -79,10 +79,10 @@ MemoryUsage SmartFastTwoPassConverter::calculateMemoryUsage() {
 
     m.total = persistent + std::max(total_pass1, total_rotation);
 
-    std::cout << "MEMORY_ESTIMATE: persistent (XY/XYZ stats, mipmaps) = " << persistent * 1e-9 << " GB" << std::endl;
-    std::cout << "MEMORY_ESTIMATE: pass 1 (block buffer)              = " << total_pass1 * 1e-9 << " GB" << std::endl;
-    std::cout << "MEMORY_ESTIMATE: rotation pass (tile buffers)       = " << total_rotation * 1e-9 << " GB" << std::endl;
-    std::cout << "MEMORY_ESTIMATE: peak usage = persistent + max(pass 1, rotation) = " << m.total * 1e-9 << " GB" << std::endl;
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: persistent (XY/XYZ stats, mipmaps) = " << persistent * 1e-9 << " GB" << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: pass 1 (block buffer)              = " << total_pass1 * 1e-9 << " GB" << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: rotation pass (tile buffers)       = " << total_rotation * 1e-9 << " GB" << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: peak usage = persistent + max(pass 1, rotation) = " << m.total * 1e-9 << " GB" << std::endl;);
 
     m.note = " (peak = persistent + max(pass 1, rotation); components above do not all coexist)";
     return m;
@@ -120,7 +120,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
     if (leftOverSlices > 0) {
        n_blocks++;
     }
-    std::cout << "DEBUG : n_blocks = " << n_blocks << " vs.  sliceIncrementCount = " << sliceIncrementCount << " and leftOverSlices = " << leftOverSlices << std::endl;
+    DEBUG(std::cout << "DEBUG : n_blocks = " << n_blocks << " vs.  sliceIncrementCount = " << sliceIncrementCount << " and leftOverSlices = " << leftOverSlices << std::endl;);
               
     const hsize_t channelProgressStride = std::max((hsize_t)1, (hsize_t)(depth / 100));
     
@@ -128,17 +128,17 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
     // FIX 2: no rotatedCube here any more -- the rotated (swizzled) dataset is produced entirely by the
     //        tiled rotation pass (calculateRotatedDataAndCubeHistogram), which reads back standardDataSet.
     TIMER(timer.start("Allocate"););
-    std::cout << "MEMORY : stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;
-    std::cout << "MEMORY (SmartFastTwoPassConverter::copyAndCalculate): allocating standardCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;
+    VERBOSE(1, std::cout << "MEMORY : stokes:" << stokes << " depth: " << depth << " TILE_SIZE:" << TILE_SIZE << " N:" << N << std::endl;);
+    VERBOSE(1, std::cout << "MEMORY (SmartFastTwoPassConverter::copyAndCalculate): allocating standardCube with size " << double(height * width * sliceIncrement*sizeof(float))/1e9 << " GB " << std::endl << std::flush;);
     standardCube = new float[height * width * sliceIncrement];
     rotatedCube = nullptr;
     
     // Allocate one stokes of stats at a time
-    std::cout << "DEBUG : before statsXY.createBuffers({" << depth << ")" << std::endl;
+    DEBUG(std::cout << "DEBUG : before statsXY.createBuffers({" << depth << ")" << std::endl;);
     statsXY.createBuffers({depth});
         
     if (depth > 1) {
-        std::cout << "DEBUG : before statsXYZ.createBuffers({},0)" << std::endl;
+        DEBUG(std::cout << "DEBUG : before statsXYZ.createBuffers({},0)" << std::endl;);
         // Cube histogram is accumulated directly (no partial histograms) in the rotation pass
         statsXYZ.createBuffers({}, 0);
 
@@ -152,7 +152,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
     //        for the first block of the next Stokes). Previously the buffers stayed at leftOverSlices size
     //        after Stokes 0 -> out-of-bounds accumulation for Stokes >= 1.
     hsize_t mipBufferChannels = sliceIncrement;
-    printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n", sliceIncrement, height, width);    
+    DEBUG(printf("DEBUG : before mipMaps.createBuffers({%d,%llu,%llu})\n", sliceIncrement, height, width););
     mipMaps.createBuffers({(hsize_t)sliceIncrement, height, width});
 
     double total_io_ms = 0.00, total_pureprocessing_ms = 0.00;
@@ -184,7 +184,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
                 mipBufferChannels = n_channels;
             }
             
-            std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;
+            VERBOSE(2, std::cout << "DEBUG : processing block = " << block << " -> channel range " << c_start << " - " << c_end << std::endl;);
             DEBUG(std::cout << " Reading main dataset..." << std::flush;);
             TIMER(timer.start("Read"););
             auto start_io = std::chrono::high_resolution_clock::now();
@@ -200,7 +200,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             auto end_io = std::chrono::high_resolution_clock::now();
             auto duration_io = ms_d(end_io - start_io);
             auto block_io_ms = double(duration_io.count());
-            std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+            VERBOSE(2, std::cout << "I/O (readFitsData+writeHdf5Data) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;);
 
             // XY stats (channel-parallel, each thread owns its channel index)
             auto start_processing = std::chrono::high_resolution_clock::now();
@@ -290,7 +290,7 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             end_io = std::chrono::high_resolution_clock::now();
             duration_io = ms_d(end_io - start_io);
             block_io_ms += double(duration_io.count());
-            std::cout << "I/O (mipMaps.write) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;
+            VERBOSE(2, std::cout << "I/O (mipMaps.write) for block : " << block << " took " << duration_io.count() << " milliseconds." << std::endl;);
             
             // Clear the mipmaps before the next BLOCK
             TIMER(timer.start("Mipmaps"););
@@ -298,8 +298,8 @@ void SmartFastTwoPassConverter::copyAndCalculate() {
             
             total_io_ms += block_io_ms;
             total_first_pass_processing_ms += block_first_pass_processing_ms;
-            std::cout << "BENCHMARKING : block = " << block << " I/O took " << block_io_ms/1000.00 << " sec -> total I/O time = " << total_io_ms/1000.00 << " sec." << std::endl;
-            std::cout << "BENCHMARKING : block = " << block << " pure processing took " << block_first_pass_processing_ms/1000.00 << " sec -> total pure processing took " << total_first_pass_processing_ms/1000.00 << " sec." << std::endl;
+            VERBOSE(2, std::cout << "BENCHMARKING : block = " << block << " I/O took " << block_io_ms/1000.00 << " sec -> total I/O time = " << total_io_ms/1000.00 << " sec." << std::endl;);
+            VERBOSE(2, std::cout << "BENCHMARKING : block = " << block << " pure processing took " << block_first_pass_processing_ms/1000.00 << " sec -> total pure processing took " << total_first_pass_processing_ms/1000.00 << " sec." << std::endl;);
         } // end of loop over blocks
         
         // === POST-BLOCK: XYZ basic stats for this Stokes ===

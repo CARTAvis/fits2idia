@@ -22,7 +22,7 @@ static const double DETECTED_MEMORY_FRACTION = 0.9;
 // Unknown names return eInvalidConverterType so getOptions() can stop with an error instead of
 // silently running a different converter.
 eSmartConverterType parse_smartconverter_type(const char* smartconverter_type) {
-   printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type);
+   DEBUG(printf("DEBUG : parse_smartconverter_type(%s)\n",smartconverter_type););
 
    struct { const char* name; eSmartConverterType type; } names[] = {
       {"auto",              eAutoSelectedSmartConverter},
@@ -111,7 +111,8 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
     << "-o\tOutput filename" << std::endl 
     << "-S\tUse smart converter with MPI optimisations and still using small amount of memory (use -a to automatically adjust)" << std::endl 
     << "-T\tType of smart converter: 'spatial' paralellised over pixels [DEFAULT], 'frequency', 'channel', 'twopass', (parallelised over channels) 'micro' " << std::endl
-    << "-p\tPrint progress output (by default the program is silent)" << std::endl    
+    << "-p\tPrint progress output (by default the program is silent)" << std::endl
+    << "-v\tIncrease verbosity, can be repeated (-v -v or -vv): 1 = memory estimate details, 2 = per-block/tile timings, 3 = debug [default: " << DEFAULT_VERBOSITY_LEVEL << "]" << std::endl
     << "-r\tUse auto mode adjusting memory usage below the limit (only for backward compatibility with the previous version of smart converter)" << std::endl
     << "-H\tSystem name which can be used to use system specific I/O measurements (e.g. -H setonix), possible values: setonix, setonix-ssd, laptop" << std::endl
     << "-R\tReport predicted memory usage and execution time without performing the conversion" << std::endl
@@ -131,8 +132,12 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
           << "   - if user knowns which algorithm they want, execute: fits2idia INPUT.fits -o OUTPUT.hdf5 -p -M mem_MB -T ALGORITHM -a" << std::endl
           << "   - to obtain estimated memory requirements and execution time, add option: -m or -R" << std::endl;
 
-    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzM:B:T:H:E:I:K:L:w:")) != -1) {
+    gVerbosityLevel = DEFAULT_VERBOSITY_LEVEL;
+    while ((opt = getopt(argc, argv, ":o:arsSpqmRCFzvM:B:T:H:E:I:K:L:w:")) != -1) {
         switch (opt) {
+            case 'v':
+                gVerbosityLevel++;
+                break;
             case 'a':
             case 'r':
                 cmdLineOptions.auto_mode = true;
@@ -238,7 +243,7 @@ bool getOptions(int argc, char** argv, commandLineOptions& cmdLineOptions) {
                 if (optarg) {
                    converter_type = optarg;
                    cmdLineOptions.smartconverter_type = parse_smartconverter_type(converter_type.c_str());
-                   printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str());
+                   DEBUG(printf("DEBUG : smartconverter_type = %d (%s)\n",(int)cmdLineOptions.smartconverter_type,converter_type.c_str()););
                    if (cmdLineOptions.smartconverter_type == eInvalidConverterType) {
                       std::cerr << "Unknown converter type '" << converter_type << "' for -T. Valid: auto, spatial, channel (frequency), "
                                 << "twopass (2pass), micro, slow, fast, fast-limited (limited)." << std::endl;
@@ -470,7 +475,7 @@ int main(int argc, char** argv) {
             }
         }
                 
-        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << (slow ? " using slower, memory-efficient method" : "") << std::endl;);
+        DEBUG(std::cout << "Converting FITS file " << cmdLineOptions.inputFileName << " to HDF5 file " << cmdLineOptions.outputFileName << (cmdLineOptions.slow ? " using slower, memory-efficient method" : "") << std::endl;);
 
         converter->convert();
     } catch (const char* msg) {

@@ -29,10 +29,23 @@
 #define TILE_SIZE (hsize_t)512
 #define MIN_MIPMAP_SIZE (hsize_t)128
 
+// Runtime verbosity, increased by 1 with each -v:
+//   0 : default (progress with -p, memory/time report, totals, warnings and errors)
+//   1 : memory estimate breakdown and memory reduction search (-v)
+//   2 : per-block / per-tile timings and progress details (-vv)
+//   3 : detailed debugging, i.e. DEBUG(...) (-vvv)
+// The test scripts parse level-0 lines only, except summarise_stage_times*.py and parse_benchmarks.*,
+// which need the level-2 timings (-vv).
+inline int gVerbosityLevel = 0;   // C++17 inline variable: one definition shared by all translation units
+
+#define VERBOSE(level, x) do { if (gVerbosityLevel >= (level)) { x } } while (0)
+#define DEBUG(x) VERBOSE(3, x)
+
+// builds configured with cmake -DVerbose=ON start at the DEBUG level, as before
 #ifdef _VERBOSE_
-    #define DEBUG(x) do {x} while (0)
+    #define DEFAULT_VERBOSITY_LEVEL 3
 #else
-    #define DEBUG(x) do {} while (0)
+    #define DEFAULT_VERBOSITY_LEVEL 0
 #endif
 
 #ifdef _TIMER_

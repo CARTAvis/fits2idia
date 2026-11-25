@@ -184,11 +184,11 @@ MemoryUsage FastConverterLimitedMemory::calculateMemoryUsage() {
     m.note = " (rotation in " + std::to_string(nStrips) + " strip(s) of " + std::to_string(stripWidth) +
              " columns, mipmaps in " + std::to_string(nMipBlocks) + " block(s); rotation strip and mipmaps are not allocated at the same time)";
 
-    std::cout << "MEMORY_ESTIMATE: (FastConverterLimitedMemory) stripWidth = " << stripWidth
+    VERBOSE(1, std::cout << "MEMORY_ESTIMATE: (FastConverterLimitedMemory) stripWidth = " << stripWidth
               << " , mipChannelBlock = " << mipChannelBlock
               << " , fixed = " << fixedMemory() * 1e-9 << " GB , statsZ(strip) = " << statsZMemory(stripWidth) * 1e-9
               << " GB , max(strip " << stripMemory(stripWidth) * 1e-9 << " , mipmaps " << mipMemory(mipChannelBlock) * 1e-9
-              << ") GB , peak = " << m.total * 1e-9 << " GB" << std::endl;
+              << ") GB , peak = " << m.total * 1e-9 << " GB" << std::endl;);
 
     return m;
 }
@@ -397,8 +397,8 @@ void FastConverterLimitedMemory::copyAndCalculate() {
             double strip_proc_ms = 0.0, strip_io_ms = 0.0;
 
             TIMER(timer.start("Allocate"););
-            std::cout << "MEMORY (FastConverterLimitedMemory): allocating rotated strip buffer with size "
-                      << double(stripWidth * height * depth * sizeof(float)) / 1e9 << " GB" << std::endl;
+            VERBOSE(1, std::cout << "MEMORY (FastConverterLimitedMemory): allocating rotated strip buffer with size "
+                      << double(stripWidth * height * depth * sizeof(float)) / 1e9 << " GB" << std::endl;);
             rotatedCube = new float[stripWidth * height * depth];
 
             for (hsize_t x0 = 0; x0 < width; x0 += stripWidth) {

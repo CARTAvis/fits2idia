@@ -23,10 +23,10 @@ struct MipMap {
        bufferDims  = right.bufferDims;
        // dataset is ignored here, we do not want to deal with copying HDF5 file structures, groups etc
        
-       std::cout << "DEBUG : copy constructor : before createBuffers( bufferDims )" << std::endl;
+       DEBUG(std::cout << "DEBUG : copy constructor : before createBuffers( bufferDims )" << std::endl;);
        createBuffers( bufferDims );
 
-       std::cout << "DEBUG : copy constructor of MipMap called" << std::endl;
+       DEBUG(std::cout << "DEBUG : copy constructor of MipMap called" << std::endl;);
     }*/
     ~MipMap();
     

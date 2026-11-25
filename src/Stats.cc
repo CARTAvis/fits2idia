@@ -60,7 +60,7 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
     nanCounts = new int64_t[statsSize];
     buffersAllocated = true;
 
-    std::cout << "MEMORY (Stats::createBuffers): starting with total_bytes = " << total_bytes << " bytes." << std::endl;
+    VERBOSE(1, std::cout << "MEMORY (Stats::createBuffers): starting with total_bytes = " << total_bytes << " bytes." << std::endl;);
     
     if (numBins) {
         histograms = new int64_t[statsSize * numBins];
@@ -69,11 +69,11 @@ void Stats::createBuffers(std::vector<hsize_t> dims, hsize_t partialHistMultipli
         histogramBuffersAllocated = true;
         size_t histogram_bytes = (statsSize * numBins * partialHistMultiplier + statsSize*numBins)*sizeof(int64_t);
         total_bytes += histogram_bytes;
-        std::cout << "MEMORY (Stats::createBuffers): adding " << histogram_bytes << " bytes for histograms" << std::endl;
+        VERBOSE(1, std::cout << "MEMORY (Stats::createBuffers): adding " << histogram_bytes << " bytes for histograms" << std::endl;);
     }    
     
-    std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;
-    std::cout << "MEMORY (Stats::createBuffers): allocating " << double(total_bytes)/1e9 << " GB " << std::endl << std::flush;
+    DEBUG(std::cout << "DEBUG : Stats::createBuffers , partialHistMultiplier = " << partialHistMultiplier << " statsSize = " << statsSize << " numBins = " << numBins << std::endl << std::flush;);
+    VERBOSE(1, std::cout << "MEMORY (Stats::createBuffers): allocating " << double(total_bytes)/1e9 << " GB " << std::endl << std::flush;);
 
 }
 
