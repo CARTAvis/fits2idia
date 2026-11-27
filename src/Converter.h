@@ -207,7 +207,8 @@ protected:
 
     // memory model: peak = fixed + statsZ(sw) + max(strip(sw), mipmaps(cb))
     hsize_t fixedMemory();                  // cube + XY/XYZ stats
-    hsize_t statsZMemory(hsize_t sw);       // Z stats for one strip (kept for the whole run)
+    hsize_t statsZGroupWidth(hsize_t sw);   // columns of Z stats buffered before one write (whole strips, >= statsZ chunk width)
+    hsize_t statsZMemory(hsize_t sw);       // Z stats for one group of strips (kept for the whole run)
     hsize_t stripMemory(hsize_t sw);        // rotated strip (rotation phase only)
     hsize_t mipMemory(hsize_t cb);          // mipmap buffers for cb channels (mipmap phase only)
     hsize_t peakMemory(hsize_t sw, hsize_t cb);

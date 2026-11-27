@@ -78,9 +78,22 @@ hsize_t FastConverterLimitedMemory::fixedMemory() {
     return fixed;
 }
 
-// Z stats for one strip: allocated once, kept for the whole conversion (Stats has no free()).
+// Z stats are buffered for a GROUP of whole strips, at least one statsZ chunk (TILE_SIZE columns) wide,
+// and written once per group. Writing them per strip into the 512x512-chunked statsZ datasets re-reads
+// and re-writes every touched chunk once per strip, i.e. ~TILE_SIZE/sw times per chunk: with 1-column
+// strips on an 8-channel 65536^2 cube this made the rotation pass ~100x slower than the data written.
+// The group is a multiple of sw, so strips never straddle groups; with sw >= TILE_SIZE (fitToMemory
+// rounds sw to multiples of TILE_SIZE) the group is just one strip, as before.
+hsize_t FastConverterLimitedMemory::statsZGroupWidth(hsize_t sw) {
+    sw = std::max((hsize_t)1, std::min(sw, width));
+    const hsize_t zChunk = std::min((hsize_t)TILE_SIZE, width);
+    const hsize_t group = ((zChunk + sw - 1) / sw) * sw;   // smallest multiple of sw >= zChunk
+    return std::min(group, width);
+}
+
+// Z stats for one group of strips: allocated once, kept for the whole conversion (Stats has no free()).
 hsize_t FastConverterLimitedMemory::statsZMemory(hsize_t sw) {
-    return (depth > 1) ? Stats::size({height, sw}) : 0;
+    return (depth > 1) ? Stats::size({height, statsZGroupWidth(sw)}) : 0;
 }
 
 // Rotated strip buffer: allocated for the rotation phase of each Stokes, freed before the mipmaps.
@@ -173,7 +186,7 @@ MemoryUsage FastConverterLimitedMemory::calculateMemoryUsage() {
     if (depth > 1) {
         m.sizes["XYZ stats"] = Stats::size({}, numBins, depth);
         m.sizes["Rotation (strip)"] = stripMemory(stripWidth);
-        m.sizes["Z stats (strip)"] = statsZMemory(stripWidth);
+        m.sizes["Z stats (" + std::to_string(statsZGroupWidth(stripWidth)) + " columns)"] = statsZMemory(stripWidth);
     }
 
     // rotation strip and mipmap buffers are never allocated at the same time
@@ -186,7 +199,7 @@ MemoryUsage FastConverterLimitedMemory::calculateMemoryUsage() {
 
     VERBOSE(1, std::cout << "MEMORY_ESTIMATE: (FastConverterLimitedMemory) stripWidth = " << stripWidth
               << " , mipChannelBlock = " << mipChannelBlock
-              << " , fixed = " << fixedMemory() * 1e-9 << " GB , statsZ(strip) = " << statsZMemory(stripWidth) * 1e-9
+              << " , fixed = " << fixedMemory() * 1e-9 << " GB , statsZ(" << statsZGroupWidth(stripWidth) << " columns) = " << statsZMemory(stripWidth) * 1e-9
               << " GB , max(strip " << stripMemory(stripWidth) * 1e-9 << " , mipmaps " << mipMemory(mipChannelBlock) * 1e-9
               << ") GB , peak = " << m.total * 1e-9 << " GB" << std::endl;);
 
@@ -204,8 +217,10 @@ void FastConverterLimitedMemory::copyAndCalculate() {
     const hsize_t planeSize = height * width;
     const hsize_t cubeSize = depth * planeSize;
 
+    const hsize_t zGroup = statsZGroupWidth(stripWidth);   // Z stats columns buffered per write
+
     std::cout << "INFO (FastConverterLimitedMemory) : strip width = " << stripWidth << " columns, "
-              << nStrips << " strip(s) per Stokes" << std::endl;
+              << nStrips << " strip(s) per Stokes, Z stats written in groups of " << zGroup << " columns" << std::endl;
 
     TIMER(timer.start("Allocate"););
 
@@ -216,9 +231,9 @@ void FastConverterLimitedMemory::copyAndCalculate() {
 
     if (depth > 1) {
         statsXYZ.createBuffers({}, depth);
-        // Z stats only for ONE strip. Allocated once (Stats::createBuffers does not free previous
-        // buffers), the last, narrower strip just uses a prefix of these buffers.
-        statsZ.createBuffers({height, stripWidth});
+        // Z stats only for ONE group of strips (see statsZGroupWidth). Allocated once (Stats::createBuffers
+        // does not free previous buffers), the last, narrower group just uses a prefix of these buffers.
+        statsZ.createBuffers({height, zGroup});
 
     }
 
@@ -403,6 +418,10 @@ void FastConverterLimitedMemory::copyAndCalculate() {
 
             for (hsize_t x0 = 0; x0 < width; x0 += stripWidth) {
                 const hsize_t nx = std::min(stripWidth, width - x0);
+                // Z stats group containing this strip (zGroup is a multiple of stripWidth -> strips never straddle groups)
+                const hsize_t zx0 = (x0 / zGroup) * zGroup;            // first column of the group
+                const hsize_t zgw = std::min(zGroup, width - zx0);     // group width (last group may be narrower)
+                const hsize_t zoff = x0 - zx0;                         // strip offset within the group
                 PROGRESS("|");
 
                 // --- rotate strip: rotatedCube[kl][j][i] = standardCube[i][j][x0 + kl]
@@ -470,8 +489,8 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                 
 
                 // --- Z stats for the strip, read from the rotated buffer (spectra are contiguous there).
-                // Buffer index is dense for THIS strip (kl + j * nx), so the last, narrower strip uses
-                // a contiguous prefix of the statsZ buffers and is written with bufferDims {height, nx}.
+                // Buffer index is dense for the GROUP ((zoff + kl) + j * zgw), so the last, narrower group uses
+                // a contiguous prefix of the statsZ buffers and is written with bufferDims {height, zgw}.
                 TIMER(timer.start("Z statistics"););
 // one thread per group of pixels in XY direction (stripe):                
 #pragma omp parallel for collapse(2) schedule(static)
@@ -491,7 +510,7 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                                 counterZ.accumulateNonFinite();
                             }
                         }
-                        statsZ.copyStatsFromCounter(kl + j * nx, depth, counterZ);
+                        statsZ.copyStatsFromCounter((zoff + kl) + j * zgw, depth, counterZ);
                     }
                 }
                 auto ep = std::chrono::high_resolution_clock::now();
@@ -507,8 +526,11 @@ void FastConverterLimitedMemory::copyAndCalculate() {
                     std::vector<hsize_t> swizzledStart = trimAxes({currentStokes, x0, 0, 0}, N);
                     writeHdf5Data(swizzledDataSet, rotatedCube, swizzledMemDims, swizzledCount, swizzledStart);
 
-                    // statsZ: write(bufferDims, count, start) -- same call convention as SmartFastConverter
-                    statsZ.write({height, nx}, {1, height, nx}, {currentStokes, 0, x0});
+                    // statsZ: write(bufferDims, count, start) -- same call convention as SmartFastConverter.
+                    // Only once the group is complete, so every statsZ chunk is written in full, once.
+                    if (zoff + nx == zgw) {
+                        statsZ.write({height, zgw}, {1, height, zgw}, {currentStokes, 0, zx0});
+                    }
                 }
                 auto ei = std::chrono::high_resolution_clock::now();
                 strip_io_ms += ms_d(ei - si).count();
@@ -650,8 +672,9 @@ void FastConverterLimitedMemory::copyAndCalculate() {
     std::cout << "Unaccounted for: " << (duration_ms - total_pureprocessing_ms - total_io_ms)/1000.00 << " seconds" << std::endl;
 }
 
-// I/O cost model -- like FastConverter::estimateIO except that the swizzled dataset and statsZ are written
-// once per strip ({1, nx, H, D} and {1, H, nx}) and the mipmaps once per channel block.
+// I/O cost model -- like FastConverter::estimateIO except that the swizzled dataset is written once per
+// strip ({1, nx, H, D}), statsZ once per group of strips ({1, H, group width}, see statsZGroupWidth) and
+// the mipmaps once per channel block.
 IOCostBreakdown FastConverterLimitedMemory::estimateIO(hsize_t stokes, hsize_t depth, hsize_t height, hsize_t width,
                                                        hsize_t numBins,
                                                        const IOCostModel& readModel,
@@ -690,13 +713,17 @@ IOCostBreakdown FastConverterLimitedMemory::estimateIO(hsize_t stokes, hsize_t d
             hsize_t nx = std::min(sw, width - x0);
             auto w = estimateHyperslabIO(swizzledDims4, swizzledChunks, {1, nx, height, depth}, sizeof(float));
             swzAcc.add(repeatEstimate(w, stokes), writeModel);
+        }
+        const hsize_t zg = statsZGroupWidth(sw);
+        for (hsize_t zx0 = 0; zx0 < width; zx0 += zg) {
+            hsize_t zgw = std::min(zg, width - zx0);
             for (auto es : basicElemSizes) {
-                auto z = estimateHyperslabIO(statsZDims, statsZChunks, {1, height, nx}, es);
+                auto z = estimateHyperslabIO(statsZDims, statsZChunks, {1, height, zgw}, es);
                 zAcc.add(repeatEstimate(z, stokes), writeModel);
             }
         }
         result.phases.push_back(swzAcc.toPhase("swizzledDataSet strip writes (contiguous)"));
-        result.phases.push_back(zAcc.toPhase("statsZ strip writes"));
+        result.phases.push_back(zAcc.toPhase("statsZ group writes"));
     }
     {
         // one write per XY level per channel block (NOTE: Z-mip levels, -z, are not modelled)
